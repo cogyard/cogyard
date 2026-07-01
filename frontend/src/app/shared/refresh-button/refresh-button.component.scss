@@ -1,0 +1,7 @@
+:host { display: inline-flex; vertical-align: middle; }
+
+/* No control recipe here — the button wears the shared .btn-pill (styles.scss).
+   Local rules are LAYOUT/animation only, per docs/UI-CONVENTIONS.md. */
+.ico { flex: 0 0 auto; }
+.ico.spin { animation: refresh-spin 0.8s linear infinite; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }

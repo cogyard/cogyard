@@ -1,0 +1,173 @@
+/* highlight.js themes — global because hljs spans arrive via [innerHTML] (Files
+   tab). Light is the default; the dark theme is nested under .dark so it only
+   applies inside the Files tab's dark viewing area. */
+@use 'sass:meta';
+@use 'highlight.js/styles/github.css';
+.dark { @include meta.load-css('highlight.js/styles/github-dark.css'); }
+
+/* ============================================================================
+   THEME KNOBS — the one place to play with color variations.
+   Component SCSS consumes these via var(--app-*); PrimeNG components follow
+   the accent via the --p-primary-* overrides at the bottom of this block.
+   Edit values, save, done — no other file needs touching.
+   ============================================================================ */
+:root {
+  /* Content column: bounded + centered so wide monitors don't stretch tables
+     into unreadable oceans. Set to `none` for edge-to-edge. */
+  --app-content-max: 1440px;
+
+  /* Left project rail width (task 040). The app-shell grid + the commit diff
+     dock (which must stop at the rail's right edge) both read this. */
+  --app-sidebar-w: 210px;
+
+  /* The topbar (title + pills + tabs). */
+  --app-topbar-bg: #2f3338;        /* dark gray header */
+  --app-topbar-fg: #e8eaee;        /* text on the topbar */
+
+  /* The left project rail (task 040) — the brand's dark indigo, i.e. the logo's
+     dark background field (matches the favicon's filled square). */
+  --app-sidebar-bg: #3f3d9e;
+
+  /* The page — the area OUTSIDE cards/tables/panels. */
+  --app-page-bg: #e9ebee;          /* light gray content background */
+  --app-page-fg: #5b626c;          /* muted text sitting on the page bg (section heads, summaries) */
+  --app-page-fg-strong: #1f2328;   /* emphasized text on the page bg */
+  --app-page-border: rgba(0, 0, 0, 0.14); /* hairlines on the page bg */
+
+  /* Neutrals — text, surfaces, borders inside cards/tables/panels.
+     (Previously hardcoded: #1a1d24 / #5a6068 / #8a8f99 text, #f0f2f5 washed
+     gray surfaces, #d8dde3 borders.) */
+  --app-fg: #1f2328;             /* primary text on surfaces */
+  --app-fg-dim: #49505a;         /* secondary text */
+  --app-fg-muted: #687078;       /* tertiary text (timestamps, column heads) */
+  --app-surface: #ffffff;        /* cards, tables, panels */
+  --app-surface-2: #fafafa;      /* toolbars, table headers, code chips */
+  --app-hover: #f4f5f6;          /* row/button hover wash */
+  --app-border: #e4e6ea;         /* card + cell borders */
+  --app-border-soft: #eff1f3;    /* faint row separators */
+
+  /* Accent family (orange; previously blue #2563eb). */
+  --app-accent: #ea580c;           /* resting accent — links, active pills, selection edge */
+  --app-accent-hover: #c2410c;     /* hover/deeper accent */
+  --app-accent-active: #9a3412;    /* pressed/strongest accent */
+  --app-accent-contrast: #ffffff;  /* text on solid accent */
+  --app-accent-tint1: #fff7ed;     /* lightest tinted bg (active tab, main-row band) */
+  --app-accent-tint2: #ffedd5;     /* tinted bg (selections, accent chips) */
+  --app-accent-tint3: #fed7aa;     /* tinted hover */
+  --app-accent-tint-fg: #9a3412;   /* text ON tinted chips — darkest of the family, never the resting accent */
+
+  /* Primary action buttons (form submits like Save / Create) — the brand indigo,
+     NOT the orange accent (the accent is reserved for links, active pills,
+     selection edges) and NOT stark black. One token so every primary submit
+     button matches. Active/selected STATES still use the accent — those are
+     accents, not buttons. */
+  --app-primary: var(--app-sidebar-bg);  /* brand indigo (the logo / left rail) */
+  --app-primary-contrast: #ffffff;        /* text on the solid primary */
+}
+/* PrimeNG primary follows the accent (double :root outranks the theme's own
+   :root declarations, which are injected later in <head>). */
+:root:root {
+  --p-primary-color: var(--app-accent);
+  --p-primary-hover-color: var(--app-accent-hover);
+  --p-primary-active-color: var(--app-accent-active);
+  --p-primary-contrast-color: var(--app-accent-contrast);
+  --p-primary-600: var(--app-accent);
+  --p-primary-700: var(--app-accent-hover);
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  background: var(--app-page-bg);
+  color: var(--app-fg);
+}
+/* The app shell (app-root :host) owns its own scroll regions (list / detail /
+   diff); the page itself never scrolls. */
+body { overflow: hidden; }
+
+/* ============================================================================
+   Shared portal-table chrome — ONE definition for every p-table in the app.
+   Column widths and per-table quirks stay in component SCSS; the box, the
+   table layout, and the header style live here ONLY.
+   ============================================================================ */
+p-table .p-datatable-table-container { border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-surface); }
+p-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+/* out-specifies the theme's `.p-datatable-thead > tr > th` (injected later) */
+p-table .p-datatable-thead > tr > th {
+  padding: 6px 10px; background: var(--app-surface-2); font-size: 11px; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  border-bottom: 1px solid var(--app-border); white-space: nowrap; text-align: left;
+}
+
+/* ============================================================================
+   Buttons — the THREE recipes, ONE definition each (docs/UI-CONVENTIONS.md).
+   Every clickable control is a NATIVE <button> wearing exactly one of these
+   classes (never a styled p-button — task 021 killed those). Component SCSS
+   may add LAYOUT (margins, flex) and color MODIFIERS (e.g. .pill-all) on top;
+   it must never define a fourth recipe.
+
+     .btn-pill    pick-or-act: switchers + standalone actions
+                  (topbar projects, worktree selector, usage refresh)
+                  modifier .active = currently selected
+     .btn-toggle  compact in-place mode/option control
+                  (Files: changed-only / rendered / raw / diff)
+                  modifier .on = engaged
+     .btn-link    inline navigate-somewhere link (#task, ⎇worktree, project)
+                  modifier .mono = monospace id-ish label
+
+   Sanctioned one-offs (composite row/panel controls, local by design):
+   button.commit (Branches), button.frow + button.close (commit panel).
+   ============================================================================ */
+button.btn-pill {
+  display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 14px;
+  padding: 4px 12px; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--app-fg-dim);
+  cursor: pointer; white-space: nowrap;
+}
+button.btn-pill:hover:not(:disabled) { background: var(--app-hover); color: var(--app-fg); }
+button.btn-pill.active, button.btn-pill.active:hover { background: var(--app-accent); border-color: var(--app-accent); color: var(--app-accent-contrast); }
+button.btn-pill:disabled { opacity: 0.5; cursor: default; }
+
+button.btn-toggle {
+  font: inherit; font-size: 11px; padding: 2px 9px; border-radius: 10px; border: 1px solid var(--app-border);
+  background: var(--app-surface); color: var(--app-fg-dim); white-space: nowrap; cursor: pointer;
+}
+button.btn-toggle:hover:not(:disabled) { background: var(--app-hover); }
+button.btn-toggle.on, button.btn-toggle.on:hover { background: var(--app-accent-tint2); border-color: var(--app-accent); color: var(--app-accent); font-weight: 600; }
+button.btn-toggle:disabled { opacity: 0.5; cursor: default; }
+
+button.btn-link {
+  font: inherit; font-weight: 600; padding: 0 2px; background: none; border: none; cursor: pointer; color: var(--app-accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  white-space: nowrap;
+}
+button.btn-link:hover { text-decoration-color: currentColor; }
+button.btn-link.mono { font-family: ui-monospace, monospace; font-size: 11.5px; }
+
+/* .sidebar-item — vertical full-width nav row for the left project rail (task
+   040). The pick-or-act job of .btn-pill, but shaped for a Slack-style rail:
+   full-width, left-aligned, squared, transparent-resting, accent-filled when
+   active. Lives on the dark sidebar, so colors derive from --app-topbar-fg
+   (resting text) + --app-accent (active). Components add layout only. */
+button.sidebar-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: none; border-radius: 6px;
+  padding: 7px 10px; font: inherit; font-size: 13px; font-weight: 500;
+  color: color-mix(in srgb, var(--app-topbar-fg) 80%, transparent);
+  text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+button.sidebar-item:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--app-topbar-fg) 12%, transparent);
+  color: var(--app-topbar-fg);
+}
+button.sidebar-item.active, button.sidebar-item.active:hover {
+  background: var(--app-accent); color: var(--app-accent-contrast);
+}
+button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
+
+/* Topbar data-freshness pie (task 008): the Web Animations API (in the
+   freshness-pie component) interpolates --pie-p, which only animates if
+   registered via @property — and @property must live in global styles. */
+@property --pie-p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }

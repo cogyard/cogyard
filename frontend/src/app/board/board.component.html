@@ -1,0 +1,30 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (!all().length) {
+  <div class="empty">No tasks in this project.</div>
+} @else {
+  <div class="board">
+    @for (col of columns(); track col.title) {
+      <section class="column">
+        <h3 class="col-head">{{ col.title }} <span class="count">{{ col.list.length }}</span></h3>
+        <div class="cards">
+          @for (t of col.list; track t.file) {
+            <p-card styleClass="card" (click)="cardClick(t)">
+              <div class="card-top">
+                <span class="cid">{{ t.id != null ? '#' + t.id : '?' }}</span>
+                @if (t.progress?.totalCount) { <span class="sub">{{ t.progress.checkedCount }}/{{ t.progress.totalCount }}</span> }
+                @if (t.stale) { <span class="warn" pTooltip="stale review needed">⚠</span> }
+              </div>
+              <div class="card-title">{{ t.title }}</div>
+              <div class="card-foot">
+                @if (t.fm?.depends_on?.length) { <p-tag styleClass="chip dep" value="deps {{ t.fm.depends_on.join(', ') }}" /> }
+                @if (t.progress?.claimed) { <p-tag styleClass="chip lock" value="🔒 {{ t.claimedBy || '?' }}" /> }
+                @if (t.worktreeName) { <p-tag styleClass="chip wt" value="⎇ {{ t.worktreeName }}" /> }
+              </div>
+            </p-card>
+          }
+        </div>
+      </section>
+    }
+  </div>
+}

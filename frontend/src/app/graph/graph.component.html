@@ -1,0 +1,69 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else {
+  <div class="dag">
+    @for (r of rows(); track r.hash) {
+      @if (r.kind === 'worktree') {
+        <div class="dag-row wt-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
+          <div class="dag-graph">
+            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
+              @for (s of r.segs; track $index) {
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
+              }
+              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="#fff" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
+            </svg>
+          </div>
+          <div class="dag-hash">●</div>
+          <div class="dag-msg">
+            <span class="wt-label">{{ r.wtName }}</span>
+            @if (r.branch) { <p-tag styleClass="dag-ref local" [value]="r.branch" /> }
+            <span class="wt-count dirty">{{ r.dirtyCount }} uncommitted</span>
+          </div>
+          <div class="dag-author"></div>
+          <div class="dag-date"></div>
+        </div>
+      } @else if (r.kind === 'stash') {
+        <div class="dag-row stash-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
+          <div class="dag-graph">
+            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
+              @for (s of r.segs; track $index) {
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="(s.wt || s.stash) ? '3 3' : null" />
+              }
+              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="none" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
+            </svg>
+          </div>
+          <div class="dag-hash stash-icon">📦</div>
+          <div class="dag-msg">
+            <span class="stash-ref">{{ r.stashRef }}</span>
+            <span class="dag-subj">{{ r.message || '(no message)' }}</span>
+          </div>
+          <div class="dag-author"></div>
+          <div class="dag-date"></div>
+        </div>
+      } @else {
+        <div class="dag-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
+          <div class="dag-graph">
+            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
+              @for (s of r.segs; track $index) {
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
+              }
+              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" [attr.fill]="dotColor(r)" stroke="#fff" stroke-width="1.5" />
+            </svg>
+          </div>
+          <div class="dag-hash">{{ r.shortHash }}</div>
+          <div class="dag-msg">
+            @for (c of r.chips; track $index) {
+              <p-tag styleClass="dag-ref {{ c.cls }}" [value]="c.text" />
+            }
+            @for (id of r.taskIds; track id) {
+              <button class="btn-link mono" (click)="$event.stopPropagation(); jumpTask.emit(id)">#{{ id }}</button>
+            }
+            <span class="dag-subj">{{ r.cleanSubject || '(no subject)' }}</span>
+          </div>
+          <div class="dag-author">{{ r.author }}</div>
+          <div class="dag-date">{{ r.date }}</div>
+        </div>
+      }
+    }
+  </div>
+}

@@ -1,0 +1,45 @@
+.empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
+/* table chrome (box/table/th) is shared — see styles.scss */
+.col-project { width: 18%; min-width: 150px; }
+.col-tasks { width: 150px; }
+.col-wt { width: 110px; }
+.col-dirty { width: 68px; }
+.col-num { width: 78px; text-align: right; }
+.col-code { width: 86px; text-align: right; }
+.col-date { width: 92px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+.ov-note { color: var(--app-fg-muted); font-size: 11px; }
+
+.ov-row > td {
+  padding: 6px 10px; border-bottom: 1px solid var(--app-border);
+  height: 30px; font-size: 12px; overflow: hidden; white-space: nowrap;
+}
+/* no display:flex on td — consecutive non-table-cell tds merge into one
+   anonymous cell and shift every column after them */
+:is(.tasks, .wt) > * + * { margin-left: 8px; }
+
+/* numeric cells (size, cost, per-family) — right-aligned. tabular-nums keeps
+   digits column-aligned WITHOUT a monospace font (whose full-width comma glyph
+   renders "$5,314" as "$5 , 314"). */
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num.strong { font-weight: 600; }
+td.ctr { text-align: center; }
+
+/* totals strip: a second header row, pinned above the data, sorting-immune */
+.totals-row > td {
+  padding: 5px 10px; background: var(--app-accent-tint1);
+  border-bottom: 2px solid var(--app-border); font-size: 12px; font-weight: 600;
+  color: var(--app-fg); white-space: nowrap;
+}
+.totals-row td.num { font-variant-numeric: tabular-nums; }
+
+.dim { color: var(--app-fg-muted); }
+.tasks .total { color: var(--app-fg); font-weight: 600; }
+.tasks .ready { color: #047857; font-weight: 600; }
+.dirty { color: #b45309; font-weight: 600; }
+
+/* p-tag badge — ng-deep; .p-tag.badge outranks the Aura .p-tag defaults */
+:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+
+/* skeleton loading rows (layout only) */
+.skel { display: flex; flex-direction: column; gap: 8px; }

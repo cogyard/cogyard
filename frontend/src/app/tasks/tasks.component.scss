@@ -1,0 +1,75 @@
+.empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
+.filters { display: flex; gap: 8px; margin-bottom: 16px; }
+.filters .search { min-width: 220px; }
+
+.usage-strip {
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 16px;
+}
+.usage-strip h2 {
+  display: flex; align-items: center;
+  font-size: 11px; font-weight: 700; color: var(--app-fg-muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin: 0 0 6px; border: none; padding: 0;
+}
+.usage-strip h2 app-refresh-button { margin-left: auto; }
+
+.bucket { margin-bottom: 24px; }
+.bucket h2 {
+  font-size: 13px; font-weight: 600; color: var(--app-page-fg); text-transform: uppercase; letter-spacing: 0.05em;
+  margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
+}
+
+/* table chrome (box/table/th) is shared — see styles.scss */
+.col-id { width: 64px; }
+.col-status { width: 96px; }
+.col-sub { width: 80px; }
+.col-deps { width: 80px; }
+.col-claimed { width: 64px; }
+.grid-row > td {
+  padding: 5px 10px; border-bottom: 1px solid var(--app-border-soft); font-size: 12.5px; cursor: pointer;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; height: 28px; background: var(--app-surface);
+  color: var(--app-fg);
+}
+.grid-row > td.mono { color: var(--app-fg); }
+.grid-row:hover > td { background: var(--app-hover); }
+.title-text { vertical-align: middle; }
+.title button.xlink { vertical-align: middle; margin-left: 8px; }
+/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
+button.xlink {
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+  padding: 0 2px; white-space: nowrap; background: none; border: none; cursor: pointer; color: var(--app-accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+button.xlink:hover { text-decoration-color: currentColor; }
+.mono { font-family: ui-monospace, 'SF Mono', monospace; color: var(--app-fg-muted); font-size: 12px; }
+.title { font-weight: 500; }
+.title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+td.ctr { text-align: center; color: var(--app-fg); font-size: 12px; }
+.warn { color: #b91c1c; }
+/* category icon (task 39) — leads the title cell; emoji glyph, no icon font */
+.cat-icon { vertical-align: middle; margin-right: 7px; font-size: 20px; line-height: 1; cursor: default; }
+/* label chips — trail the title text; neutral pill, theme-safe */
+.label-chip {
+  display: inline-block; vertical-align: middle; margin-left: 6px;
+  font-size: 10.5px; line-height: 1.5; padding: 0 7px; border-radius: 10px; font-weight: 500;
+  background: var(--app-border-soft); color: var(--app-fg-dim); border: 1px solid var(--app-border);
+}
+.claim-check { color: var(--app-accent); font-weight: 700; }
+.body-row { padding: 14px 16px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border); white-space: normal; }
+.gitbox { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; }
+.gb-head { font-size: 11px; font-weight: 700; color: var(--app-fg-muted); letter-spacing: 0.06em; margin-bottom: 6px; }
+.gb-row { margin: 3px 0; }
+.gb-row code, .gb-commits code { background: var(--app-surface-2); padding: 1px 6px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 11.5px; }
+.dim { color: var(--app-fg-muted); }
+.gb-commits { margin: 4px 0 0; padding-left: 0; list-style: none; }
+.gb-commits li { padding: 2px 0; border-bottom: 1px solid var(--app-border-soft); }
+.gb-commits li:last-child { border-bottom: none; }
+.md { font-size: 13px; line-height: 1.55; }
+.md :is(h1, h2, h3) { font-size: 14px; margin: 16px 0 6px; }
+.md pre { background: var(--app-surface-2); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 12px; }
+.md code { background: var(--app-surface-2); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+.md pre code { padding: 0; background: none; }
+
+/* skeleton loading rows (layout only) */
+.skel { display: flex; flex-direction: column; gap: 8px; }

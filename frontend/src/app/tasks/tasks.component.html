@@ -1,0 +1,93 @@
+<div class="filters">
+  <p-selectbutton size="small" [options]="viewOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="view()" (ngModelChange)="view.set($event)" />
+  <p-select size="small" scrollHeight="22rem" [options]="statusOptions" optionLabel="label" optionValue="value" [ngModel]="statusFilter()" (ngModelChange)="statusFilter.set($event)" />
+  <p-select size="small" [options]="categoryOptions" optionLabel="label" optionValue="value" [ngModel]="categoryFilter()" (ngModelChange)="categoryFilter.set($event)" />
+  @if (labelOptions().length) {
+    <p-multiSelect size="small" [options]="labelOptions()" optionLabel="label" optionValue="value" [ngModel]="labelFilter()" (ngModelChange)="labelFilter.set($event)" placeholder="labels" [showClear]="true" [maxSelectedLabels]="2" selectedItemsLabel="{0} labels" />
+  }
+  <input pInputText pSize="small" class="search" placeholder="search title / id…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+</div>
+
+@if (usage(); as u) {
+  @if (u.costUSD || u.sessions) {
+    <section class="usage-strip">
+      <h2>
+        <span>Usage — {{ usageCost(u) }} · {{ u.sessions }} sessions</span>
+        <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
+      </h2>
+      <app-usage-breakdown [models]="u.models" />
+    </section>
+  }
+}
+
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else {
+  @for (b of sections(); track b.title) {
+    <section class="bucket">
+      @if (b.title) { <h2>{{ b.title }} ({{ b.list.length }})</h2> }
+      <p-table [value]="b.list" dataKey="file" [expandedRowKeys]="expandedKeys()" [rowTrackBy]="trackByFile" size="small">
+        <ng-template #header>
+          <tr>
+            <th class="col-id" pSortableColumn="id">ID <p-sortIcon field="id" /></th>
+            <th class="col-status" pSortableColumn="status">Status <p-sortIcon field="status" /></th>
+            <th pSortableColumn="title">Title <p-sortIcon field="title" /></th>
+            <th class="col-sub">Sub</th>
+            <th class="col-deps">Deps</th>
+            <th class="col-claimed">Claimed</th>
+          </tr>
+        </ng-template>
+        <ng-template #body let-t>
+          <tr class="grid-row" [class.expanded]="isExpanded(t)" (click)="toggle(t)">
+            <td class="mono">{{ t.id != null ? '#' + t.id : '?' }}</td>
+            <td [class.dim]="!t.hasFrontmatter">{{ t.hasFrontmatter ? t.status : 'no frontmatter' }}</td>
+            <td class="title">
+              @if (categoryIcon(t)) { <span class="cat-icon" [pTooltip]="t.fm.category">{{ categoryIcon(t) }}</span> }
+              <span class="title-text">{{ t.title }}</span>
+              @for (l of labelsOf(t); track l) { <span class="label-chip">{{ l }}</span> }
+              @if (worktreeName(t)) {
+                <button class="btn-link mono" (click)="$event.stopPropagation(); jumpWorktree.emit(worktreeName(t)!)">⎇ {{ worktreeName(t) }}</button>
+              }
+            </td>
+            <td class="ctr">
+              {{ t.progress?.totalCount ? t.progress.checkedCount + '/' + t.progress.totalCount : '—' }}
+              @if (t.stale) { <span class="warn" pTooltip="stale review needed">⚠</span> }
+            </td>
+            <td class="ctr">{{ t.fm?.depends_on?.length ? t.fm.depends_on.join(', ') : '—' }}</td>
+            <td class="ctr">@if (t.progress?.claimed) { <span class="claim-check" [pTooltip]="t.claimedBy || 'claimed'">✓</span> } @else { — }</td>
+          </tr>
+        </ng-template>
+        <ng-template #expandedrow let-t>
+          <tr>
+            <td colspan="6" class="body-row">
+              <div class="gitbox">
+                <div class="gb-head">GIT</div>
+                @if (t.branch) {
+                  <div class="gb-row">branch <code>{{ t.branch }}</code> @if (worktreeName(t)) { <span class="dim">in worktree {{ worktreeName(t) }}</span> }</div>
+                } @else {
+                  <div class="gb-row dim">no recorded worktree/branch (never claimed from one)</div>
+                }
+                @if (t.commits?.length) {
+                  <div class="gb-row"><strong>{{ t.commits.length }}</strong> commits drive this task:</div>
+                  <ul class="gb-commits">
+                    @for (c of t.commits; track c.shortHash) { <li><code>{{ c.shortHash }}</code> {{ c.subject }} <span class="dim">· {{ c.relDate }}</span></li> }
+                  </ul>
+                } @else {
+                  <div class="gb-row dim">no commits tagged [#{{ t.id }}]</div>
+                }
+              </div>
+              @if (taskUsage(t); as u) {
+                <div class="gitbox">
+                  <div class="gb-head">USAGE — {{ usageCost(u) }}</div>
+                  <app-usage-breakdown [models]="u.models" />
+                </div>
+              }
+              <div class="md" [innerHTML]="bodyHtml(t)"></div>
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+    </section>
+  }
+  @if (!filtered().length) { <div class="empty">No tasks match the filters.</div> }
+}

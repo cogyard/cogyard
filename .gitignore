@@ -1,0 +1,18 @@
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+# generated at build by scripts/generate-version.mjs (version + commit, one source)
+frontend/src/version.json
+*.log
+.DS_Store
+.cache/
+# private, owner-machine notes kept out of the public tree (real hostnames,
+# tunnel IDs, deployment specifics) — see docs/DEPLOYMENTS.local.md
+*.local.md
+# task system: _tasks is a symlink to the shared store (tasks.mjs convert)
+_tasks
+frontend/public/assets/material-icons/
+# worktree port management: written per-worktree by the SessionStart hook
+.claude/launch.json
+.env.worktree

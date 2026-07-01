@@ -1,0 +1,11 @@
+# Files tracked in the private working repo but EXCLUDED from the public snapshot.
+#
+# `git archive` (the snapshot mechanism — see _tasks/050) honors `export-ignore`,
+# so these are omitted from the published tree automatically. No manual deletion
+# to forget. Add new private-but-tracked files here as they appear.
+
+# Private maintainer infra. docs/DEVELOPMENT.md is the public replacement.
+CLAUDE.md export-ignore
+
+# Owner-internal A/B diff helper (developer tooling, not part of the product).
+scripts/ab-api.sh export-ignore

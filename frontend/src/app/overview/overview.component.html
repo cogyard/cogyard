@@ -1,0 +1,58 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else {
+  <div class="toolbar">
+    <span class="ov-note">Cost columns = API-equivalent spend by model family, locked in when each task ran. Per-token-type detail on a project's Tasks tab.</span>
+    <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
+  </div>
+  <p-table styleClass="ov" [value]="rows()" dataKey="slug" size="small">
+    <ng-template #header>
+      <tr>
+        <th class="col-project" pSortableColumn="label">Project <p-sortIcon field="label" /></th>
+        <th class="col-tasks">Tasks</th>
+        <th class="col-wt">Worktrees</th>
+        <th class="col-dirty">Dirty</th>
+        <th class="col-code" title="Lines of source code on main — tracked source files only (excludes data files, lockfiles, build output, docs, binaries)">Code</th>
+        <th class="col-num">Cost</th>
+        @for (f of agg().families; track f) { <th class="col-num">{{ f }}</th> }
+        <th class="col-date">Last commit</th>
+      </tr>
+      <tr class="totals-row">
+        <td>All · {{ agg().totals.projects }} projects</td>
+        <td class="ctr">{{ agg().totals.tasks }}</td>
+        <td class="ctr">{{ agg().totals.wt }}</td>
+        <td class="ctr">{{ agg().totals.dirty || '—' }}</td>
+        <td class="num">{{ fmtLoc(agg().totals.loc) }}</td>
+        <td class="num strong">{{ fmtCost(agg().totals.total) }}</td>
+        @for (f of agg().families; track f) { <td class="num">{{ fmtCost(agg().totals.fam[f]) }}</td> }
+        <td></td>
+      </tr>
+    </ng-template>
+    <ng-template #body let-p>
+      <tr class="ov-row">
+        <td>
+          @if (p.error) { <span class="dim">{{ p.label }} (error)</span> }
+          @else { <button class="btn-link" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
+        </td>
+        <td class="tasks">
+          <span class="total">{{ p.tasks?.total || 0 }}</span>
+          @if (p.tasks?.ready) { <span class="ready">{{ p.tasks.ready }} ready</span> }
+          @if (p.tasks?.claimed) { <span class="dim">🔒 {{ p.tasks.claimed }}</span> }
+        </td>
+        <td class="wt">
+          {{ p.worktrees?.count || 0 }}
+          @if (p.worktrees?.stale) { <p-tag styleClass="badge stale" value="{{ p.worktrees.stale }} stale" /> }
+        </td>
+        <td>
+          @if (p.dirty) { <span class="dirty">● {{ p.dirty }}</span> } @else { <span class="dim">clean</span> }
+        </td>
+        <td class="num dim">{{ fmtLoc(p.size?.loc) }}</td>
+        <td class="num strong">{{ fmtCost(totalCost(p.slug)) }}</td>
+        @for (f of agg().families; track f) {
+          <td class="num">{{ fmtCost(famCost(p.slug, f)) }}</td>
+        }
+        <td class="col-date dim">{{ p.latestCommit?.date || '—' }}</td>
+      </tr>
+    </ng-template>
+  </p-table>
+}

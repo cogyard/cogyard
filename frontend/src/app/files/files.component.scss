@@ -1,0 +1,138 @@
+:host { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
+.empty { color: var(--app-fg-muted); font-style: italic; padding: 24px; text-align: center; }
+.empty .hint { font-size: 11.5px; margin-top: 6px; }
+
+/* --- worktree pills — native buttons (custom look, zero theme dynamics) ------- */
+.wt-pills-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-bottom: 10px; }
+.wt-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.wt-pills.clamped { overflow: hidden; }
+/* "… more" / "less" expander = global .btn-pill, just quieter */
+.pills-more { font-size: 11px; color: var(--app-fg-muted); padding-block: 2px; }
+/* worktree selector = global .btn-pill; only inner-element recolors live here */
+button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-mix(in srgb, var(--app-accent-contrast) 75%, transparent); }
+.main-dot { color: var(--app-accent); font-size: 9px; }
+.wt-name { font-weight: 500; }
+.wt-when { color: var(--app-fg-muted); font-size: 11px; }
+
+/* --- two-pane layout ---------------------------------------------------------- */
+.layout {
+  display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 0;
+  flex: 1; min-height: 0; border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-surface); overflow: hidden;
+}
+
+.tree { border-right: 1px solid var(--app-border); display: flex; flex-direction: column; min-height: 0; }
+.tree-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 6px 10px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
+}
+.tree-toggles { display: flex; align-items: center; gap: 6px; flex: none; }
+/* mode/option controls = global .btn-toggle; only the count chip lives here */
+button.btn-toggle .cnt { font-weight: 700; }
+
+.rows { overflow-y: auto; flex: 1; padding: 4px 0; }
+/* Compact p-tree density to match the old 22px rows (PrimeNG internals → ng-deep). */
+:host ::ng-deep .ftree {
+  padding: 0; font-size: 12.5px; border: none;
+  .p-tree-node-content { padding: 1px 6px; gap: 2px; border-radius: 0; color: inherit; }
+  .p-tree-node-content.p-tree-node-selected { background: var(--app-accent-tint2); color: inherit; }
+  .p-tree-node-content:not(.p-tree-node-selected):hover { background: var(--app-hover); }
+  .p-tree-node-toggle-button { width: 16px; height: 16px; flex: none; }
+  .p-tree-node-children { padding-left: 14px; }
+}
+.trow { display: inline-flex; align-items: center; gap: 6px; min-height: 20px; overflow: hidden; }
+.trow.gone .fname { text-decoration: line-through; color: var(--app-fg-muted); }
+.ficon { width: 16px; height: 16px; flex: none; }
+.dirname { font-weight: 600; color: #3a3f47; }
+.dirname.nongit { color: #a3abb5; }
+.chdot { color: #b45309; font-size: 8px; }
+/* Tracked files read at full strength; non-git (untracked/ignored) rows gray out. */
+.fname { color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fname.nongit { color: #a3abb5; }
+.fname.full { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
+
+/* p-tag status badges — ng-deep; .p-tag.st outranks the Aura .p-tag defaults */
+:host ::ng-deep .p-tag.st {
+  font-family: ui-monospace, monospace; font-size: 10px; font-weight: 700; flex: none;
+  padding: 0 5px; border-radius: 8px; line-height: 16px;
+}
+:host ::ng-deep .p-tag.st-a { background: #d1fae5; color: #047857; }
+:host ::ng-deep .p-tag.st-m { background: #fef3c7; color: #b45309; }
+:host ::ng-deep .p-tag.st-d { background: #fde8e8; color: #b91c1c; }
+:host ::ng-deep :is(.p-tag.st-r, .p-tag.st-c, .p-tag.st-t) { background: var(--app-accent-tint2); color: var(--app-accent-tint-fg); }
+
+/* --- content pane -------------------------------------------------------------- */
+.pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.pane-bar {
+  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
+}
+.fpath { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta { font-size: 11px; color: var(--app-fg-muted); white-space: nowrap; }
+.meta.warn { color: #b45309; font-weight: 600; }
+.spacer { flex: 1; }
+
+/* dark/light switch — top-right of the file panel's toolbar */
+.mode-switch { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.mode-switch .ms-ico { font-size: 13px; color: var(--app-fg-muted); width: 14px; text-align: center; }
+
+.body { overflow: auto; flex: 1; min-height: 0; }
+.body.centered { display: flex; align-items: center; justify-content: center; background: var(--app-surface-2); }
+.body img { max-width: 90%; max-height: 90%; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.15); background: var(--app-surface); }
+
+pre.code {
+  margin: 0; padding: 12px 16px; font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 12px; line-height: 1.55; tab-size: 4; min-width: 0;
+}
+
+/* --- dark mode — viewing area only (github-dark palette) ---------------------- */
+.body.dark { background: #0d1117; color: #c9d1d9; }
+.body.dark .empty { color: #8b949e; }
+.body.dark img { background: #161b22; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6); }
+.body.dark pre.code { color: #c9d1d9; }
+
+:host ::ng-deep .body.dark .md {
+  color: #c9d1d9;
+  code { background: #161b22; }
+  pre { background: #161b22; border-color: #30363d; }
+  :is(th, td) { border-color: #30363d; }
+  blockquote { border-color: #30363d; color: #8b949e; }
+  a { color: #58a6ff; }
+}
+
+:host ::ng-deep .body.dark app-diff-view {
+  .diff { background: #0d1117; border-top-color: #30363d; }
+  .drow:hover { background: rgba(255, 255, 255, 0.03); }
+  .gut { color: #6e7681; background: #161b22; border-right-color: #21262d; }
+  .gut.sep { border-left-color: #30363d; }
+  .gut.filler, .cell.filler { background: #161b22; }
+  .cell { color: #c9d1d9; }
+  .cell.ctx { color: #8b949e; }
+  .cell.add { background: rgba(46, 160, 67, 0.18); }
+  .cell.del { background: rgba(248, 81, 73, 0.18); }
+  .cell.add .wl { background: rgba(46, 160, 67, 0.45); }
+  .cell.del .wl { background: rgba(248, 81, 73, 0.45); }
+  .drow.meta { background: #161b22; }
+  .drow.hunk { background: #1c1633; }
+  .drow.hunk .meta-text { color: #a371f7; }
+  .diff-empty, .diff-binary { color: #8b949e; }
+}
+
+/* marked output is injected via [innerHTML]; with emulated encapsulation the
+   injected elements carry no _ngcontent attribute, so reach them via ng-deep. */
+.md { padding: 16px 22px; max-width: 860px; font-size: 13.5px; }
+:host ::ng-deep .md {
+  :is(h1, h2, h3) { margin: 18px 0 8px; }
+  h1 { font-size: 20px; } h2 { font-size: 16px; } h3 { font-size: 14px; }
+  :is(p, ul, ol) { margin: 8px 0; }
+  code { background: var(--app-surface-2); padding: 1px 4px; border-radius: 3px; font-size: 12px; font-family: ui-monospace, 'SF Mono', monospace; }
+  pre { background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; }
+  :is(th, td) { border: 1px solid var(--app-border); padding: 4px 10px; font-size: 12.5px; }
+  blockquote { border-left: 3px solid var(--app-border); margin: 8px 0; padding: 2px 14px; color: var(--app-fg-dim); }
+}
+
+/* skeleton loading rows (layout only) */
+.skel { display: flex; flex-direction: column; gap: 8px; }

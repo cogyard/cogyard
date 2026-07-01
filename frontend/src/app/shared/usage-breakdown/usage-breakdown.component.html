@@ -1,0 +1,45 @@
+@if (rows().length) {
+  <table class="u-table">
+    <thead>
+      <tr>
+        <th class="l">Model</th>
+        <th>Input <span class="mult">1×</span></th>
+        <th>Output <span class="mult">5×</span></th>
+        <th>Cache read <span class="mult">0.1×</span></th>
+        <th>Cache write <span class="mult">1.25–2×</span></th>
+        <th>Total tok</th>
+        <th>Cost</th>
+      </tr>
+    </thead>
+    <tbody>
+      @for (r of rows(); track r.model) {
+        <tr>
+          <td class="l mono">{{ r.model }}</td>
+          <td>{{ fmtTok(r.input) }}</td>
+          <td>{{ fmtTok(r.output) }}</td>
+          <td>{{ fmtTok(r.cacheRead) }}</td>
+          <td>{{ fmtTok(r.cacheWrite) }}</td>
+          <td>{{ fmtTok(r.total) }}</td>
+          <td class="strong">{{ fmtCost(r.cost) }}</td>
+        </tr>
+      }
+    </tbody>
+    @if (rows().length > 1) {
+      <tfoot>
+        <tr>
+          <td class="l">Total</td>
+          <td>{{ fmtTok(totals().input) }}</td>
+          <td>{{ fmtTok(totals().output) }}</td>
+          <td>{{ fmtTok(totals().cacheRead) }}</td>
+          <td>{{ fmtTok(totals().cacheWrite) }}</td>
+          <td>{{ fmtTok(totals().total) }}</td>
+          <td class="strong">{{ fmtCost(totals().cost) }}</td>
+        </tr>
+      </tfoot>
+    }
+  </table>
+} @else {
+  <div class="u-empty">No usage recorded yet.</div>
+}
+
+<p class="u-note">Multiplier = price vs. the base input rate. Cost = the four columns summed, each at its rate; an API-equivalent figure locked in when the work ran.</p>

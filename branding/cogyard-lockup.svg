@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 80">
+  <style>@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600&amp;display=swap');</style>
+  <g transform="translate(40,40)">
+    <g fill="none" stroke="#3F3D9E" stroke-width="6" stroke-linecap="butt" stroke-linejoin="miter">
+      <path d="M-11,-29 L-2,-20 L12,-34"/>
+      <path d="M-11,-29 L-2,-20 L12,-34" transform="rotate(60)"/>
+      <path d="M-11,-29 L-2,-20 L12,-34" transform="rotate(120)"/>
+      <path d="M-11,-29 L-2,-20 L12,-34" transform="rotate(180)"/>
+      <path d="M-11,-29 L-2,-20 L12,-34" transform="rotate(240)"/>
+      <path d="M-11,-29 L-2,-20 L12,-34" transform="rotate(300)"/>
+    </g>
+    <path d="M0,-11 Q2,-2 11,0 Q2,2 0,11 Q-2,2 -11,0 Q-2,-2 0,-11 Z" fill="#F59E0B"/>
+  </g>
+  <text x="84" y="52" fill="#3F3D9E" font-family="Poppins, sans-serif" font-size="34" font-weight="600" letter-spacing="-0.5">cogyard</text>
+</svg>

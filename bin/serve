@@ -1,0 +1,15 @@
+#!/bin/bash
+# bin/serve — boot script for the cogyard portal LaunchAgent (com.cogyard.serve).
+# Resolves node via nvm so the agent survives node upgrades (the nvm versioned
+# path changes; the alias does not).
+set -e
+export NVM_DIR="$HOME/.nvm"
+# shellcheck disable=SC1091
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+
+# Serves the built Angular SPA + /api on one origin (PORT=7437 in prod; Caddy
+# maps http://cogyard -> :7437). frontend/dist is gitignored, so build on boot
+# to guarantee a current SPA.
+REPO="$(cd "$(dirname "$0")/.." && pwd)"   # repo root = parent of bin/
+npm --prefix "$REPO" run build
+exec env PORT=7437 node "$REPO/server/index.mjs"

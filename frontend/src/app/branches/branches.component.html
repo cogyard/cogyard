@@ -1,0 +1,51 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (!all().length) {
+  <div class="empty">no branches</div>
+} @else {
+  <div class="summary"><strong>{{ all().length }}</strong> branches · <strong>{{ mergedCount() }}</strong> merged · <strong>{{ staleCount() }}</strong> stale</div>
+
+  @for (sec of sections(); track sec.key) {
+    <div class="section-head" [class.merged]="sec.key === 'merged'">{{ sec.label }} ({{ sec.count }})</div>
+    <p-table styleClass="bt" [value]="sec.list" dataKey="name" size="small">
+      <ng-template #header>
+        <tr>
+          <th class="col-branch" pSortableColumn="name">Branch <p-sortIcon field="name" /></th>
+          <th>Last commit</th>
+          <th class="ctr col-ahead" pSortableColumn="aheadMain">Ahead <p-sortIcon field="aheadMain" /></th>
+          <th class="ctr col-behind" pSortableColumn="behindMain">Behind <p-sortIcon field="behindMain" /></th>
+          <th class="ctr col-tracking">Tracking</th>
+          <th class="col-flags">Flags</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-b>
+        <tr class="bt-row" [class.stale]="isStale(b)" [class.is-main]="isMainRow(b)" [class.active]="isActive(b)">
+          <td class="bname">
+            @if (b.isHead) { <span class="head-dot" pTooltip="current branch">●</span> }
+            <span class="nm" [class.muted]="b.merged && !isMainRow(b)">{{ b.name }}</span>
+            @if (b.taskId) { <button class="btn-link mono" (click)="jumpTask.emit(b.taskId!)">#{{ b.taskId }}</button> }
+          </td>
+          <td class="commit-cell">
+            <button class="commit link" (click)="openCommit.emit(b.hash)">
+              <code class="mono dim">{{ b.hash }}</code>
+              <span class="subj">{{ b.subject }}</span>
+              <span class="rel dim">{{ b.relDate }}</span>
+            </button>
+          </td>
+          <td class="ctr">@if (b.aheadMain) { <span class="ahead">{{ b.aheadMain }}</span> } @else { <span class="dim">—</span> }</td>
+          <td class="ctr">@if (b.behindMain) { <span class="behind">{{ b.behindMain }}</span> } @else { <span class="dim">—</span> }</td>
+          <td class="ctr">
+            @if (b.isRemote) { <span class="dim">—</span> }
+            @else if (!b.onOrigin) { <p-tag styleClass="badge localonly" value="local" pTooltip="no origin/{{ b.name }} — never pushed" /> }
+            @else if (b.unpushed) { <p-tag styleClass="badge unpushed" value="unpushed" pTooltip="on origin but has local commits not pushed" /> }
+            @else { <p-tag styleClass="badge origin" value="origin" pTooltip="tracks {{ b.upstream || ('origin/' + b.name) }}" /> }
+          </td>
+          <td class="flags">
+            @if (b.hasWorktree) { <button class="btn-link mono" (click)="jumpWorktree.emit(b.name)">⎇ {{ b.worktreeName || 'worktree' }}</button> }
+            @if (isStale(b)) { <p-tag styleClass="badge stale" value="stale" pTooltip="last activity {{ b.relDate }}" /> }
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  }
+}

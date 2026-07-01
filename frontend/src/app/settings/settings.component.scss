@@ -1,0 +1,72 @@
+:host { display: block; }
+
+/* Layout only — colors/typography derive from the app's theme knobs (same set
+   the New/Add drawer uses). */
+.settings-wrap {
+  max-width: 760px; margin: 0 auto; padding: 24px 28px 48px;
+  display: flex; flex-direction: column; gap: 20px;
+}
+
+.settings-head { display: flex; flex-direction: column; gap: 4px; }
+.settings-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--app-page-fg-strong); }
+.settings-sub { margin: 0; font-size: 13px; color: var(--app-fg-dim); }
+.settings-sub code { font-size: 12px; }
+
+.settings-card {
+  display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid var(--app-border); border-radius: 10px;
+  background: var(--app-surface); padding: 18px 20px;
+}
+.card-title { margin: 0; font-size: 14px; font-weight: 700; color: var(--app-page-fg-strong); }
+.card-hint { margin: -8px 0 0; font-size: 12px; color: var(--app-fg-dim); }
+.card-hint code { font-size: 11.5px; }
+
+.set-field { display: flex; flex-direction: column; gap: 6px; }
+.set-label {
+  font-size: 12px; font-weight: 600; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.req { color: var(--app-accent); }
+.set-input { width: 100%; box-sizing: border-box; }
+.set-hint { font-size: 11.5px; color: var(--app-fg-dim); }
+.set-hint em { font-style: italic; opacity: 0.85; }
+
+.set-readonly { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ro-value {
+  font-size: 12.5px; padding: 4px 8px; border-radius: 6px;
+  background: var(--app-surface-2); color: var(--app-page-fg-strong);
+}
+.ro-source { font-size: 11px; color: var(--app-fg-dim); text-transform: uppercase; letter-spacing: 0.04em; }
+
+.set-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.set-btn {
+  border: 1px solid var(--app-border); border-radius: 6px; padding: 7px 14px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: var(--app-surface); color: var(--app-page-fg-strong);
+}
+.set-btn:hover:not(:disabled) { background: var(--app-surface-2); }
+.set-btn:disabled { opacity: 0.5; cursor: default; }
+/* Primary = the shared brand-indigo primary token (see styles.scss --app-primary).
+   Not the orange accent (reserved for accents), not stark black. */
+.set-btn.primary { background: var(--app-primary); color: var(--app-primary-contrast); border-color: var(--app-primary); }
+/* Keep the indigo fill on hover (must restate background — the base .set-btn:hover
+   sets a white surface, which on a primary button left white text unreadable). */
+.set-btn.primary:hover:not(:disabled) { background: var(--app-primary); border-color: var(--app-primary); filter: brightness(1.12); }
+.set-btn.icon { padding: 6px 9px; }
+/* Remove-row button — quiet/neutral, not an alarming red. */
+.set-btn.icon-remove { padding: 6px 9px; color: var(--app-fg-dim); border-color: var(--app-border); }
+.set-btn.icon-remove:hover:not(:disabled) { color: var(--app-page-fg-strong); background: var(--app-surface-2); }
+
+/* Open-in target editor — a compact grid that mirrors the row fields. */
+.targets { display: flex; flex-direction: column; gap: 6px; }
+.target-row {
+  display: grid; grid-template-columns: 0.8fr 1fr 0.9fr 1.6fr auto; gap: 8px; align-items: center;
+}
+.target-head {
+  font-size: 11px; font-weight: 600; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.target-head span { padding-left: 2px; }
+
+.cta-card { border-style: dashed; }
+.settings-loading { font-size: 13px; color: var(--app-fg-dim); }

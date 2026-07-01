@@ -1,0 +1,118 @@
+<div class="wt-pills-wrap">
+  <div class="wt-pills" #pillsRow [class.clamped]="!pillsExpanded() && pillsOverflow()"
+       [style.max-height.px]="(!pillsExpanded() && pillsOverflow()) ? twoRowPx() : null">
+    @for (w of pills(); track w.path) {
+      <button class="btn-pill wt-pill" [class.active]="w.name === selectedWt()" (click)="selectWt(w.name)" [pTooltip]="w.path">
+        @if (w.isMain) { <span class="main-dot">●</span> }
+        <span class="wt-name">{{ w.isMain ? (w.branch || w.name) : w.name }}</span>
+        <span class="wt-when">{{ relTime(w.lastActivity) }}</span>
+      </button>
+    }
+  </div>
+  @if (pillsOverflow()) {
+    <button class="btn-pill pills-more" (click)="pillsExpanded.set(!pillsExpanded())">
+      {{ pillsExpanded() ? 'less ▲' : '… more' }}
+    </button>
+  }
+</div>
+
+<div class="layout">
+  <aside class="tree">
+    <div class="tree-bar">
+      <span class="tree-toggles">
+        <button class="btn-toggle" [class.on]="changedOnly()" (click)="changedOnly.set(!changedOnly())" [disabled]="!changedCount()">
+          changed only @if (vsRef()) { <span class="cnt">{{ changedCount() }}</span> }
+        </button>
+        <button class="btn-toggle" [class.on]="hideNonGit()" (click)="toggleHideNonGit()" pTooltip="hide files git doesn't track (node_modules, dist, .env, new untracked files)">
+          hide non-git @if (nonGitCount()) { <span class="cnt">{{ nonGitCount() }}</span> }
+        </button>
+      </span>
+    </div>
+    @if (loadingTree()) {
+      <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+    } @else if (!treeNodes().length) {
+      <div class="empty">{{ changedOnly() ? 'No changes vs ' + (vsRef() || 'main') : 'No files.' }}</div>
+    } @else {
+      <div class="rows">
+        <p-tree styleClass="ftree" [value]="treeNodes()" selectionMode="single" [selection]="selectedNode()"
+                (onNodeSelect)="onNodeSelect($event.node)" (onNodeExpand)="onNodeExpanded($event.node)" (onNodeCollapse)="onNodeCollapsed($event.node)">
+          <!-- pTemplate="default", not #node: Tree's render path only consults
+               its pTemplate map; the #node ContentChild is never outletted. -->
+          <ng-template pTemplate="default" let-n>
+            <span class="trow" [class.gone]="n.data.onDisk === false" [pTooltip]="n.data.path">
+              <img class="ficon" [src]="icon(n.data)" alt="" />
+              @if (n.data.kind === 'dir') {
+                <span class="dirname" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+                @if (n.data.hasChanges) { <span class="chdot" pTooltip="contains changes">●</span> }
+              } @else {
+                <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+                @if (n.data.status) { <p-tag styleClass="st st-{{ n.data.status.toLowerCase() }}" [value]="n.data.status" /> }
+              }
+            </span>
+          </ng-template>
+        </p-tree>
+      </div>
+    }
+  </aside>
+
+  <section class="pane">
+    <div class="pane-bar">
+      @if (file()) {
+        <span class="fpath mono">{{ file() }}</span>
+        @if (selected()?.status) { <p-tag styleClass="st st-{{ selected()!.status!.toLowerCase() }}" [value]="selected()!.status!" /> }
+        @if (size()) { <span class="meta">{{ fmtSize(size()) }}</span> }
+        @if (truncated()) { <span class="meta warn">truncated at 1 MB</span> }
+      }
+      <span class="spacer"></span>
+      @if (file()) {
+        @if (isMd() && !binary()) {
+          <button class="btn-toggle" [class.on]="view() === 'rendered'" (click)="setView('rendered')">rendered</button>
+        }
+        <!-- raw is only worth a toggle when there's an alternative to switch
+             to (a rendered markdown view, or a diff); otherwise it's the sole
+             view and the button is noise. -->
+        @if (!isImage() && !binary() && (isMd() || selected()?.status)) {
+          <button class="btn-toggle" [class.on]="view() === 'raw'" (click)="setView('raw')">raw</button>
+        }
+        @if (selected()?.status) {
+          <button class="btn-toggle" [class.on]="view() === 'diff'" (click)="setView('diff')">diff vs {{ vsRef() || 'main' }}</button>
+        }
+        <app-file-actions [slug]="slug()" [path]="file()" [worktree]="selectedWtPath()"
+                          [worktreeName]="selectedWt()" />
+      }
+      <span class="mode-switch" pTooltip="dark/light viewing area">
+        <span class="ms-ico">{{ dark() ? '☾' : '☀' }}</span>
+        <p-toggleswitch [ngModel]="dark()" (ngModelChange)="toggleDark()" />
+      </span>
+    </div>
+    @if (!file()) {
+      <div class="body" [class.dark]="dark()"><div class="empty">Select a file.</div></div>
+    } @else {
+      <div class="body" [class.centered]="isImage()" [class.dark]="dark()">
+        @if (view() === 'diff') {
+          @if (patch() == null) { <div class="skel pad"><p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" /></div> }
+          @else { <app-diff-view [patch]="patch()!" /> }
+        } @else if (isImage()) {
+          <img [src]="imageUrl()" [alt]="file()" />
+        } @else if (loadingFile()) {
+          <div class="skel pad"><p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" /></div>
+        } @else if (missing()) {
+          <div class="empty">
+            Not on disk in this worktree{{ selected() && !selected()!.onDisk ? ' — deleted vs ' + (vsRef() || 'main') : '' }}.
+            @if (selected()?.status) { <div class="hint">Use the diff toggle to see what was removed.</div> }
+          </div>
+        } @else if (binary()) {
+          <div class="empty">Binary file ({{ fmtSize(size()) }}) — no text view.</div>
+        } @else if (content() != null) {
+          @if (isMd() && view() === 'rendered') {
+            <div class="md" [innerHTML]="rendered()"></div>
+          } @else if (rendered()) {
+            <pre class="code"><code class="hljs" [innerHTML]="rendered()"></code></pre>
+          } @else {
+            <pre class="code"><code>{{ content() }}</code></pre>
+          }
+        }
+      </div>
+    }
+  </section>
+</div>

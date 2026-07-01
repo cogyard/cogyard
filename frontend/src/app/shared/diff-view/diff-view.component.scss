@@ -1,0 +1,38 @@
+:host { display: block; }
+.diff-empty { color: var(--app-fg-muted); font-style: italic; font-size: 12px; padding: 8px; }
+.diff-binary { font-size: 11.5px; color: var(--app-fg-muted); font-style: italic; padding: 6px 8px; }
+
+.diff {
+  font-family: ui-monospace, 'SF Mono', monospace; font-size: 12px; line-height: 1.55;
+  background: var(--app-surface); border-top: 1px solid #e6e8ec;
+}
+.drow { display: flex; align-items: stretch; }
+.drow:hover { background: rgba(0, 0, 0, 0.02); }
+
+.gut {
+  flex: 0 0 46px; text-align: right; padding: 0 8px; color: #b0b6bf; background: var(--app-surface-2);
+  user-select: none; border-right: 1px solid var(--app-border-soft); white-space: nowrap;
+}
+.gut.sep { border-left: 1px solid #e6e8ec; }
+.gut.filler { background: var(--app-surface-2); }
+
+.cell {
+  flex: 1 1 0; min-width: 0; padding: 0 10px; white-space: pre-wrap; word-break: break-word; color: #24292f;
+}
+.cell.filler { background: #f7f8fa; }
+.cell.add { background: #e6ffed; }
+.cell.del { background: #ffeef0; }
+.cell.ctx { color: #57606a; }
+
+/* word-level highlight — the exact changed characters */
+.cell.add .wl { background: #abf2bc; border-radius: 2px; }
+.cell.del .wl { background: #f9c9cf; border-radius: 2px; }
+
+.mk { display: inline-block; width: 0.8em; color: var(--app-fg-muted); user-select: none; }
+
+.drow.meta, .drow.hunk { background: #f6f8fa; }
+.drow.hunk { background: #f3f0ff; }
+.meta-text {
+  flex: 1; padding: 1px 10px; color: var(--app-fg-muted); white-space: pre-wrap; word-break: break-all; font-size: 11.5px;
+}
+.drow.hunk .meta-text { color: #6f42c1; }

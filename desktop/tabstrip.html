@@ -1,0 +1,59 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>tabs</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; }
+  body {
+    /* indigo brand bar, matching the portal's rail/header */
+    background: #3f3d9e;
+    font: 12.5px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+    display: flex; align-items: stretch;
+    /* leave room for the inset macOS traffic lights on the left */
+    padding-left: 78px;
+    -webkit-app-region: drag;            /* the bar itself drags the window */
+  }
+  #tabs { display: flex; align-items: stretch; gap: 4px; padding: 6px 8px; overflow-x: auto; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    -webkit-app-region: no-drag;         /* tabs are clickable, not drag */
+    display: flex; align-items: center; gap: 8px;
+    max-width: 360px; padding: 0 10px; height: 28px; border-radius: 7px;
+    color: color-mix(in srgb, #fff 72%, transparent);
+    background: transparent; cursor: default; white-space: nowrap;
+  }
+  .tab:hover { background: color-mix(in srgb, #fff 12%, transparent); color: #fff; }
+  .tab.active { background: #fff; color: #1f2328; }
+  .tab .label { overflow: hidden; text-overflow: ellipsis; }
+  .tab .x {
+    width: 16px; height: 16px; line-height: 15px; text-align: center; border-radius: 4px;
+    font-size: 14px; opacity: 0; flex: 0 0 auto;
+  }
+  .tab:hover .x, .tab.active .x { opacity: 0.6; }
+  .tab .x:hover { opacity: 1; background: color-mix(in srgb, currentColor 18%, transparent); }
+</style>
+<div id="tabs"></div>
+<script>
+  const root = document.getElementById('tabs');
+  cogyardTabs.onTabs(({ tabs, activeId }) => {
+    root.replaceChildren(...tabs.map((t) => {
+      const el = document.createElement('div');
+      el.className = 'tab' + (t.id === activeId ? ' active' : '');
+      el.title = t.title;
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = t.title;
+      el.appendChild(label);
+      el.addEventListener('click', () => cogyardTabs.activate(t.id));
+      if (t.closable) {
+        const x = document.createElement('span');
+        x.className = 'x';
+        x.textContent = '×';
+        x.addEventListener('click', (e) => { e.stopPropagation(); cogyardTabs.close(t.id); });
+        el.appendChild(x);
+      }
+      return el;
+    }));
+  });
+</script>

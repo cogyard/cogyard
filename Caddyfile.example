@@ -1,0 +1,24 @@
+# Example Caddy config for putting a clean hostname in front of cogyard.
+# cogyard self-serves the SPA + /api on one port (default 7437); this proxy
+# only adds a nice hostname and (optionally) TLS. Caddy is NOT required to run
+# the app — see docs/DEPLOY.md.
+#
+# Copy to your real Caddyfile, adjust the hostname/port, then `caddy reload`.
+
+# --- Plain HTTP: nice hostname, no TLS. -------------------------------------
+# Simplest. NOTE: dock badges / notifications will NOT work here — the Badging
+# and Notification APIs require a secure context (HTTPS or localhost), and a
+# plain-HTTP custom hostname is not one. See docs/DEPLOY.md.
+cogyard {
+	reverse_proxy localhost:7437
+}
+
+# --- HTTPS with a locally-trusted cert (recommended for dock badges). -------
+# `tls internal` makes Caddy mint a cert from its own local CA and trust it on
+# this machine — one line, no public domain or ACME needed. Then add the dock
+# app from https://cogyard and the badge works.
+#
+# cogyard {
+# 	reverse_proxy localhost:7437
+# 	tls internal
+# }

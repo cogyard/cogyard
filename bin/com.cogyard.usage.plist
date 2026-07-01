@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Daily usage-ledger collection (task 026). Harvests new Claude Code
+       transcript content into ~/.cogyard/usage/usage.jsonl. Incremental via
+       cursors — a run with nothing new is a no-op. Daily timer chosen over a
+       SessionEnd hook because Claude Desktop sessions are never exited; they
+       just linger. RunAtLoad adds a catch-up pass at login. If the Mac is
+       asleep at noon, launchd fires the job on next wake. -->
+  <key>Label</key>
+  <string>com.cogyard.usage</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-c</string>
+    <string>export NVM_DIR="$HOME/.nvm"; [ -s "$NVM_DIR/nvm.sh" ] &amp;&amp; . "$NVM_DIR/nvm.sh"; node "$HOME/PATH/TO/cogyard/cli/usage.mjs" collect</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>12</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/YOU/.cogyard/logs/usage-collect.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOU/.cogyard/logs/usage-collect.log</string>
+</dict>
+</plist>

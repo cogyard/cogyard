@@ -1,0 +1,14 @@
+{
+  "project_name": "cogyard",
+  "kind": "single",
+  "dev_script": "npm run dev",
+  "launch_name": "dev",
+  "port_vars": {
+    "PORT": "backend",
+    "FRONTEND_PORT": "frontend"
+  },
+  "preview_port_var": "FRONTEND_PORT",
+  "env_files": [
+    { "source": ".env.worktree.defaults", "target": ".env.worktree", "strategy": "merge" }
+  ]
+}

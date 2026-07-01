@@ -1,0 +1,15 @@
+{
+  "name": "cogyard",
+  "owner": { "name": "Ben Dehghan" },
+  "metadata": {
+    "description": "cogyard is its own marketplace: the Claude Code driver for the task system ships in-repo as the `cogyard` plugin (task 038). The plugin is self-contained (skills/hooks call the `cogyard` CLI on PATH), so it installs cleanly as a local OR remote marketplace. Install the engine separately: `npm i -g @cogyard/cli` (or `npm link` in a clone).",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "cogyard",
+      "source": "./integrations/claude",
+      "description": "Drive cogyard from Claude Code: pickup-task / write-task / handoff / commit / debt-cleanup skills, the /cogyard portal command, and the worktree-wiring + frontmatter-validator + task-skill hooks."
+    }
+  ]
+}

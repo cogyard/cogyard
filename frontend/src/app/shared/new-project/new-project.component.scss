@@ -1,0 +1,45 @@
+:host { display: block; }
+
+/* Trigger row — sits at the bottom of the sidebar's project list. A faint rule
+   above separates it from the project rows; the two buttons share the row. */
+.np-triggers {
+  display: flex; gap: 4px; margin-top: 6px; padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
+}
+/* .sidebar-item (global) gives the rail look; we only set the shared-row layout. */
+.np-action { flex: 1 1 0; justify-content: center; font-weight: 600; }
+
+/* Drawer form — on the light drawer surface, so colors derive from the page knobs. */
+.np-form { display: flex; flex-direction: column; gap: 16px; padding: 4px 2px; }
+.np-field { display: flex; flex-direction: column; gap: 6px; }
+.np-label { font-size: 12px; font-weight: 600; color: var(--app-fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.np-input { width: 100%; box-sizing: border-box; }
+/* New-mode path composer: a fixed projects-root prefix + a name input, so the
+   user only types the project name (the base is the configured projects root). */
+.np-compose {
+  display: flex; align-items: stretch;
+  border: 1px solid var(--app-border); border-radius: 6px; overflow: hidden;
+}
+.np-prefix {
+  display: inline-flex; align-items: center; padding: 0 8px;
+  background: var(--app-surface-2); color: var(--app-fg-muted);
+  font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; white-space: nowrap;
+  border-right: 1px solid var(--app-border);
+  max-width: 55%; overflow: hidden; text-overflow: ellipsis;
+}
+.np-compose .np-name { flex: 1 1 auto; border: none; border-radius: 0; }
+.np-hint code { font-size: 11px; }
+.np-hint { font-size: 11.5px; color: var(--app-fg-dim); }
+
+.np-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.np-btn {
+  border: 1px solid var(--app-border); border-radius: 6px; padding: 7px 16px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: var(--app-surface); color: var(--app-page-fg-strong);
+}
+.np-btn:disabled { opacity: 0.5; cursor: default; }
+.np-cancel:hover:not(:disabled) { background: var(--app-surface-2); }
+/* Primary submit — the shared brand-indigo primary (styles.scss --app-primary),
+   matching the Settings Save buttons. */
+.np-submit { background: var(--app-primary); color: var(--app-primary-contrast); border-color: var(--app-primary); }
+.np-submit:hover:not(:disabled) { filter: brightness(1.12); }

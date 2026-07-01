@@ -1,0 +1,26 @@
+:host { display: block; font-size: 12.5px; }
+
+.u-table {
+  width: 100%; border-collapse: collapse; table-layout: auto;
+}
+/* mirrors the global p-table header recipe (styles.scss) */
+.u-table th {
+  padding: 4px 10px; background: var(--app-surface-2); font-size: 11px; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+  border-bottom: 1px solid var(--app-border); text-align: right; white-space: nowrap;
+}
+.u-table td {
+  padding: 4px 10px; border-bottom: 1px solid var(--app-border-soft);
+  text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.u-table th.l, .u-table td.l { text-align: left; }
+.u-table th .mult { text-transform: none; letter-spacing: 0; font-weight: 600; color: var(--app-fg-dim); margin-left: 2px; }
+.u-table td.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
+.u-table td.strong { font-weight: 600; }
+.u-table tfoot td {
+  border-top: 1px solid var(--app-border); border-bottom: none;
+  font-weight: 600; background: var(--app-accent-tint1);
+}
+.u-empty { color: var(--app-fg-muted); font-style: italic; padding: 4px 0; }
+
+.u-note { margin: 6px 0 0; font-size: 11px; color: var(--app-fg-muted); font-style: italic; }

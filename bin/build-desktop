@@ -1,0 +1,45 @@
+#!/bin/bash
+# bin/build-desktop — build the cogyard desktop app (.dmg) and open it to install.
+#
+# The app is a THIN SHELL over the always-on portal server (:7437): it starts no
+# server and bundles no portal snapshot — it just opens a native window onto
+# localhost:7437. So you install ONCE; your code changes show up the same way
+# they do in the browser portal (reload the LaunchAgent, per CLAUDE.md → Serving),
+# with no app rebuild or reinstall.
+#
+#   npm run desktop          build the .dmg and open it to install
+#   npm run desktop:build    build the .dmg only, print its path (no open)
+#   npm run desktop:dev      run the app in dev against :7437 (no packaging)
+set -euo pipefail
+
+OPEN=1
+[ "${1:-}" = "--no-open" ] && OPEN=0
+
+REPO="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$REPO"
+
+echo "▸ Building the cogyard desktop app — takes a minute or two…"
+# desktop is decoupled from the root workspaces (an opt-in extra) — install its
+# own deps on demand, then build. A committed desktop/package-lock.json pins the
+# whole toolchain (electron-builder 25.x — newer 26.14+ require()s an ESM-only
+# @noble/hashes, which breaks a CJS build), so `npm ci` reproduces the known-good
+# tree instead of drifting to whatever's latest.
+[ -d "$REPO/desktop/node_modules" ] || npm --prefix "$REPO/desktop" ci
+# Personal build is unsigned (ad-hoc): disable signing-identity auto-discovery so
+# the build is deterministic and never blocks on a Developer-ID cert.
+CSC_IDENTITY_AUTO_DISCOVERY=false npm --prefix "$REPO/desktop" run dist
+
+DMG="$(ls -t "$REPO"/desktop/release/*.dmg 2>/dev/null | head -1)"
+[ -n "$DMG" ] || { echo "✗ build finished but no .dmg in desktop/release/" >&2; exit 1; }
+
+cat <<EOF
+
+✅ Built: $DMG
+
+Install: open it, drag cogyard → Applications. First launch only: right-click the
+app → Open (it's unsigned, so Gatekeeper asks once). It's a thin shell over the
+always-on :7437 portal — your latest code shows up the moment the LaunchAgent
+serves it, no app rebuild or reinstall.
+EOF
+
+if [ "$OPEN" = 1 ]; then open "$DMG"; fi

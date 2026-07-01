@@ -1,0 +1,64 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (!worktrees().length) {
+  <div class="empty">No worktrees for this project.</div>
+} @else {
+  <div class="summary">
+    <strong>{{ worktrees().length }}</strong> worktrees · <strong>{{ staleCount() }}</strong> flagged stale (candidates for pruning)
+    @if (projectCost(); as pc) { · <strong>{{ pc }}</strong> total project cost (all worktrees, incl. deleted) }
+  </div>
+
+  @for (sec of sections(); track sec.key) {
+    <div class="section-head" [class.stale]="sec.key === 'stale'">{{ sec.label }} ({{ sec.count }})</div>
+    @for (g of sec.groups; track g.clone) {
+    @if (g.clone) { <div class="clone-head">{{ g.clone }} ({{ g.list.length }})</div> }
+    <p-table styleClass="wt" [value]="g.list" dataKey="path" size="small">
+      <ng-template #header>
+        <tr>
+          <th class="col-name" pSortableColumn="name">Worktree <p-sortIcon field="name" /></th>
+          <th class="col-branch">Branch</th>
+          <th class="col-head">Head</th>
+          <th class="ctr col-n" pSortableColumn="ahead">Ahead <p-sortIcon field="ahead" /></th>
+          <th class="ctr col-n" pSortableColumn="behind">Behind <p-sortIcon field="behind" /></th>
+          <th class="ctr col-n2">Dirty</th>
+          <th class="ctr col-cost">Cost</th>
+          <th class="ctr col-n2">Backend</th>
+          <th class="ctr col-n2">Frontend</th>
+          <th>Flags</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-w>
+        <tr class="wt-row" [class.stale]="w.stale">
+          <td class="name">
+            <button class="celllink" (click)="jumpFiles.emit({ wt: w.isMain ? '' : w.name, file: null })">{{ w.name }}</button>
+          </td>
+          <td class="mono dim">
+            @if (w.branch) { <button class="celllink" (click)="jumpBranch.emit(w.branch)">{{ w.branch }}</button> } @else { — }
+          </td>
+          <td class="mono dim">
+            @if (w.head) { <button class="headlink" (click)="openCommit.emit(w.head)">{{ w.head }}</button> } @else { — }
+          </td>
+          <td class="ctr">@if (!w.isMain && w.ahead) { <span class="ahead">{{ w.ahead }}</span> } @else { — }</td>
+          <td class="ctr">@if (!w.isMain && w.behind) { <span class="behind">{{ w.behind }}</span> } @else { — }</td>
+          <td class="ctr">
+            @if (w.dirty == null) { — } @else if (w.dirty) { <span class="dirty">● {{ w.dirtyCount }}</span> } @else { <span class="dim">clean</span> }
+          </td>
+          <td class="cost">{{ cost(w.name) }}</td>
+          <td class="ctr mono">
+            @if (w.ports?.backend) { <a class="portlink" href="http://localhost:{{ w.ports.backend }}" target="_blank" rel="noopener">{{ w.ports.backend }}</a> } @else { — }
+          </td>
+          <td class="ctr mono">
+            @if (w.ports?.frontend) { <a class="portlink" href="http://localhost:{{ w.ports.frontend }}" target="_blank" rel="noopener">{{ w.ports.frontend }}</a> } @else { — }
+          </td>
+          <td class="flags">
+            @if (w.isMain) { <p-tag styleClass="badge main" value="main" /> }
+            @if (w.locked) { <p-tag styleClass="badge locked" value="locked" /> }
+            @if (w.stale) { <p-tag styleClass="badge stale" value="stale" [pTooltip]="w.staleReasons?.join('; ')" /> }
+            @if (w.claimedByTaskId != null) { <button class="btn-link mono" (click)="jumpTask.emit('' + w.claimedByTaskId)">#{{ w.claimedByTaskId }}</button> }
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+    }
+  }
+}

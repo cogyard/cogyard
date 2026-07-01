@@ -1,0 +1,36 @@
+{
+  "name": "cogyard",
+  "version": "0.62.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "description": "cogyard — the yard where your agents work. Markdown task files, a portal, and collision-free claims for running AI agents across all your projects. core/ data layer, cli/ (skills + humans), read-only server/ + Angular portal, worktree hooks. AI-agnostic.",
+  "bin": {
+    "cogyard": "cli/cogyard.mjs"
+  },
+  "workspaces": [
+    "frontend"
+  ],
+  "scripts": {
+    "api": "node server/index.mjs",
+    "dev": "bash scripts/dev.sh",
+    "test": "node --test",
+    "test:clean-machine": "bash test/clean-machine.sh",
+    "frontend": "npm start -w frontend",
+    "build": "npm run build -w frontend",
+    "start": "node cli/cogyard.mjs serve",
+    "serve": "node cli/cogyard.mjs serve",
+    "desktop": "bin/build-desktop",
+    "desktop:build": "bin/build-desktop --no-open",
+    "desktop:dev": "npm --prefix desktop install && npm --prefix desktop run dev"
+  },
+  "overrides": {
+    "rxjs": "7.8.2"
+  },
+  "dependencies": {
+    "pino": "^10.3.1"
+  }
+}

@@ -1,0 +1,12 @@
+.live {
+  display: inline-flex; align-items: center; gap: 5px; cursor: default;
+  color: var(--text-subtle); font-size: 12px; white-space: nowrap;
+  font-family: ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums;
+}
+.live-pie {
+  width: 22px; height: 22px; border-radius: 50%; flex: 0 0 auto;
+  border: 1px solid var(--app-accent); box-sizing: border-box;
+  background: conic-gradient(var(--app-accent) var(--pie-p), transparent 0);
+}
+/* The fill animation runs via the Web Animations API (see component) — the
+   registered @property --pie-p it interpolates lives in styles.scss. */

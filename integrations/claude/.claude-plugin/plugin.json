@@ -1,0 +1,6 @@
+{
+  "name": "cogyard",
+  "description": "Drive cogyard from Claude Code — the markdown-task + claims + worktree-ports task system. Skills (pickup-task, write-task, handoff, commit, …), the /cogyard portal command, and the SessionStart worktree-wiring + frontmatter-validator + task-skill hooks.",
+  "author": { "name": "Ben Dehghan" },
+  "homepage": "http://cogyard"
+}

@@ -1,0 +1,121 @@
+<div class="settings-wrap">
+  @if (wizard()) {
+    <header class="settings-head">
+      <h2 class="settings-title">Welcome to cogyard</h2>
+      <p class="settings-sub">Set your defaults below, then add your first project. You can change any of this later under Settings.</p>
+    </header>
+  } @else {
+    <header class="settings-head">
+      <h2 class="settings-title">Settings</h2>
+      <p class="settings-sub">Every setting is pre-filled with its resolved value. Saved to <code>~/.cogyard/config.json</code>.</p>
+    </header>
+  }
+
+  @if (config(); as c) {
+    <!-- Creation defaults + projects root -->
+    <section class="settings-card">
+      <h3 class="card-title">Project creation defaults</h3>
+      <p class="card-hint">Prefilled into the New / Add-existing drawer.</p>
+
+      <label class="set-field">
+        <span class="set-label">Default project kind</span>
+        <p-select size="small" [options]="kindOptions" optionLabel="label" optionValue="value"
+                  [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
+      </label>
+
+      <label class="set-field">
+        <span class="set-label">Default task store</span>
+        <p-selectbutton size="small" [options]="storeOptions" optionLabel="label" optionValue="value"
+                        [allowEmpty]="false" [ngModel]="store()" (ngModelChange)="store.set($event)" name="store" />
+        <span class="set-hint">shared = portal-visible store at &lt;projects root&gt;/_tasks/&lt;slug&gt;; normal = _tasks/ in-repo.</span>
+      </label>
+
+      <label class="set-field">
+        <span class="set-label">Projects root <span class="req">*</span></span>
+        <input pInputText pSize="small" class="set-input" name="projectsRoot"
+               [ngModel]="projectsRoot()" (ngModelChange)="projectsRoot.set($event)" placeholder="/Users/you/gitroot" />
+        <span class="set-hint">
+          Parent of your clones + shared task stores.
+          Source: <strong>{{ c.projectsRootSource }}</strong>.
+          @if (c.projectsRootSource === 'env') { <em>(COGYARD_PROJECTS_ROOT is set — it overrides this until unset.)</em> }
+          @else { <em>(takes effect on the next server restart.)</em> }
+        </span>
+      </label>
+
+      <div class="set-actions">
+        <button type="button" class="set-btn primary" [disabled]="!canSaveConfig()" (click)="saveConfig()">
+          {{ savingConfig() ? 'Saving…' : 'Save defaults' }}
+        </button>
+      </div>
+    </section>
+
+    <!-- Open-in targets -->
+    <section class="settings-card">
+      <h3 class="card-title">Open-in targets</h3>
+      <p class="card-hint">The apps in the file "Open in" menu. Tokens: <code>{{ '{file}' }}</code>, <code>{{ '{line}' }}</code>; exec <code>{{ '{default-browser}' }}</code> follows your system default browser.</p>
+
+      <div class="targets">
+        <div class="target-row target-head">
+          <span>id</span><span>label</span><span>exec</span><span>args</span><span></span>
+        </div>
+        @for (t of targets(); track $index) {
+          <div class="target-row">
+            <input pInputText pSize="small" [ngModel]="t.id" (ngModelChange)="setTargetField($index, 'id', $event)" [name]="'tid' + $index" placeholder="vscode" />
+            <input pInputText pSize="small" [ngModel]="t.label" (ngModelChange)="setTargetField($index, 'label', $event)" [name]="'tlabel' + $index" placeholder="VS Code" />
+            <input pInputText pSize="small" [ngModel]="t.exec" (ngModelChange)="setTargetField($index, 'exec', $event)" [name]="'texec' + $index" placeholder="code" />
+            <input pInputText pSize="small" [ngModel]="argsText(t)" (ngModelChange)="setTargetArgs($index, $event)" [name]="'targs' + $index" placeholder="-g {file}:{line}" />
+            <button type="button" class="set-btn icon-remove" title="Remove" (click)="removeTarget($index)">✕</button>
+          </div>
+        }
+      </div>
+
+      <div class="set-actions">
+        <button type="button" class="set-btn" (click)="addTarget()">+ Add target</button>
+        <button type="button" class="set-btn primary" [disabled]="savingTargets()" (click)="saveTargets()">
+          {{ savingTargets() ? 'Saving…' : 'Save targets' }}
+        </button>
+      </div>
+    </section>
+
+    <!-- Read-only: home + integration -->
+    <section class="settings-card">
+      <h3 class="card-title">Machine</h3>
+
+      <label class="set-field">
+        <span class="set-label">COGYARD_HOME</span>
+        <div class="set-readonly">
+          <code class="ro-value">{{ c.home }}</code>
+          <span class="ro-source">{{ c.homeFromEnv ? 'from env' : 'default' }}</span>
+          <button type="button" class="set-btn" (click)="copyHome()">{{ copied() ? 'Copied' : 'Copy command' }}</button>
+        </div>
+        <span class="set-hint">Read-only — it's where config.json itself lives. To move it, run the copied command before starting cogyard.</span>
+      </label>
+
+      <label class="set-field">
+        <span class="set-label">Integration (agent)</span>
+        @if (c.integration.available.length > 1) {
+          <!-- task 061 seam: multiple adapters available → render a selector here. -->
+          <p-select size="small" [options]="c.integration.available" [ngModel]="c.integration.active" name="integration" appendTo="body" [disabled]="true" />
+        } @else {
+          <div class="set-readonly">
+            <code class="ro-value">{{ c.integration.active }}</code>
+            <span class="ro-source">auto-detected</span>
+          </div>
+        }
+        <span class="set-hint">cogyard v{{ c.version }} @if (c.commit) { ({{ c.commit }}) }</span>
+      </label>
+    </section>
+
+    @if (wizard()) {
+      <section class="settings-card cta-card">
+        <h3 class="card-title">Add your first project</h3>
+        <p class="card-hint">Create a new project or adopt an existing folder — the drawer prefills with the defaults above.</p>
+        <div class="set-actions">
+          <button type="button" class="set-btn primary" (click)="addProject.emit()">Add a project →</button>
+        </div>
+      </section>
+    }
+  } @else {
+    <p class="settings-loading">Loading config…</p>
+  }
+</div>

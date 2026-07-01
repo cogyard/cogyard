@@ -1,0 +1,98 @@
+/* Mirrors the Worktrees tab conventions (summary line, grid table, .badge chips,
+   muted mono text, ctr columns, subtle stale row) so the tabs read the same. */
+.empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
+.summary { font-size: 12px; color: var(--app-page-fg); margin-bottom: 16px; }
+.summary strong { color: var(--app-page-fg-strong); }
+.section-head {
+  font-size: 14px; font-weight: 700; color: var(--app-page-fg-strong);
+  margin: 24px 0 10px;
+}
+.section-head:first-of-type { margin-top: 4px; }
+.section-head.merged { color: var(--app-fg-dim); }
+
+/* table chrome (box/table/th) is shared — see styles.scss */
+:host ::ng-deep .bt .p-datatable-table-container { margin-bottom: 8px; }
+.col-branch { width: 24%; }
+.col-ahead, .col-behind { width: 88px; }
+.col-tracking { width: 96px; }
+.col-flags { width: 18%; }
+.bt-row > td {
+  padding: 5px 10px; border-bottom: 1px solid var(--app-border); background: var(--app-surface);
+  height: 28px; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+/* no display:flex on td — consecutive non-table-cell tds merge into one
+   anonymous cell and shift every column after them */
+:is(.bname, .flags) > * + * { margin-left: 7px; }
+:is(.bname, .flags) > * { vertical-align: middle; }
+.bt-row:last-child > td { border-bottom: none; }
+/* no row-wide hover wash: the row is not clickable — only the commit cell and links are */
+.bt-row.stale > td { background: #fffafa; }
+/* Box the main row by bordering its cells. */
+.bt-row.is-main > td { background: var(--app-accent-tint1); border-top: 1.5px solid var(--app-accent); border-bottom: 1.5px solid var(--app-accent); }
+.bt-row.is-main > td:first-child { border-left: 1.5px solid var(--app-accent); }
+.bt-row.is-main > td:last-child { border-right: 1.5px solid var(--app-accent); }
+/* Arrived-from-Worktrees highlight (mirrors graph's .dag-row.active). */
+.bt-row.active > td { background: var(--app-accent-tint2); }
+.bt-row.active > td:first-child { box-shadow: inset 3px 0 0 var(--app-accent); }
+
+.bname { font-family: ui-monospace, 'SF Mono', monospace; }
+.head-dot { flex: 0 0 auto; color: #16a34a; font-size: 10px; }
+/* Unmerged branches bold (still live); merged ones lighter + muted. */
+.nm { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; }
+.nm.muted { font-weight: 500; color: var(--app-fg-dim); }
+
+/* The commit cell is THE link to the Graph — native button, zero theme dynamics. */
+button.commit {
+  display: flex; align-items: center; gap: 7px; width: 100%; overflow: hidden; cursor: pointer;
+  font: inherit; color: inherit; border: none; background: none; padding: 0; text-align: left;
+}
+button.commit.link:hover .subj { text-decoration: underline; color: var(--app-accent); }
+/* wash scoped to the clickable cell; the hash carries a resting underline */
+td.commit-cell:hover { background: var(--app-hover); }
+button.commit code {
+  background: var(--app-surface-2); padding: 1px 6px; border-radius: 3px; flex: 0 0 auto;
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+button.commit.link:hover code { color: var(--app-accent); text-decoration-color: currentColor; }
+button.commit .subj { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--app-fg); }
+button.commit .rel { flex: 0 0 auto; font-size: 11.5px; }
+
+.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
+.dim { color: var(--app-fg-dim); }
+/* mono number styling is for DATA cells only — header cells stay uniform sans */
+td.ctr { font-family: ui-monospace, monospace; font-size: 11.5px; }
+td.ctr, th.ctr { text-align: center; }
+/* counts are routine data — neutral; STALE/dirty carry the alert colors */
+.ahead, .behind { color: var(--app-fg-dim); font-weight: 600; }
+
+/* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
+   .p-tag.badge outranks the Aura .p-tag defaults. (The ⎇ chip is a p-button
+   with its own button.badge.wt rules above.) */
+:host ::ng-deep .p-tag.badge {
+  font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; text-transform: uppercase;
+  white-space: nowrap; border: none;
+}
+:host ::ng-deep .p-tag.badge.origin { background: #dcfce7; color: #166534; }
+:host ::ng-deep .p-tag.badge.unpushed { background: #fef3c7; color: #92400e; }
+:host ::ng-deep .p-tag.badge.localonly { background: var(--app-surface-2); color: var(--app-fg-dim); }
+:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
+/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
+button.task-link {
+  font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
+  padding: 0 2px; background: none; border: none; cursor: pointer; color: var(--app-accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+button.task-link:hover { text-decoration-color: currentColor; }
+/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
+button.wt-link {
+  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
+  padding: 0 2px; white-space: nowrap; background: none; border: none; cursor: pointer; color: var(--app-accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+}
+button.wt-link:hover { text-decoration-color: currentColor; }
+
+/* skeleton loading rows (layout only) */
+.skel { display: flex; flex-direction: column; gap: 8px; }

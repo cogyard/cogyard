@@ -1,0 +1,36 @@
+@if (binary()) {
+  <div class="diff-binary">binary file — no text diff</div>
+} @else if (empty()) {
+  <div class="diff-empty">no diff</div>
+} @else {
+  @if (mode() === 'split') {
+    <div class="diff split">
+      @for (r of splitRows(); track $index) {
+        @if (r.kind === 'hunk') {
+          <div class="drow hunk"><div class="meta-text">{{ r.text }}</div></div>
+        } @else {
+          <div class="drow">
+            <div class="gut" [class.filler]="!r.left">{{ r.left?.no }}</div>
+            <div class="cell {{ r.left?.cls }}" [class.filler]="!r.left">@if (r.left) {@if (r.left.segs) {@for (s of r.left.segs; track $index) {<span [class.wl]="s.ch">{{ s.t }}</span>}} @else {{{ r.left.content }}}}</div>
+            <div class="gut sep" [class.filler]="!r.right">{{ r.right?.no }}</div>
+            <div class="cell {{ r.right?.cls }}" [class.filler]="!r.right">@if (r.right) {@if (r.right.segs) {@for (s of r.right.segs; track $index) {<span [class.wl]="s.ch">{{ s.t }}</span>}} @else {{{ r.right.content }}}}</div>
+          </div>
+        }
+      }
+    </div>
+  } @else {
+    <div class="diff unified">
+      @for (r of uniRows(); track $index) {
+        @if (r.kind === 'line') {
+          <div class="drow">
+            <div class="gut">{{ r.oldNo }}</div>
+            <div class="gut sep">{{ r.newNo }}</div>
+            <div class="cell {{ r.cls }}"><span class="mk">{{ r.marker }}</span>@if (r.segs) {@for (s of r.segs; track $index) {<span [class.wl]="s.ch">{{ s.t }}</span>}} @else {{{ r.content }}}</div>
+          </div>
+        } @else {
+          <div class="drow {{ r.cls }}"><div class="meta-text">{{ r.content }}</div></div>
+        }
+      }
+    </div>
+  }
+}

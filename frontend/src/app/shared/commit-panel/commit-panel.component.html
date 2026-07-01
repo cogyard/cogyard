@@ -1,0 +1,83 @@
+<!-- Right sidebar: commit message + files, OR working-tree change groups.
+     Non-modal drawer; geometry (below the header, above the dock) comes from
+     the .cdetail-drawer overrides in SCSS. Esc handling stays on this component. -->
+<p-drawer styleClass="cdetail-drawer" position="right" [visible]="!!hash()" [modal]="false" [closable]="false"
+          [closeOnEscape]="false" [dismissible]="false" [blockScroll]="false">
+  <aside class="cdetail">
+    @if (loading()) {
+      <div class="cd-head"><p-skeleton width="140px" height="14px" /><span class="spacer"></span><button class="close" (click)="close.emit()">✕</button></div>
+    } @else if (isWorktree()) {
+      @if (status(); as st) {
+        <div class="cd-head">
+          <span class="hash">Working Tree</span>
+          <span class="meta">{{ wtName() }} · {{ st.branch }}</span>
+          <span class="spacer"></span>
+          <button class="close" (click)="close.emit()">✕</button>
+        </div>
+        @if (st.clean) {
+          <div class="cd-files"><div class="muted pad">nothing uncommitted — working tree clean</div></div>
+        } @else {
+          <div class="cd-files">
+            @for (g of groups(); track g.kind) {
+              <div class="grp">{{ g.title }} ({{ g.list.length }})</div>
+              @for (f of g.list; track f.path) {
+                <button class="frow" [class.sel]="isSelected(f.path, g.kind)" (click)="selectFile(f.path, g.kind)">
+                  <span class="fstat" [class]="statusClass(g.kind === 'untracked' ? 'A' : f.status)">{{ g.kind === 'untracked' ? '?' : f.status }}</span>
+                  <span class="fpath"><span class="fdir">@for (seg of dirParts(f.path); track $index) {<span class="fseg">{{ seg }}</span><wbr>}</span><span class="fname">{{ baseOf(f.path) }}</span></span>
+                </button>
+              }
+            }
+          </div>
+        }
+      }
+    } @else if (detail(); as d) {
+      <div class="cd-head">
+        <span class="hash">{{ (d.hash || '').slice(0, 9) }}</span>
+        <span class="meta">{{ d.author }} · {{ d.date }}</span>
+        <span class="spacer"></span>
+        <button class="close" (click)="close.emit()">✕</button>
+      </div>
+      <div class="cd-msg">
+        <div class="subj">{{ d.subject }}</div>
+        @if (d.body && d.body.trim()) { <pre class="msg">{{ d.body.trim() }}</pre> }
+      </div>
+      <div class="fhead">{{ d.files.length }} file{{ d.files.length === 1 ? '' : 's' }} changed</div>
+      <div class="cd-files">
+        @for (f of d.files; track f.path) {
+          <button class="frow" [class.sel]="isSelected(f.path)" (click)="selectFile(f.path)">
+            <span class="fstat" [class]="statusClass(f.status)">{{ f.status }}</span>
+            <span class="fpath"><span class="fdir">@for (seg of dirParts(f.path); track $index) {<span class="fseg">{{ seg }}</span><wbr>}</span><span class="fname">{{ baseOf(f.path) }}</span></span>
+          </button>
+        }
+        @if (!d.files.length) { <div class="muted">no files (merge commit or empty diff)</div> }
+      </div>
+    }
+  </aside>
+</p-drawer>
+
+<!-- Bottom dock: the diff, full width across the bottom -->
+<p-drawer styleClass="cdock-drawer" position="bottom" [visible]="!!hash()" [modal]="false" [closable]="false"
+          [closeOnEscape]="false" [dismissible]="false" [blockScroll]="false">
+  <section class="cdock">
+    <div class="dock-head">
+      @if (selected(); as sel) {
+        <span class="dock-file"><span class="fdir">{{ dirOf(sel.path) }}</span><span class="fname">{{ baseOf(sel.path) }}</span></span>
+        @if (sel.kind) { <p-tag styleClass="kindtag" [value]="sel.kind" /> }
+        <app-file-actions [slug]="slug()" [path]="sel.path" [worktree]="wtPath()"
+                          [worktreeName]="wtName()" [onGraph]="true" [discardKind]="sel.kind ?? null"
+                          (changed)="onActionChanged()" />
+      }
+      <span class="spacer"></span>
+      <p-selectbutton size="small" [options]="modeOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="mode()" (ngModelChange)="setMode($event)" />
+      <p-togglebutton size="small" onLabel="Ignore WS" offLabel="Ignore WS" [ngModel]="ignoreWs()" (ngModelChange)="toggleWs()" />
+    </div>
+    <div class="dock-diff">
+      @if (selected()) {
+        @if (isDiffLoading()) { <div class="skel pad"><p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" /></div> }
+        @else { <app-diff-view [patch]="patch()" [mode]="mode()" /> }
+      } @else {
+        <div class="muted pad">select a file to view its diff</div>
+      }
+    </div>
+  </section>
+</p-drawer>

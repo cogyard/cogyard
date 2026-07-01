@@ -1,0 +1,42 @@
+{
+  "name": "@cogyard/frontend",
+  "version": "0.0.0",
+  "scripts": {
+    "ng": "ng",
+    "prestart": "node ../scripts/generate-version.mjs && node scripts/copy-material-icons.mjs",
+    "start": "ng serve --proxy-config proxy.conf.mjs",
+    "prebuild": "node ../scripts/generate-version.mjs && node scripts/copy-material-icons.mjs",
+    "build": "ng build",
+    "postbuild": "node -e \"require('node:fs').writeFileSync('dist/.build-complete', String(Date.now()))\"",
+    "watch": "ng build --watch --configuration development",
+    "test": "ng test"
+  },
+  "private": true,
+  "license": "MIT",
+  "packageManager": "npm@11.9.0",
+  "dependencies": {
+    "@angular/animations": "^21.2.16",
+    "@angular/common": "^21.2.0",
+    "@angular/compiler": "^21.2.0",
+    "@angular/core": "^21.2.0",
+    "@angular/forms": "^21.2.0",
+    "@angular/platform-browser": "^21.2.0",
+    "@angular/router": "^21.2.0",
+    "@primeuix/themes": "^1.1.0",
+    "highlight.js": "^11.11.1",
+    "marked": "^18.0.5",
+    "primeng": "^21.0.0",
+    "rxjs": "~7.8.0",
+    "tslib": "^2.3.0",
+    "vscode-material-icons": "^0.1.1"
+  },
+  "devDependencies": {
+    "@angular/build": "^21.2.0",
+    "@angular/cli": "^21.2.0",
+    "@angular/compiler-cli": "^21.2.0",
+    "jsdom": "^28.0.0",
+    "prettier": "^3.8.1",
+    "typescript": "~5.9.2",
+    "vitest": "^4.0.8"
+  }
+}

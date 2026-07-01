@@ -1,0 +1,38 @@
+{
+  "//": "cogyard plugin hooks — ONLY the cogyard-specific guards (task 038). The generic bash/edit/read-CLAUDE guards stay in the owner's dotfiles. The two ENGINE hooks (SessionStart worktree-wiring + frontmatter validator) run via `cogyard hook …` (the npm bin on PATH) so the plugin references nothing outside itself → it's safe to install via copy-to-cache (no `../../` escape). Requires the engine on PATH: `npm i -g @cogyard/cli` (or `npm link` in a clone). The task-skill guard is plugin-local (self-contained).",
+  "SessionStart": [
+    {
+      "matcher": "startup",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cogyard hook session-start",
+          "statusMessage": "Allocating worktree ports..."
+        }
+      ]
+    }
+  ],
+  "PreToolUse": [
+    {
+      "matcher": "Edit|Write|MultiEdit",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cogyard hook validate-frontmatter",
+          "timeout": 15
+        }
+      ]
+    }
+  ],
+  "UserPromptSubmit": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit-task-skill-guard.sh",
+          "timeout": 10
+        }
+      ]
+    }
+  ]
+}

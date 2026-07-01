@@ -1,0 +1,61 @@
+<div class="np-triggers">
+  <button class="sidebar-item np-action" (click)="start('init')" title="Create a new project (dir + git + skeleton + wiring)">+ New</button>
+  <button class="sidebar-item np-action" (click)="start('onboard')" title="Add an existing folder as a project (additive-only)">Add existing</button>
+</div>
+
+<p-drawer styleClass="np-drawer" position="right" [visible]="open()" (visibleChange)="open.set($event)"
+          [modal]="true" [dismissible]="!busy()" [header]="mode() === 'init' ? 'New project' : 'Add existing project'">
+  <form class="np-form" (ngSubmit)="submit()">
+    <label class="np-field">
+      <span class="np-label">Mode</span>
+      <p-selectbutton size="small" [options]="modeOptions" optionLabel="label" optionValue="value"
+                      [allowEmpty]="false" [ngModel]="mode()" (ngModelChange)="mode.set($event)" name="mode" />
+    </label>
+
+    @if (mode() === 'init') {
+      <label class="np-field">
+        <span class="np-label">Project name</span>
+        <div class="np-compose">
+          <span class="np-prefix" [title]="projectsRoot()">{{ projectsRoot() }}/</span>
+          <input pInputText pSize="small" class="np-input np-name" name="name"
+                 placeholder="my-project" [ngModel]="name()" (ngModelChange)="name.set($event)" />
+        </div>
+        <span class="np-hint">Created under your projects root (change the base in Settings). → <code>{{ initFullPath() }}</code></span>
+      </label>
+    } @else {
+      <label class="np-field">
+        <span class="np-label">Existing folder path</span>
+        <input pInputText pSize="small" class="np-input" name="path"
+               placeholder="/Users/you/gitroot/existing-folder"
+               [ngModel]="path()" (ngModelChange)="path.set($event)" />
+        <span class="np-hint">Added in place — existing files are never overwritten.</span>
+      </label>
+    }
+
+    <label class="np-field">
+      <span class="np-label">Kind</span>
+      <p-select size="small" [options]="kindOptions" optionLabel="label" optionValue="value"
+                [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
+    </label>
+
+    <label class="np-field">
+      <span class="np-label">Task store</span>
+      <p-selectbutton size="small" [options]="storeOptions" optionLabel="label" optionValue="value"
+                      [allowEmpty]="false" [ngModel]="store()" (ngModelChange)="store.set($event)" name="store" />
+      <span class="np-hint">shared = portal-visible store at ~/gitroot/_tasks/&lt;slug&gt;; normal = _tasks/ in-repo.</span>
+    </label>
+
+    <label class="np-field">
+      <span class="np-label">Store remote (optional)</span>
+      <input pInputText pSize="small" class="np-input" name="remote" placeholder="git@github.com:you/tasks.git"
+             [ngModel]="remote()" (ngModelChange)="remote.set($event)" />
+    </label>
+
+    <div class="np-actions">
+      <button type="button" class="np-btn np-cancel" (click)="open.set(false)" [disabled]="busy()">Cancel</button>
+      <button type="submit" class="np-btn np-submit" [disabled]="!canSubmit()">
+        {{ busy() ? 'Working…' : (mode() === 'init' ? 'Create project' : 'Add project') }}
+      </button>
+    </div>
+  </form>
+</p-drawer>

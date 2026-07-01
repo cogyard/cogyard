@@ -1,0 +1,12 @@
+/* Dropdown caret for the "Open in" button — a clip-path triangle filled with the
+   button's text color, sized to the 11px .btn-toggle label. clip-path (not a
+   CSS border triangle) so the global `border-width:0` reset can't flatten it. */
+.fa-open { display: inline-flex; align-items: center; gap: 6px; }
+
+.fa-open .caret {
+  display: inline-block;
+  width: 8px;
+  height: 5px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}

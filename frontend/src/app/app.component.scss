@@ -1,0 +1,145 @@
+:host {
+  /* Two-column app shell: a fixed-width left sidebar (project nav) + a flex main
+     column (view-tab header + scrolling content). The page never scrolls; each
+     region (sidebar / main / detail / diff) owns its own scrollbar. */
+  display: block;
+  height: 100vh;
+  min-height: 480px;
+  overflow: hidden;
+  --border: var(--app-border);
+  --surface-hover: var(--app-surface-2);
+  --text-subtle: var(--app-fg-muted);
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--app-sidebar-w) minmax(0, 1fr);
+  height: 100vh;
+}
+
+/* ---- Left sidebar: Slack-style project rail (replaces the old top pill row) --
+   Dark like the former topbar so the brand mark's dark-indigo variant + the
+   freshness pie keep their colors. Column flow: brand · scrollable nav · pie. */
+.sidebar {
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  background: var(--app-sidebar-bg); color: var(--app-topbar-fg);
+  border-right: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
+}
+/* cogyard wordmark: mark + lowercase name; the mark uses the dark-bg variant
+   (light indigo strokes) drawn straight onto the indigo rail. */
+.brand { display: flex; align-items: center; gap: 9px; flex: 0 0 auto; padding: 14px 14px 12px; font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; color: #fff; }
+.brand-mark { width: 34px; height: 34px; flex: 0 0 auto; }
+/* line-height:1 so the wordmark optically centers on the mark — the inherited
+   1.5 leading + the g/y descenders otherwise drag its visual center below. */
+.brand-name { font-size: 25px; line-height: 1; letter-spacing: -0.01em; }
+
+.nav-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 8px; }
+.nav-list::-webkit-scrollbar { width: 7px; }
+.nav-divider { height: 1px; margin: 5px 4px; background: color-mix(in srgb, var(--app-topbar-fg) 14%, transparent); }
+
+/* Project rows: label truncates, unmerged-worktree count badge pinned right.
+   Badges across the rail sum to the app/dock badge (same /api/overview data). */
+.sidebar-item .si-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-item .si-badge {
+  flex: 0 0 auto; margin-left: 4px;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums;
+  background: var(--app-accent); color: var(--app-accent-contrast);
+}
+/* On the active row (accent-filled), invert so the badge stays legible. */
+.sidebar-item.active .si-badge { background: var(--app-accent-contrast); color: var(--app-accent); }
+
+.sidebar-foot {
+  flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
+  display: flex; flex-direction: column; gap: 8px;
+}
+/* The freshness pie + full version stamp share the top row. */
+.sidebar-foot .foot-row { display: flex; align-items: center; gap: 9px; }
+
+/* Settings link — its own line ABOVE the version row (task 060). Gear icon +
+   label; quiet by default, brighter when the /settings view is active. */
+.sidebar-foot .settings-link {
+  align-self: flex-start;
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
+  padding: 3px 6px; border-radius: 5px; white-space: nowrap;
+  color: color-mix(in srgb, var(--app-topbar-fg) 70%, transparent);
+}
+.sidebar-foot .settings-link .settings-cog { flex: 0 0 auto; display: block; }
+.sidebar-foot .settings-link:hover { color: var(--app-topbar-fg); background: color-mix(in srgb, var(--app-topbar-fg) 12%, transparent); }
+.sidebar-foot .settings-link.active { color: var(--app-topbar-fg); }
+
+/* Build version + commit, muted, beside the freshness pie — shown in full. */
+.sidebar-foot .version {
+  font-family: ui-monospace, "SF Mono", monospace; font-size: 11px;
+  color: color-mix(in srgb, var(--app-topbar-fg) 60%, transparent);
+  white-space: nowrap;
+}
+
+/* ---- Main column: view-tab header + scrolling content ---- */
+.main-col { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+
+/* Header carrying the view tabs — same brand indigo as the rail; no
+   border/shadow under it so the active tab merges into the page with no line. */
+.topbar {
+  flex: 0 0 auto; background: var(--app-sidebar-bg); color: var(--app-topbar-fg);
+  position: relative; z-index: 10;
+}
+.bar-row { display: flex; align-items: center; gap: 16px; padding: 8px 20px; }
+/* Quiet-folder p-tabs (user pick, option C), centered, flush on the topbar's
+   bottom edge. Inactive tabs are plain text; ONLY the active tab gets a shape —
+   filled with the page background so it flows seamlessly into the content
+   below (no line under the topbar). Colors derive from the theme knobs. */
+.bar-tabs { padding-top: 4px; padding-bottom: 0; justify-content: center; }
+:host ::ng-deep .bar-tabs {
+  p-tabs, p-tablist, .p-tablist, .p-tablist-content, .p-tablist-viewport { background: transparent; }
+  p-tabs { width: auto; }
+  .p-tablist-active-bar { display: none; }
+  .p-tablist-tab-list { border: none; background: transparent; }
+  .p-tab {
+    border: none; border-radius: 8px 8px 0 0;
+    padding: 8px 36px; font-size: 20px; font-weight: 600;
+    background: transparent;
+    color: color-mix(in srgb, var(--app-topbar-fg) 65%, transparent);
+    /* PrimeNG animates background/border-color/color over .2s; the fill fades
+       while the (non-animatable) border pops — reads as a flash. Snap instead. */
+    transition: none;
+  }
+  .p-tab:not(.p-tab-active):hover { background: transparent; color: var(--app-topbar-fg); }
+  .p-tab-active {
+    background: var(--app-page-bg);
+    color: var(--app-page-fg-strong);
+    border: 4px solid var(--app-accent);
+    border-bottom: none;
+    padding: 4px 32px;
+  }
+}
+
+.all-label { font-size: 13px; font-weight: 600; color: var(--app-topbar-fg); padding: 6px 0; }
+
+/* main is the scroll container for the active view — its own scrollbar, so the
+   page itself never scrolls. */
+main { flex: 1 1 auto; min-height: 0; overflow-y: auto; width: 100%; max-width: var(--app-content-max); margin: 0 auto; padding: 24px 32px; box-sizing: border-box; }
+/* When a commit is open: list reflows left of the 360px detail sidebar and
+   above the 46vh bottom diff dock (space reserved inside main's scroll area). */
+main.with-commit { max-width: none; margin: 0; padding-right: 372px; padding-bottom: calc(46vh + 16px); }
+.empty { color: var(--text-subtle); font-style: italic; padding: 24px; text-align: center; }
+
+.grid {
+  display: grid; grid-template-columns: 64px 96px 1fr 70px 90px;
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--app-surface);
+}
+.grid-head, .grid-row { display: contents; }
+.grid-head > div {
+  padding: 6px 10px; background: var(--surface-hover); font-size: 11px; color: var(--text-subtle);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; border-bottom: 1px solid var(--border);
+}
+.grid-row > div {
+  padding: 5px 10px; border-bottom: 1px solid var(--app-border-soft); font-size: 12.5px;
+  display: flex; align-items: center; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.grid-row:hover > div { background: var(--surface-hover); }
+.mono { font-family: ui-monospace, "SF Mono", monospace; color: var(--text-subtle); font-size: 12px; }
+.title { font-weight: 500; }
+.ctr { justify-content: center; color: var(--app-fg-dim); }

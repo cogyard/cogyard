@@ -49,7 +49,7 @@ all.
 ### 1. The engine
 
 ```sh
-git clone <repo-url> cogyard
+git clone https://github.com/cogyard/cogyard.git cogyard
 cd cogyard
 npm install        # npm workspaces — root + the portal UI
 npm start          # builds the UI on first run (~30s), then serves → http://localhost:7440

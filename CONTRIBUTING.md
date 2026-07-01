@@ -9,7 +9,7 @@ deeper architecture and setup notes live in
 ## Getting set up
 
 ```sh
-git clone <repo-url> cogyard
+git clone https://github.com/cogyard/cogyard.git cogyard
 cd cogyard
 npm install                 # npm workspaces — root + frontend
 npm run api                 # Node API on :7440

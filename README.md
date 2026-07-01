@@ -4,7 +4,7 @@
 
 <h1 align="center">cogyard</h1>
 
-<p align="center"><em>The yard where your agents work.</em></p>
+<p align="center"><em>task coordination for parallel AI coding agents</em></p>
 
 <p align="center">
   Markdown task files, a portal, and collision-free claims —

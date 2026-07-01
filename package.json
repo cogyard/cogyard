@@ -1,13 +1,13 @@
 {
   "name": "cogyard",
-  "version": "0.62.0",
+  "version": "0.63.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
-  "description": "cogyard — the yard where your agents work. Markdown task files, a portal, and collision-free claims for running AI agents across all your projects. core/ data layer, cli/ (skills + humans), read-only server/ + Angular portal, worktree hooks. AI-agnostic.",
+  "description": "task coordination for parallel AI coding agents: markdown tasks, collision-free claims, per-task worktrees and ports, and one portal across every project. Open source, agent-agnostic.",
   "bin": {
     "cogyard": "cli/cogyard.mjs"
   },

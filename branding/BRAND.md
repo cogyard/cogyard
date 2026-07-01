@@ -15,7 +15,7 @@ machinery — your AI agents — runs across all your projects, with everything
 coordinated and overseen from one place. It is AI-agnostic (Claude Code first,
 but any agent or human plugs into the same CLI).
 
-**One-liner**: "The yard where your agents work."
+**One-liner**: "task coordination for parallel AI coding agents"
 Alternates, by audience:
 - Developer/README: "Markdown task files, a portal, and collision-free claims —
   for running AI agents across all your projects."

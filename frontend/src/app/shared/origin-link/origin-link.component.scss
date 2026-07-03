@@ -1,0 +1,20 @@
+.origin-link {
+  display: inline-flex; align-items: center; gap: 7px;
+  margin-bottom: 14px;
+  padding: 6px 12px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  color: var(--app-page-fg-strong);
+  font-size: 13px; font-weight: 600;
+  text-decoration: none;
+  transition: border-color .12s, background .12s;
+}
+.origin-link:hover { border-color: var(--app-accent, #60a5fa); background: var(--app-surface-hover, var(--app-surface)); }
+.origin-link .lbl {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em;
+  color: var(--app-fg-dim); text-transform: uppercase;
+}
+.origin-link .gh { flex: none; }
+.origin-link .txt { font-family: var(--app-mono, ui-monospace, monospace); }
+.origin-link .ext { color: var(--app-fg-dim); font-weight: 400; }

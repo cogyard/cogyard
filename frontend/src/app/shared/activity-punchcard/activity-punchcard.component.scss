@@ -1,0 +1,25 @@
+// Layout only; intensity reuses the heatmap ramp tokens so "more" reads the
+// same green everywhere.
+.pc { display: block; }
+
+.pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.pc-toggle { display: inline-flex; gap: 4px; }
+.pc-title { font-size: 13px; font-weight: 600; color: var(--app-fg); }
+.pc-sub { font-size: 11px; font-weight: 400; color: var(--app-fg-muted); }
+
+.pc-row, .pc-axis-row { display: flex; align-items: center; margin-bottom: 3px; }
+.pc-day {
+  width: 34px; flex: none; font-size: 10px; color: var(--app-fg-muted);
+}
+.pc-cells { display: flex; gap: 3px; flex: 1; }
+.pcell {
+  flex: 1; height: 14px; border-radius: 2px; min-width: 8px;
+  &.l0 { background: var(--app-heat-0); }
+  &.l1 { background: var(--app-heat-1); }
+  &.l2 { background: var(--app-heat-2); }
+  &.l3 { background: var(--app-heat-3); }
+  &.l4 { background: var(--app-heat-4); }
+}
+.pc-axis { position: relative; flex: 1; height: 14px; font-size: 10px; color: var(--app-fg-muted);
+  span { position: absolute; &:first-child { transform: none; } }
+}

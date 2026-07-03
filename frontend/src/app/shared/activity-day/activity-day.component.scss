@@ -1,0 +1,48 @@
+// Layout only; lane colors arrive via --lane (set per element from the shared
+// project color map), everything else reads --app-* tokens.
+.ad { display: block; border-top: 1px solid var(--app-border); margin-top: 10px; padding-top: 10px; }
+
+.ad-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 8px; }
+.ad-title { font-size: 13px; font-weight: 600; color: var(--app-fg); }
+.ad-summary { font-size: 12px; color: var(--app-fg-muted); flex: 1; }
+.ad-close {
+  border: 0; background: none; cursor: pointer; color: var(--app-fg-muted);
+  font-size: 12px; padding: 2px 6px;
+  &:hover { color: var(--app-fg); }
+}
+.ad-loading { font-size: 12px; color: var(--app-fg-muted); padding: 8px 0; }
+
+.ad-row, .ad-strip-row, .ad-axis-row { display: flex; align-items: center; margin-bottom: 4px; }
+.ad-label {
+  width: 235px; flex: none; padding-right: 8px;
+  font-size: 11px; font-family: monospace; color: var(--app-fg-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ad-track { position: relative; flex: 1; height: 16px; background: var(--app-surface-2); border-radius: 3px; }
+
+.ad-strip { height: 6px; display: flex; overflow: hidden;
+  .ad-hour { flex: 1; &.hot { background: var(--app-parallel); } }
+}
+
+.ad-block {
+  position: absolute; top: 2px; height: 12px; border-radius: 2px;
+  background: color-mix(in srgb, var(--lane) 75%, white);
+}
+.ad-span {
+  position: absolute; top: 5px; height: 6px; border-radius: 3px;
+  background: color-mix(in srgb, var(--lane) 35%, white);
+  background-image: repeating-linear-gradient(45deg, transparent 0 3px, rgba(255, 255, 255, 0.6) 3px 6px);
+}
+.ad-tick {
+  position: absolute; top: -2px; width: 2px; height: 20px; border-radius: 1px;
+  background: var(--app-fg); opacity: 0.85;
+}
+
+.ad-axis { position: relative; flex: 1; height: 14px; font-size: 10px; color: var(--app-fg-muted);
+  span { position: absolute; transform: translateX(-50%); &:first-child { transform: none; } }
+}
+.ad-foot { margin-top: 4px; font-size: 11px; color: var(--app-fg-muted);
+  .key-tick { display: inline-block; width: 2px; height: 10px; background: var(--app-fg); vertical-align: -1px; }
+  .key-block { display: inline-block; width: 14px; height: 8px; border-radius: 2px; background: var(--app-cat-1); opacity: 0.75; vertical-align: -1px; }
+  .key-hot { display: inline-block; width: 14px; height: 5px; background: var(--app-parallel); vertical-align: 0; }
+}

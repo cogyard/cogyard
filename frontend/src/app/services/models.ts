@@ -19,7 +19,7 @@ export interface WorktreesResponse { slug: string; label: string; worktrees: any
 // (dirty checkouts), and `kind:'stash'` pseudo-rows (collapsed git stashes —
 // stashRef/message/sha/base; see core/git-views.mjs spliceStashRows). The graph
 // component's Row interface is the precise client-side shape.
-export interface GraphResponse { slug: string; label: string; rows: any[]; laneCount: number; }
+export interface GraphResponse { slug: string; label: string; originUrl: string | null; rows: any[]; laneCount: number; }
 
 // /api/overview
 export interface OverviewResponse { projects: any[]; }
@@ -42,7 +42,7 @@ export interface Branch {
   hasWorktree: boolean; worktreeName: string | null; isHead: boolean; upstream: string | null; onOrigin: boolean;
   taskId: string | null; // server-computed branch→task association (core matchBranchTask)
 }
-export interface BranchesResponse { main: string | null; branches: Branch[]; }
+export interface BranchesResponse { main: string | null; originUrl: string | null; branches: Branch[]; }
 
 // /api/wt-activity
 export interface WtInfo { path: string; name: string; branch: string | null; isMain: boolean; clone: string | null; lastActivity: string | null; }
@@ -75,6 +75,27 @@ export interface ProjectUsageResponse extends UsageBucket {
 // POST /api/usage/collect
 export interface CollectResult { rows: number; files: number; skippedModels: string[]; }
 
+// /api/activity — activity views (task 064). commits: slug → localDay → count.
+// projects: slug → per-local-day attention/cost cells. costUSD is spread by
+// MINED hour weights; costApproxUSD is the even-spread estimate for sessions
+// whose transcripts were pruned before mining — the UI renders it distinctly.
+export interface ActivityDayCell { prompts: number; attentionMin: number; costUSD: number; costApproxUSD: number; }
+export interface ActivityResponse {
+  days: number; sinceDay: string; gapMin: number;
+  commits: Record<string, Record<string, number>>;
+  projects: Record<string, { days: Record<string, ActivityDayCell> }>;
+  punchcards: Record<string, Record<string, number[][]>>; // window days → slug → [weekday 0=Sun][hour 0-23] prompt counts
+}
+// /api/activity/day/:date — the drill-down. hours: UTC-hour key → assistant
+// message count that hour. approx sessions carry firstTs/lastTs instead.
+export interface ActivityDaySession {
+  sessionId: string; project: string; worktree: string | null;
+  taskIds: string[]; // which task(s) the session worked — claims join, mined _tasks/NNN refs, worktree name
+  prompts: string[]; hours: Record<string, number>; costUSD: number; approx: boolean;
+  firstTs?: string; lastTs?: string;
+}
+export interface ActivityDayResponse { date: string; sessions: ActivityDaySession[]; prompts: Record<string, string[]>; }
+
 // POST /api/wt/{stage,unstage,discard} · /api/open (task 12 working-tree actions)
 export interface ActionResult { ok: boolean; }
 
@@ -87,16 +108,19 @@ export interface OpenTarget { id: string; label: string; }
 export type StoreKind = 'shared' | 'normal';
 export interface CreationDefaults { kind: ProjectKind; store: StoreKind; }
 export interface OpenTargetFull { id: string; label: string; exec: string; args: string[]; }
+export type WeekStart = 'sunday' | 'monday';
+export interface UiPrefs { weekStart: WeekStart; dayStart: number; }
 export interface ConfigResponse {
   home: string; homeFromEnv: boolean;
   projectsRoot: string; projectsRootSource: 'env' | 'config' | 'default';
   version: string | null; commit: string | null;
   openTargets: OpenTargetFull[];
   defaults: CreationDefaults;
+  ui: UiPrefs;
   integration: { active: string; available: string[] };
 }
 // Wire-input shape for POST /api/config — only the settable bits, all optional.
-export interface SaveConfigRequest { defaults?: Partial<CreationDefaults>; projectsRoot?: string; }
+export interface SaveConfigRequest { defaults?: Partial<CreationDefaults>; ui?: Partial<UiPrefs>; projectsRoot?: string; }
 export interface SaveConfigResult { ok: boolean; defaults: CreationDefaults; projectsRoot: string; projectsRootSource: string; }
 export interface SaveOpenTargetsResult { ok: boolean; openTargets: OpenTargetFull[]; }
 

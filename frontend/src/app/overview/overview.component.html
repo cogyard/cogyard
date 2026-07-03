@@ -32,7 +32,7 @@
       <tr class="ov-row">
         <td>
           @if (p.error) { <span class="dim">{{ p.label }} (error)</span> }
-          @else { <button class="btn-link" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
+          @else { <button class="btn-link dim" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
         </td>
         <td class="tasks">
           <span class="total">{{ p.tasks?.total || 0 }}</span>
@@ -55,4 +55,15 @@
       </tr>
     </ng-template>
   </p-table>
+  <div class="act-gap"></div>
+  <div class="act-panel">
+    <app-activity-heatmap [byDay]="commitsAllByDay()" [breakdown]="commitsBreakdown()" [weekStart]="weekStart()" noun="commits" (dayClick)="drillDay.set($event)" />
+  </div>
+  <div class="act-panel">
+    <app-activity-braid [activity]="activity()" [selectedDay]="drillDay()" (dayClick)="drillDay.set($event)" />
+    <app-activity-day [date]="drillDay()" [colors]="laneColors()" [order]="laneOrder()" (closed)="drillDay.set(null)" />
+  </div>
+  <div class="act-panel">
+    <app-activity-punchcard [matrices]="punchcardAll()" [weekStart]="weekStart()" [dayStart]="dayStart()" />
+  </div>
 }

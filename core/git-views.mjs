@@ -21,6 +21,22 @@ function parseTaskTags(subject) {
   };
 }
 
+// Commits per local day for the activity heatmap (task 064) — GitHub-graph
+// semantics: author-dated, merge commits excluded, every local branch counted
+// (worktree-branch work is work; git walks each commit once however many refs
+// reach it). Memoized on the branch-tip OIDs — the portal polls, tips rarely move.
+function commitsPerDay(proj, days = 366) {
+  const repo = proj.path;
+  return memoize('commitsPerDay', `${repo}|${days}`,
+    () => gitP(['rev-parse', '--branches'], repo),
+    async () => {
+      const raw = await gitP(['log', '--branches', '--no-merges', `--since=${days} days ago`, '--date=format-local:%Y-%m-%d', '--pretty=%ad'], repo);
+      const byDay = {};
+      for (const d of (raw || '').split('\n').filter(Boolean)) byDay[d] = (byDay[d] || 0) + 1;
+      return byDay;
+    });
+}
+
 // Recent commits for a project, with [#NN] task tags (stamped by the /commit
 // skill) parsed out so the viewer can cross-link commit -> task.
 // opts.all: span every ref (worktree branches included), not just HEAD's history.
@@ -404,4 +420,4 @@ async function gitDagWithWorktrees(proj, limit = 250) {
   return spliceStashRows(spliceWorktreeRows(dag, wts), stashes);
 }
 
-export { parseTaskTags, matchBranchTask, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees };
+export { parseTaskTags, matchBranchTask, commitsPerDay, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees };

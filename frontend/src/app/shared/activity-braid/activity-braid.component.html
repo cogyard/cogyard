@@ -1,0 +1,46 @@
+<div class="braid">
+  <div class="braid-head">
+    <span class="braid-title" title="Lane order = total attention (descending), cost as tiebreak — fixed across the metric toggle so the two metrics stay comparable. Colors follow the ranking, so a project keeps its color everywhere.">Where your time went <span class="braid-sort">· sorted by total attention</span></span>
+    <span class="braid-toggle">
+      <button class="btn-toggle" [class.on]="metric() === 'attention'" (click)="setMetric('attention')" title="Where your attention went — your own prompts, gap-coalesced into engaged minutes (a floor: reading without prompting leaves no signal)">Attention</button>
+      <button class="btn-toggle" [class.on]="metric() === 'cost'" (click)="setMetric('cost')" title="Machine effort — each session's locked-in cost, spread across days by mined per-hour activity; hatched = estimated (transcript pruned before mining)">Cost</button>
+    </span>
+  </div>
+  <div class="braid-scroll" #scroller>
+    <div class="braid-lanes">
+      @for (lane of lanes(); track lane.slug) {
+        <div class="lane">
+          @if (isFoldLane(lane.slug)) {
+            <button class="lane-label lane-fold" (click)="toggleExpand()" [title]="'Expand to show all projects'">{{ lane.slug }} ▸</button>
+          } @else {
+            <span class="lane-label" [title]="lane.slug">{{ lane.slug }}</span>
+          }
+          <div class="lane-cells">
+            @for (c of lane.cells; track c.date) {
+              <button class="bcell l{{ c.level }}" [class.approx]="c.approx" [class.sel]="c.date === selectedDay()"
+                      [style.--lane]="lane.color" [title]="c.title" (click)="dayClick.emit(c.date)"></button>
+            }
+          </div>
+        </div>
+      }
+      @if (expanded()) {
+        <div class="lane"><button class="lane-label lane-fold" (click)="toggleExpand()" title="Fold low-activity projects back into one lane">show less ▴</button><div class="lane-cells"></div></div>
+      }
+      <div class="lane breadth">
+        <span class="lane-label" title="How many projects were active that day">breadth</span>
+        <div class="lane-cells">
+          @for (b of breadth(); track b.date) {
+            <button class="bbar" [class.hot]="b.count >= 3" [class.sel]="b.date === selectedDay()"
+                    [style.height.px]="b.count === 0 ? 2 : 3 + b.count * 3"
+                    [title]="b.date + ' — ' + b.count + ' project' + (b.count === 1 ? '' : 's') + ' active'"
+                    (click)="dayClick.emit(b.date)"></button>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="braid-foot">
+    <span>Cell shade = {{ metric() === 'attention' ? 'engaged minutes that day (from your prompts — a floor estimate)' : 'spend that day' }}. Click a day to drill in.@if (days().length) { Session data begins {{ days()[0] }}. }</span>
+    @if (metric() === 'cost') { <span class="approx-key"><span class="bcell l2 approx demo"></span> ≈ estimated era</span> }
+  </div>
+</div>

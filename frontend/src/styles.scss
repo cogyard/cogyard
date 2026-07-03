@@ -63,6 +63,25 @@
      accents, not buttons. */
   --app-primary: var(--app-sidebar-bg);  /* brand indigo (the logo / left rail) */
   --app-primary-contrast: #ffffff;        /* text on the solid primary */
+
+  /* Activity views (task 064). Heat ramp = the commits heatmap's 5 intensity
+     stops (GitHub-graph green — deliberately NOT the accent family; the graph
+     is a quotation of a well-known form). Cat palette = braid lane colors,
+     assigned by lane order; color follows the project, never its value. */
+  --app-heat-0: #ebedf0;
+  --app-heat-1: #c6e48b;
+  --app-heat-2: #7bc96f;
+  --app-heat-3: #239a3b;
+  --app-heat-4: #196127;
+  --app-cat-1: #2a78d6;
+  --app-cat-2: #1baf7a;
+  --app-cat-3: #eda100;
+  --app-cat-4: #4a3aa7;
+  --app-cat-5: #e34948;
+  --app-cat-6: #e87ba4;
+  --app-cat-7: #008300;
+  --app-cat-8: #eb6834;
+  --app-parallel: #f59e0b;   /* the drill-down's "≥2 agent sessions at once" strip */
 }
 /* PrimeNG primary follows the accent (double :root outranks the theme's own
    :root declarations, which are injected later in <head>). */
@@ -98,6 +117,14 @@ p-table .p-datatable-thead > tr > th {
   padding: 6px 10px; background: var(--app-surface-2); font-size: 11px; color: var(--app-fg-muted);
   text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
   border-bottom: 1px solid var(--app-border); white-space: nowrap; text-align: left;
+}
+
+/* Activity-view panel (task 064) — the same white box the shared table chrome
+   gives p-tables, for the non-table activity widgets (heatmap, braid). ONE
+   definition; components add only internal layout. */
+.act-panel {
+  border: 1px solid var(--app-border); border-radius: 6px;
+  background: var(--app-surface); padding: 12px 14px; margin-bottom: 12px;
 }
 
 /* ============================================================================
@@ -145,6 +172,10 @@ button.btn-link {
 }
 button.btn-link:hover { text-decoration-color: currentColor; }
 button.btn-link.mono { font-family: ui-monospace, monospace; font-size: 11.5px; }
+/* .dim — quiet variant matching the Worktrees tab's links: muted at rest,
+   accent on hover. For link columns where a page of orange would shout. */
+button.btn-link.dim { color: var(--app-fg-dim); font-weight: 500; }
+button.btn-link.dim:hover { color: var(--app-accent); }
 
 /* .sidebar-item — vertical full-width nav row for the left project rail (task
    040). The pick-or-act job of .btn-pill, but shaped for a Slack-style rail:

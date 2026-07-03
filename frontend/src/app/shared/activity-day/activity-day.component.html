@@ -1,0 +1,52 @@
+@if (date()) {
+  <div class="ad">
+    <div class="ad-head">
+      <span class="ad-title">{{ title() }}</span>
+      <span class="ad-summary">{{ summary() }}</span>
+      <button class="ad-close" (click)="closed.emit()" title="Close">✕</button>
+    </div>
+
+    @if (loading()) {
+      <div class="ad-loading">Loading…</div>
+    } @else if (!rows().length) {
+      <div class="ad-loading">No mined activity on this day.</div>
+    } @else {
+      <div class="ad-strip-row">
+        <span class="ad-label" title="Hours where two or more agent sessions were active at once — delegated work running in parallel while your attention was elsewhere">parallel</span>
+        <div class="ad-track ad-strip">
+          @for (hot of parallel(); track $index) { <span class="ad-hour" [class.hot]="hot"></span> }
+        </div>
+      </div>
+
+      @for (row of rows(); track row.session.sessionId) {
+        <div class="ad-row">
+          <span class="ad-label" [title]="row.label">{{ row.label }}</span>
+          <div class="ad-track">
+            @if (row.span) {
+              <span class="ad-span" [style.left.%]="row.span.leftPct" [style.width.%]="row.span.widthPct"
+                    [style.--lane]="row.color"
+                    [title]="'≈ estimated — transcript pruned before hour-level mining. $' + row.session.costUSD.toFixed(2)"></span>
+            }
+            @for (b of row.blocks; track $index) {
+              <span class="ad-block" [style.left.%]="b.leftPct" [style.width.%]="b.widthPct" [style.--lane]="row.color"
+                    [title]="row.label + ' — agent active. $' + row.session.costUSD.toFixed(2) + ' this day'"></span>
+            }
+            @for (t of row.ticks; track $index) {
+              <span class="ad-tick" [style.left.%]="t.leftPct" [title]="'you · ' + t.title"></span>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="ad-axis-row">
+        <span class="ad-label"></span>
+        <div class="ad-axis">
+          @for (m of hourMarks; track m.h) { <span [style.left.%]="m.h * (100 / 24)">{{ m.label }}</span> }
+        </div>
+      </div>
+      <div class="ad-foot">
+        <span><span class="key-tick"></span> your prompts (attention) · <span class="key-block"></span> agent active hours (labor)@if (hasParallel()) { · <span class="key-hot"></span> parallel sessions }</span>
+      </div>
+    }
+  </div>
+}

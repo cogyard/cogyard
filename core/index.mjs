@@ -19,7 +19,7 @@
 // ============================================================================
 
 export { COGYARD_HOME, REGISTRY_PATH, WORKTREE_PORTS_PATH, PROJECTS_ROOT, resolveProjectsRoot } from './paths.mjs';
-export { CONFIG_PATH, STORES, readConfig, writeConfig, projectDefaults } from './config.mjs';
+export { CONFIG_PATH, STORES, readConfig, writeConfig, projectDefaults, WEEK_STARTS, uiPrefs } from './config.mjs';
 export { tryExec, execLoud, findRepoRoot, findTasksDir, gitP, defaultBranch, defaultBranchSync } from './exec.mjs';
 export { memoize, clearMemo } from './memo.mjs';
 export { STATUS, STATUSES, isValidStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate } from './status.mjs';
@@ -28,13 +28,14 @@ export { stripInlineComment, parseScalar, parseFrontmatter, readTaskFile, listTa
 export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject } from './registry.mjs';
 export { loadProject, computeStaleMap, loadProjectAsync, tasksToData, generateIndexMd } from './project.mjs';
 export { loadPortAllocations, gitWorktrees, computeWorktrees, worktreesForProject, projectWorktreePaths } from './worktrees.mjs';
-export { gitCommits, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees } from './git-views.mjs';
+export { gitCommits, commitsPerDay, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees } from './git-views.mjs';
 export { lightWorktreeStats, taskCountsFromFrontmatter, projectOverview, worktreeNamesForProject, annotateWorktree } from './overview.mjs';
 export { worktreeUnmergedCount, projectUnmerged } from './unmerged.mjs';
 export { inferStatus } from './analyze.mjs';
 export { KINDS, convertToSharedStore, ensureProjectWiring, prepareInitDir } from './scaffold.mjs';
 export { adapter, NOOP, listIntegrationNames, resolveActive, loadAdapter } from './integrations.mjs';
 export { PRICING_VERSIONS, priceFor } from './pricing.mjs';
-export { appendClaimEvent, resolveProjectForPath, collectUsage, readUsageLedger, usageRollup, projectUsage, taskUsage, transcriptsRoot, findTranscriptsForSession } from './usage.mjs';
+export { appendClaimEvent, resolveProjectForPath, collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage, transcriptsRoot, findTranscriptsForSession } from './usage.mjs';
+export { activityRollup, activityDay, activityPunchcard } from './activity.mjs';
 export { OPEN_TARGETS_PATH, openTargets, findOpenTarget, writeOpenTargets, resolveOpenArgs, resolveOpenCommand, defaultBrowserBundleId } from './open-targets.mjs';
 export { runDoctor, NODE_FLOOR_MAJOR } from './doctor.mjs';

@@ -75,6 +75,7 @@
           @case ('worktrees') { <app-worktrees [slug]="slug()" (jumpTask)="jumpToTask($event)" (openCommit)="openCommitInGraph($event)" (jumpFiles)="filesNav($event)" (jumpBranch)="jumpToBranch($event)" /> }
           @case ('graph') { <app-graph [slug]="slug()" [activeHash]="panelHash()" (openCommit)="openCommit($event)" (jumpTask)="jumpToTask($event)" /> }
           @case ('files') { <app-files [slug]="slug()" [wt]="wtParam()" [file]="fileParam()" (nav)="filesNav($event)" /> }
+          @case ('activity') { <app-activity [slug]="slug()" /> }
         }
       }
     </main>

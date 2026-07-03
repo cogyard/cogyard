@@ -13,6 +13,15 @@
 //   usage.jsonl   — one row per (sessionId, model, taskId) aggregate per collection
 //   claims.jsonl  — claim/release events appended by cli/env.mjs (task↔session join)
 //   cursors.json  — per-transcript byte offset + recent dedupe keys (idempotency)
+//   activity.jsonl        — attention/labor rows (task 064): per collection, per
+//                           session — exact HUMAN prompt timestamps + per-UTC-hour
+//                           assistant message counts. Derived counts, never priced.
+//   cursors-activity.json — activity's OWN cursor namespace, deliberately separate
+//                           from cursors.json: its first run walks every on-disk
+//                           transcript from byte 0, retro-filling hour-level data
+//                           for history the usage cursors already consumed (the
+//                           task-064 "rebucket"; pruned transcripts stay
+//                           approximated from usage rows' firstTs/lastTs).
 
 import {
   readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync,
@@ -28,6 +37,8 @@ const USAGE_DIR = join(COGYARD_HOME, 'usage');
 const LEDGER_PATH = join(USAGE_DIR, 'usage.jsonl');
 const CLAIMS_PATH = join(USAGE_DIR, 'claims.jsonl');
 const CURSORS_PATH = join(USAGE_DIR, 'cursors.json');
+const ACTIVITY_PATH = join(USAGE_DIR, 'activity.jsonl');
+const ACTIVITY_CURSORS_PATH = join(USAGE_DIR, 'cursors-activity.json');
 
 // Transcript location + per-session lookup come from the active integration.
 function transcriptsRoot() { return adapter.transcripts.root(); }
@@ -221,8 +232,113 @@ function collectUsage(opts = {}) {
     appendFileSync(LEDGER_PATH, newRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
   writeFileSync(CURSORS_PATH, JSON.stringify(cursors, null, 1) + '\n');
-  return { rows: newRows.length, files: touchedFiles, skippedModels: [...skippedModels] };
+  const activity = collectActivity(opts);
+  return { rows: newRows.length, files: touchedFiles, skippedModels: [...skippedModels], activity };
 }
+
+// --- activity collection (task 064) ------------------------------------------
+
+// UTC hour bucket key for an ISO timestamp: "2026-07-02T14".
+function hourKey(ts) { return String(ts).slice(0, 13); }
+
+// Task-file references in raw transcript text (task 064): `_tasks/NNN-…` is the
+// cogyard task-file naming convention, so counting matches per task id tells us
+// which task a session was actually working — far better coverage than the
+// claims join (most sessions never formally claim). Format-agnostic: it greps
+// the raw line, not an agent-specific field.
+const TASK_REF_RE = /_tasks\/0*(\d+)-/g;
+// Stronger still: `[#NN]` tags in the session's OWN `git commit` invocations
+// (the /commit skill stamps them). Scoped to lines containing 'git commit' so
+// `git log` output echoing OTHER commits' historical tags never counts.
+const COMMIT_TAG_RE = /\[#0*(\d+)\]/g;
+
+// Harvest attention/labor time data into activity.jsonl: exact human-prompt
+// timestamps (the attention signal) + per-hour assistant message counts (labor,
+// and the weights that let queries spread a usage row's locked-in cost across
+// hours/days). Same incremental walk as collectUsage but on its OWN cursor file —
+// see the header comment for why. Idempotent the same way.
+function collectActivity(opts = {}) {
+  ensureUsageDir();
+  if (!adapter.transcripts.supported) return { rows: 0, files: 0 };
+  const files = opts.files && opts.files.length ? opts.files : adapter.transcripts.list();
+  let cursors = {};
+  if (existsSync(ACTIVITY_CURSORS_PATH)) {
+    try { cursors = JSON.parse(readFileSync(ACTIVITY_CURSORS_PATH, 'utf8')); } catch { cursors = {}; }
+  }
+  const capturedAt = new Date().toISOString();
+  const newRows = [];
+  let touchedFiles = 0;
+
+  for (const file of files) {
+    let size;
+    try { size = statSync(file).size; } catch { continue; }
+    const cur = cursors[file] || { offset: 0, recent: [] };
+    if (size <= cur.offset) continue;
+
+    const buf = readFileSync(file);
+    let chunk = buf.subarray(cur.offset);
+    const lastNl = chunk.lastIndexOf(0x0a);
+    if (lastNl === -1) continue;
+    chunk = chunk.subarray(0, lastNl + 1);
+    const newOffset = cur.offset + lastNl + 1;
+
+    const seen = new Set(cur.recent || []);
+    const prompts = [];
+    const hours = {};
+    const tasks = {};
+    const commitTasks = {};
+    let cwd = null;
+    let sessionId = null;
+    let sawHours = false;
+
+    for (const line of chunk.toString('utf8').split('\n')) {
+      if (!line.trim()) continue;
+      for (const m of line.matchAll(TASK_REF_RE)) tasks[m[1]] = (tasks[m[1]] || 0) + 1;
+      if (line.includes('git commit')) {
+        for (const m of line.matchAll(COMMIT_TAG_RE)) commitTasks[m[1]] = (commitTasks[m[1]] || 0) + 1;
+      }
+      const parsed = adapter.transcripts.parseLine(line);
+      if (!parsed) continue;
+      if (!sessionId && parsed.sessionId) sessionId = parsed.sessionId;
+      if (!cwd && parsed.cwd) cwd = parsed.cwd;
+      if (parsed.prompt && !seen.has(parsed.prompt.dedupeKey)) {
+        seen.add(parsed.prompt.dedupeKey);
+        prompts.push(parsed.prompt.timestamp);
+      }
+      const u = parsed.usage;
+      if (u && u.timestamp && !seen.has('h:' + u.dedupeKey)) {
+        seen.add('h:' + u.dedupeKey);
+        const k = hourKey(u.timestamp);
+        hours[k] = (hours[k] || 0) + 1;
+        sawHours = true;
+      }
+    }
+
+    if (prompts.length || sawHours) {
+      newRows.push({
+        capturedAt,
+        sessionId: sessionId || basename(file, '.jsonl'),
+        project: resolveProjectForPath(cwd),
+        worktree: worktreeForPath(cwd),
+        prompts,
+        hours,
+        ...(Object.keys(tasks).length ? { tasks } : {}),
+        ...(Object.keys(commitTasks).length ? { commitTasks } : {}),
+        backfilled: !!opts.backfilled,
+      });
+      touchedFiles += 1;
+    }
+    cursors[file] = { offset: newOffset, recent: [...seen].slice(-200) };
+  }
+
+  if (newRows.length) {
+    appendFileSync(ACTIVITY_PATH, newRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  }
+  writeFileSync(ACTIVITY_CURSORS_PATH, JSON.stringify(cursors, null, 1) + '\n');
+  return { rows: newRows.length, files: touchedFiles };
+}
+
+function readActivityLedger() { return readJsonl(ACTIVITY_PATH); }
 
 // --- queries (for the API + CLI report) --------------------------------------
 
@@ -327,7 +443,7 @@ function taskUsage(slug, taskId) {
 }
 
 export {
-  USAGE_DIR, LEDGER_PATH, CLAIMS_PATH, transcriptsRoot, findTranscriptsForSession,
+  USAGE_DIR, LEDGER_PATH, CLAIMS_PATH, ACTIVITY_PATH, transcriptsRoot, findTranscriptsForSession,
   appendClaimEvent, claimWindows, resolveProjectForPath,
-  collectUsage, readUsageLedger, usageRollup, projectUsage, taskUsage,
+  collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage,
 };

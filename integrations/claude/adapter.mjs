@@ -104,12 +104,14 @@ export default {
       }
       return files;
     },
-    // One raw JSONL line → {sessionId, cwd, usage}. usage is the billable
-    // assistant turn ({model, timestamp, dedupeKey, tokens}) or null.
+    // One raw JSONL line → {sessionId, cwd, usage, prompt}. usage is the billable
+    // assistant turn ({model, timestamp, dedupeKey, tokens}) or null. prompt is a
+    // HUMAN prompt event ({timestamp, dedupeKey}) or null — the attention signal
+    // (task 064): the human's own messages, not the agent's turns.
     parseLine(line) {
       let obj;
       try { obj = JSON.parse(line); } catch { return null; }
-      const out = { sessionId: obj.sessionId || null, cwd: obj.cwd || null, usage: null };
+      const out = { sessionId: obj.sessionId || null, cwd: obj.cwd || null, usage: null, prompt: null };
       if (obj.type === 'assistant') {
         const msg = obj.message;
         if (msg && msg.usage && msg.model && msg.model !== '<synthetic>') {
@@ -121,6 +123,14 @@ export default {
             tokens: tokensFromUsage(msg.usage),
           };
         }
+      } else if (obj.type === 'user' && !obj.toolUseResult && !obj.isMeta && obj.timestamp) {
+        // Tool results also arrive as type:'user' lines — the toolUseResult field
+        // separates them. A genuine human prompt carries string content or a
+        // text block.
+        const c = obj.message && obj.message.content;
+        const isHuman = typeof c === 'string'
+          || (Array.isArray(c) && c.some((b) => b && b.type === 'text'));
+        if (isHuman) out.prompt = { timestamp: obj.timestamp, dedupeKey: 'p:' + (obj.uuid || obj.timestamp) };
       }
       return out;
     },

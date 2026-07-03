@@ -1,0 +1,26 @@
+<div class="pc">
+  <div class="pc-head">
+    <span class="pc-title" title="Your prompts by local weekday and hour — attention, not agent labor. Quartile-scaled like the heatmap.">When you're active <span class="pc-sub">· {{ windowSub() }} · {{ total().toLocaleString() }} prompts@if (peak()) { · {{ peak() }} }</span></span>
+    <span class="pc-toggle">
+      @for (w of windows; track w.key) {
+        <button class="btn-toggle" [class.on]="window() === w.key" (click)="window.set(w.key)">{{ w.label }}</button>
+      }
+    </span>
+  </div>
+  @for (r of rows(); track r.day) {
+    <div class="pc-row">
+      <span class="pc-day">{{ r.day }}</span>
+      <div class="pc-cells">
+        @for (c of r.cells; track $index) {
+          <span class="pcell l{{ c.level }}" [title]="c.title"></span>
+        }
+      </div>
+    </div>
+  }
+  <div class="pc-axis-row">
+    <span class="pc-day"></span>
+    <div class="pc-axis">
+      @for (m of hourMarks(); track m.slot) { <span [style.left.%]="m.slot * (100 / 24)">{{ m.label }}</span> }
+    </div>
+  </div>
+</div>

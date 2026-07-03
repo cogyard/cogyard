@@ -30,6 +30,9 @@ button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-m
 .tree-toggles { display: flex; align-items: center; gap: 6px; flex: none; }
 /* mode/option controls = global .btn-toggle; only the count chip lives here */
 button.btn-toggle .cnt { font-weight: 700; }
+/* lazy gitignored-listing wait indicator */
+.ig-spin { flex: 0 0 auto; animation: ig-spin 0.8s linear infinite; }
+@keyframes ig-spin { to { transform: rotate(360deg); } }
 
 .rows { overflow-y: auto; flex: 1; padding: 4px 0; }
 /* Compact p-tree density to match the old 22px rows (PrimeNG internals → ng-deep). */

@@ -5,6 +5,7 @@ import {
   Project, TasksResponse, WorktreesResponse, GraphResponse, OverviewResponse,
   CommitDetail, DiffResponse, StatusResponse, BranchesResponse,
   WtActivityResponse, TreeResponse, FileContent, UsageResponse, ProjectUsageResponse, CollectResult,
+  ActivityResponse, ActivityDayResponse,
   HealthResponse, ActionResult, OpenTarget, ScaffoldRequest, ScaffoldResult,
   ConfigResponse, SaveConfigRequest, SaveConfigResult, OpenTargetFull, SaveOpenTargetsResult,
 } from './models';
@@ -35,8 +36,10 @@ export class ApiService {
     return this.http.get<DiffResponse>(`/api/workdiff?p=${this.p(slug)}&path=${encodeURIComponent(path)}&kind=${kind}${ignoreWs ? '&w=1' : ''}${worktree ? `&worktree=${encodeURIComponent(worktree)}` : ''}`);
   }
   wtActivity(slug: string): Observable<WtActivityResponse> { return this.http.get<WtActivityResponse>(`/api/wt-activity?p=${this.p(slug)}`); }
-  tree(slug: string, wt: string): Observable<TreeResponse> {
-    return this.http.get<TreeResponse>(`/api/tree?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}`);
+  // ignored=true also lists gitignored files (node_modules, dist…) — a much
+  // heavier response, fetched lazily when the user asks for it.
+  tree(slug: string, wt: string, ignored = false): Observable<TreeResponse> {
+    return this.http.get<TreeResponse>(`/api/tree?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}${ignored ? '&ig=1' : ''}`);
   }
   file(slug: string, wt: string, path: string): Observable<FileContent> {
     return this.http.get<FileContent>(this.fileUrl(slug, wt, path));
@@ -45,6 +48,8 @@ export class ApiService {
   fileUrl(slug: string, wt: string, path: string): string {
     return `/api/file?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}&path=${encodeURIComponent(path)}`;
   }
+  activity(days = 366): Observable<ActivityResponse> { return this.http.get<ActivityResponse>(`/api/activity?days=${days}`); }
+  activityDay(date: string): Observable<ActivityDayResponse> { return this.http.get<ActivityDayResponse>(`/api/activity/day/${date}`); }
   usage(): Observable<UsageResponse> { return this.http.get<UsageResponse>('/api/usage'); }
   projectUsage(slug: string): Observable<ProjectUsageResponse> {
     return this.http.get<ProjectUsageResponse>(`/api/usage/project/${this.p(slug)}`);

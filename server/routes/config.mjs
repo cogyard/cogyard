@@ -28,6 +28,7 @@ export async function handle(path, u, projects, res) {
     // command, unlike GET /api/open-targets which exposes only id+label.
     openTargets: core.openTargets(),
     defaults: core.projectDefaults(), // { kind, store }
+    ui: core.uiPrefs(),               // { weekStart } (task 064)
     integration: { active: core.adapter.name, available: core.listIntegrationNames() },
   });
 }
@@ -68,6 +69,21 @@ function saveConfig(body, res) {
     patch.defaults = defaults;
   }
 
+  if (body.ui !== undefined) {
+    const u = body.ui;
+    if (!u || typeof u !== 'object') return errJson(res, 400, 'ui must be an object');
+    const ui = {};
+    if (u.weekStart !== undefined) {
+      if (!core.WEEK_STARTS.includes(u.weekStart)) return errJson(res, 400, `weekStart must be one of: ${core.WEEK_STARTS.join(', ')}`);
+      ui.weekStart = u.weekStart;
+    }
+    if (u.dayStart !== undefined) {
+      if (!Number.isInteger(u.dayStart) || u.dayStart < 0 || u.dayStart > 23) return errJson(res, 400, 'dayStart must be an integer hour 0-23');
+      ui.dayStart = u.dayStart;
+    }
+    patch.ui = { ...core.readConfig().ui, ...ui };
+  }
+
   if (body.projectsRoot !== undefined) {
     if (typeof body.projectsRoot !== 'string' || !body.projectsRoot.trim()) {
       return errJson(res, 400, 'projectsRoot must be a non-empty string');
@@ -75,7 +91,7 @@ function saveConfig(body, res) {
     patch.projectsRoot = body.projectsRoot.trim();
   }
 
-  if (Object.keys(patch).length === 0) return errJson(res, 400, 'nothing to save (expected defaults and/or projectsRoot)');
+  if (Object.keys(patch).length === 0) return errJson(res, 400, 'nothing to save (expected defaults, ui, and/or projectsRoot)');
 
   try {
     core.writeConfig(patch);
@@ -83,7 +99,7 @@ function saveConfig(body, res) {
     // projectsRoot change only re-resolves PROJECTS_ROOT on process restart — the
     // documented LaunchAgent reload — but the saved value is reported back now).
     const pr = core.resolveProjectsRoot();
-    return json(res, 200, { ok: true, defaults: core.projectDefaults(), projectsRoot: pr.value, projectsRootSource: pr.source });
+    return json(res, 200, { ok: true, defaults: core.projectDefaults(), ui: core.uiPrefs(), projectsRoot: pr.value, projectsRootSource: pr.source });
   } catch (e) {
     return errJson(res, 400, String((e && e.message) || e));
   }

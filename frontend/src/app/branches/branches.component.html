@@ -1,3 +1,5 @@
+<app-origin-link [url]="originUrl()" />
+
 @if (loading()) {
   <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
 } @else if (!all().length) {

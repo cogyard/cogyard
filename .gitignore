@@ -7,9 +7,11 @@ frontend/src/version.json
 *.log
 .DS_Store
 .cache/
-# private, owner-machine notes kept out of the public tree (real hostnames,
-# tunnel IDs, deployment specifics) — see docs/DEPLOYMENTS.local.md
-*.local.md
+# NOTE: *.local.md (private owner notes) are NO LONGER gitignored. gitignore drops a
+# file from EVERY commit — including the private backup — so those notes were going
+# unsaved. They are now TRACKED + export-ignore'd (.gitattributes) instead: saved to
+# the private backup, stripped from the public snapshot. gitignore is for regenerable
+# junk only; anything you'd want back after a disk death must be tracked.
 # task system: _tasks is a symlink to the shared store (tasks.mjs convert)
 _tasks
 frontend/public/assets/material-icons/

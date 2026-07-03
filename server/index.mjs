@@ -20,6 +20,7 @@ import * as project from './routes/project.mjs';
 import * as git from './routes/git.mjs';
 import * as files from './routes/files.mjs';
 import * as usage from './routes/usage.mjs';
+import * as activity from './routes/activity.mjs';
 import * as actions from './routes/actions.mjs';
 import * as projectActions from './routes/projects.mjs';
 import * as config from './routes/config.mjs';
@@ -56,6 +57,7 @@ const server = createServer(async (req, res) => {
     const projects = core.discoverProjects();
     if (await meta.handle(path, u, projects, res) !== false) return;
     if (await usage.handle(path, u, projects, res) !== false) return;
+    if (await activity.handle(path, u, projects, res) !== false) return;
     if (await config.handle(path, u, projects, res) !== false) return;
 
     // Per-project endpoints below need a resolved project.

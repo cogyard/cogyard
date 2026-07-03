@@ -2,6 +2,7 @@
 
 import * as core from '../../core/index.mjs';
 import { json } from '../http.mjs';
+import { originHttpUrl } from '../git.mjs';
 
 export async function handle(path, u, proj, res) {
   if (path === '/api/tasks') {
@@ -13,8 +14,8 @@ export async function handle(path, u, proj, res) {
     return json(res, 200, { slug: proj.slug, label: proj.label, worktrees });
   }
   if (path === '/api/graph') {
-    const g = await core.gitDagWithWorktrees(proj);
-    return json(res, 200, { slug: proj.slug, label: proj.label, ...g });
+    const [g, originUrl] = await Promise.all([core.gitDagWithWorktrees(proj), originHttpUrl(proj.path)]);
+    return json(res, 200, { slug: proj.slug, label: proj.label, originUrl, ...g });
   }
   return false;
 }

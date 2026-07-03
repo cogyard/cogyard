@@ -3,6 +3,7 @@ import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { Tag } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
+import { OriginLinkComponent } from '../shared/origin-link/origin-link.component';
 import { ApiService } from '../services/api.service';
 import { Branch, BranchesResponse } from '../services/models';
 import { RefreshService } from '../services/refresh.service';
@@ -12,7 +13,7 @@ const STALE_DAYS = 30; // highlight branches untouched longer than this
 
 @Component({
   selector: 'app-branches',
-  imports: [Tag, TableModule, TooltipModule, Skeleton],
+  imports: [Tag, TableModule, TooltipModule, Skeleton, OriginLinkComponent],
   templateUrl: './branches.component.html',
   styleUrl: './branches.component.scss',
 })
@@ -32,6 +33,7 @@ export class BranchesComponent {
 
   private cached = computed(() => this.store.sig<BranchesResponse>(`branches|${this.slug()}`)());
   main = computed(() => this.cached()?.main ?? null);
+  originUrl = computed(() => this.cached()?.originUrl ?? null);
   all = computed<Branch[]>(() => this.cached()?.branches ?? []);
   loading = computed(() => this.cached() === null);
   readonly staleDays = STALE_DAYS;

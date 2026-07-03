@@ -20,6 +20,7 @@ import { KINDS } from './scaffold.mjs';
 
 const CONFIG_PATH = join(COGYARD_HOME, 'config.json');
 const STORES = ['shared', 'normal'];
+const WEEK_STARTS = ['sunday', 'monday'];
 
 // Built-in creation defaults — what the New/Add drawer shows before anything is
 // saved. `config.json.defaults` overlays these (validated, invalid values dropped).
@@ -57,4 +58,19 @@ function projectDefaults() {
   return out;
 }
 
-export { CONFIG_PATH, STORES, BUILTIN_DEFAULTS, readConfig, writeConfig, projectDefaults };
+// UI preferences (task 064): the activity views' week-start day and the hour
+// the punch card's axis starts at (people's days don't start at midnight).
+// Default 'sunday' matches GitHub's contribution graph; 'monday' for people who
+// read weeks Mon-first. Invalid persisted values are dropped, not crashed on.
+const BUILTIN_UI = { weekStart: 'sunday', dayStart: 0 };
+function uiPrefs() {
+  const out = { ...BUILTIN_UI };
+  const u = readConfig().ui;
+  if (u && typeof u === 'object') {
+    if (WEEK_STARTS.includes(u.weekStart)) out.weekStart = u.weekStart;
+    if (Number.isInteger(u.dayStart) && u.dayStart >= 0 && u.dayStart <= 23) out.dayStart = u.dayStart;
+  }
+  return out;
+}
+
+export { CONFIG_PATH, STORES, WEEK_STARTS, BUILTIN_DEFAULTS, readConfig, writeConfig, projectDefaults, uiPrefs };

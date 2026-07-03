@@ -16,18 +16,19 @@ import { WorktreesComponent } from './worktrees/worktrees.component';
 import { OverviewComponent } from './overview/overview.component';
 import { CommitPanelComponent } from './shared/commit-panel/commit-panel.component';
 import { FilesComponent } from './files/files.component';
+import { ActivityComponent } from './activity/activity.component';
 import { NewProjectComponent } from './shared/new-project/new-project.component';
 import { SettingsComponent } from './settings/settings.component';
 // Build-stamped at build time by scripts/generate-version.mjs — the single source
 // of version + commit (works in the packaged desktop app too; no /api/health call).
 import versionInfo from '../version.json';
 
-type Tab = 'tasks' | 'board' | 'branches' | 'worktrees' | 'graph' | 'files';
-const TAB_SET = new Set<string>(['tasks', 'board', 'branches', 'worktrees', 'graph', 'files']);
+type Tab = 'tasks' | 'board' | 'branches' | 'worktrees' | 'graph' | 'files' | 'activity';
+const TAB_SET = new Set<string>(['tasks', 'board', 'branches', 'worktrees', 'graph', 'files', 'activity']);
 
 @Component({
   selector: 'app-root',
-  imports: [TasksComponent, BoardComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, NewProjectComponent, SettingsComponent, FreshnessPieComponent, Toast, Tabs, TabList, PTab],
+  imports: [TasksComponent, BoardComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, ActivityComponent, NewProjectComponent, SettingsComponent, FreshnessPieComponent, Toast, Tabs, TabList, PTab],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
   host: { '(window:resize)': 'measureHeader()' },
@@ -99,6 +100,7 @@ export class AppComponent implements OnInit {
     { id: 'worktrees', label: 'Worktrees' },
     { id: 'graph', label: 'Graph' },
     { id: 'files', label: 'Files' },
+    { id: 'activity', label: 'Activity' },
   ];
 
   ngOnInit() {

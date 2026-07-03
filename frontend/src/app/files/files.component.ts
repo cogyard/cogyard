@@ -85,29 +85,29 @@ export class FilesComponent {
   file = input<string>('');   // selected file from ?file=
   nav = output<{ wt: string; file: string | null }>();
 
+  // Gitignored files (node_modules, dist…) are lazy: the default tree the
+  // server sends excludes them (~1k entries); the full listing (~220k entries,
+  // ~25 MB on a big repo) is fetched only when the user flips "show gitignored".
+  // Not persisted — a remembered ON would silently re-fetch the heavy tree on
+  // every visit, which is exactly the cost the toggle exists to make deliberate.
+  showIgnored = signal(false);
+  toggleShowIgnored() { this.showIgnored.set(!this.showIgnored()); }
+
   private cachedWts = computed(() => this.store.sig<WtActivityResponse>(`wt-activity|${this.slug()}`)());
-  private cachedTree = computed(() => this.store.sig<TreeResponse>(`tree|${this.slug()}|${this.selectedWt()}`)());
+  private cachedLean = computed(() => this.store.sig<TreeResponse>(`tree|${this.slug()}|${this.selectedWt()}`)());
+  private cachedFull = computed(() => this.store.sig<TreeResponse>(`tree|${this.slug()}|${this.selectedWt()}|ig`)());
+  // While the full tree loads, the lean tree stays on screen (spinner on the
+  // toggle signals the wait); once landed, the full tree swaps in.
+  private cachedTree = computed(() =>
+    this.showIgnored() ? (this.cachedFull() ?? this.cachedLean()) : this.cachedLean());
   worktrees = computed<WtInfo[]>(() => this.cachedWts()?.worktrees ?? []);
   treeFiles = computed<TreeFile[]>(() => this.cachedTree()?.files ?? []);
   vsRef = computed(() => this.cachedTree()?.vsRef ?? null);
   loadingTree = computed(() => this.cachedTree() === null);
+  loadingIgnored = computed(() => this.showIgnored() && this.cachedFull() === null);
 
   changedOnly = signal(false);
   private expandOverride = signal<Map<string, boolean>>(new Map());
-
-  // VSCode-style "hide non-git" filter. Default OFF (show everything, including
-  // untracked/gitignored). Persisted; new users have no key → false.
-  hideNonGit = signal(localStorage.getItem('cogyard-files-hidenongit') === '1');
-  toggleHideNonGit() {
-    const h = !this.hideNonGit();
-    this.hideNonGit.set(h);
-    localStorage.setItem('cogyard-files-hidenongit', h ? '1' : '0');
-  }
-  // Source list the tree is built from; the full treeFiles() still backs
-  // statusByPath/selected so deep-linked non-git files resolve with the filter on.
-  private visibleFiles = computed(() =>
-    this.hideNonGit() ? this.treeFiles().filter((f) => f.tracked) : this.treeFiles());
-  nonGitCount = computed(() => this.treeFiles().filter((f) => !f.tracked).length);
 
   // Dark mode for the viewing area only (tree/pills stay light). Persisted.
   dark = signal(localStorage.getItem('cogyard-files-dark') === '1');
@@ -160,16 +160,14 @@ export class FilesComponent {
   // in small trees; per-dir toggles override either way (expandOverride map
   // stays the source of truth so rebuilt trees keep their expansion state).
   treeNodes = computed<TreeNode[]>(() => {
-    const files = this.visibleFiles();
+    const files = this.treeFiles();
     if (this.changedOnly()) {
       return files.filter((f) => f.status).map((f) => ({
         key: f.path, label: f.path, leaf: true,
         data: { kind: 'file', path: f.path, status: f.status, onDisk: f.onDisk, tracked: f.tracked, full: true },
       }));
     }
-    // Default open/closed keys off the FULL tree size, not the filtered list, so
-    // toggling "hide non-git" never silently expands/collapses everything.
-    const defaultOpen = this.treeFiles().length <= 250;
+    const defaultOpen = files.length <= 250;
     const override = this.expandOverride();
     const isOpen = (dir: string) => override.get(dir) ?? defaultOpen;
     const changedDirs = new Set<string>();
@@ -253,9 +251,9 @@ export class FilesComponent {
       if (s) this.store.load(`wt-activity|${s}`, this.api.wtActivity(s));
     });
     effect(() => {
-      const s = this.slug(), w = this.selectedWt();
+      const s = this.slug(), w = this.selectedWt(), ig = this.showIgnored();
       this.refresh.tick();
-      if (s) this.store.load(`tree|${s}|${w}`, this.api.tree(s, w));
+      if (s) this.store.load(`tree|${s}|${w}${ig ? '|ig' : ''}`, this.api.tree(s, w, ig));
     });
     effect(() => {
       const s = this.slug(), w = this.selectedWt(), f = this.file();
@@ -310,7 +308,9 @@ export class FilesComponent {
     });
   }
 
-  selectWt(name: string) { this.nav.emit({ wt: name, file: null }); }
+  // Switching worktree drops back to the lean tree — each heavy listing is an
+  // explicit per-worktree opt-in, never carried along on a pill click.
+  selectWt(name: string) { this.showIgnored.set(false); this.nav.emit({ wt: name, file: null }); }
   // Whole-row click: files navigate, dirs toggle (original UX, beyond p-tree's
   // chevron-only toggling).
   onNodeSelect(node: TreeNode) {

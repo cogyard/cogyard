@@ -1,0 +1,62 @@
+// Layout only + lane-color opacity steps; colors come through --app-cat-* via
+// the per-cell --lane custom property. The hatch (approx cost) is a repeating
+// gradient over the same lane color so estimates read as "same data, less sure".
+.braid { display: block; }
+
+.braid-head {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 8px;
+}
+.braid-title { font-size: 13px; font-weight: 600; color: var(--app-fg); }
+.braid-sort { font-size: 11px; font-weight: 400; color: var(--app-fg-muted); }
+.braid-toggle { display: inline-flex; gap: 4px; }
+
+.braid-scroll { overflow-x: auto; }
+.braid-lanes { display: inline-block; min-width: 100%; }
+
+.lane {
+  display: flex; align-items: center; margin-bottom: 3px;
+  &.breadth {
+    margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--app-border);
+    .lane-cells { align-items: flex-end; height: 18px; }
+  }
+}
+.lane-label {
+  width: 175px; flex: none; padding-right: 8px;
+  font-size: 11px; font-family: monospace; color: var(--app-fg-dim);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  position: sticky; left: 0; background: var(--app-surface); z-index: 1;
+}
+.lane-cells { display: flex; gap: 1px; }
+.lane-fold {
+  border: 0; background: var(--app-surface); cursor: pointer; text-align: left;
+  color: var(--app-accent); padding: 0;
+  &:hover { color: var(--app-accent-hover); }
+}
+
+.bcell {
+  width: 7px; height: 15px; flex: none; border: 0; padding: 0; border-radius: 1.5px;
+  background: var(--app-heat-0); cursor: pointer;
+  &.l1 { background: color-mix(in srgb, var(--lane) 30%, white); }
+  &.l2 { background: color-mix(in srgb, var(--lane) 55%, white); }
+  &.l3 { background: color-mix(in srgb, var(--lane) 80%, white); }
+  &.l4 { background: var(--lane); }
+  &.approx:not(.l0) {
+    background-image: repeating-linear-gradient(45deg, transparent 0 2px, rgba(255, 255, 255, 0.55) 2px 4px);
+  }
+  &.sel { outline: 2px solid var(--app-accent); outline-offset: 1px; }
+  &.demo { --lane: var(--app-fg-muted); cursor: default; width: 10px; }
+}
+
+.bbar {
+  width: 7px; flex: none; border: 0; padding: 0; border-radius: 1px;
+  background: var(--app-fg-muted); cursor: pointer;
+  &.hot { background: var(--app-parallel); }
+  &.sel { outline: 2px solid var(--app-accent); outline-offset: 1px; }
+}
+
+.braid-foot {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 6px; font-size: 11px; color: var(--app-fg-muted);
+  .approx-key { display: inline-flex; align-items: center; gap: 4px; }
+}

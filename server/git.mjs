@@ -8,6 +8,21 @@ import * as core from '../core/index.mjs';
 
 const SEP = '\x1f';
 
+// The origin remote as a browsable https URL (for the portal's "open on GitHub"
+// link). Normalises scp-style (git@host:owner/repo.git) and ssh:// forms to
+// https://host/owner/repo, dropping the trailing .git. Returns null when there
+// is no origin or it isn't a recognisable host URL.
+export async function originHttpUrl(repo) {
+  const raw = (await core.gitP(['config', '--get', 'remote.origin.url'], repo) || '').trim();
+  if (!raw) return null;
+  let url = raw;
+  const scp = raw.match(/^[^@]+@([^:]+):(.+)$/); // git@github.com:owner/repo.git
+  if (scp) url = `https://${scp[1]}/${scp[2]}`;
+  else url = raw.replace(/^ssh:\/\/[^@]+@/, 'https://').replace(/^git:\/\//, 'https://');
+  url = url.replace(/\.git$/, '');
+  return /^https?:\/\//.test(url) ? url : null;
+}
+
 // Full branch inventory (local + remote) with last-commit, ahead/behind vs main,
 // merged-into-main, unpushed, has-worktree and stale-age flags. Distinct from the
 // Worktrees view (which only covers checked-out branches).
@@ -32,11 +47,12 @@ async function computeBranches(repo) {
   const FMT = ['%(refname:short)', '%(objectname:short)', '%(committerdate:iso8601)', '%(committerdate:unix)',
     '%(committerdate:relative)', '%(authorname)', '%(contents:subject)', '%(upstream:short)', '%(upstream:track)', '%(HEAD)'].join(SEP);
   const mainName = await core.defaultBranch(repo);
-  const [refsRaw, mergedRaw, wtRaw, remotesRaw] = await Promise.all([
+  const [refsRaw, mergedRaw, wtRaw, remotesRaw, originUrl] = await Promise.all([
     core.gitP(['for-each-ref', '--sort=-committerdate', 'refs/heads', 'refs/remotes/origin', '--format=' + FMT], repo),
     mainName ? core.gitP(['for-each-ref', '--merged', mainName, 'refs/heads', 'refs/remotes/origin', '--format=%(refname:short)'], repo) : Promise.resolve(''),
     core.gitP(['worktree', 'list', '--porcelain'], repo),
     core.gitP(['remote'], repo),
+    originHttpUrl(repo),
   ]);
   const hasOrigin = (remotesRaw || '').split('\n').includes('origin');
   const merged = new Set((mergedRaw || '').split('\n').filter(Boolean));
@@ -79,7 +95,7 @@ async function computeBranches(repo) {
       taskId: core.matchBranchTask(r.name, r.subject, mainName, tasks),
     };
   }));
-  return { main: mainName, branches };
+  return { main: mainName, originUrl, branches };
 }
 
 // Working-tree status (porcelain v1, NUL-separated) → staged / unstaged /

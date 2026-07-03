@@ -1,16 +1,41 @@
 {
   "name": "cogyard",
-  "version": "0.64.0",
-  "private": true,
+  "version": "1.0.0",
   "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "description": "task coordination for parallel AI coding agents: markdown tasks, collision-free claims, per-task worktrees and ports, and one portal across every project. Open source, agent-agnostic.",
+  "keywords": [
+    "ai-agents",
+    "claude-code",
+    "task-management",
+    "git-worktree",
+    "agent-coordination",
+    "markdown-tasks",
+    "cli",
+    "portal"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cogyard/cogyard.git"
+  },
+  "homepage": "https://cogyard.com",
+  "bugs": {
+    "url": "https://github.com/cogyard/cogyard/issues"
+  },
   "bin": {
     "cogyard": "cli/cogyard.mjs"
   },
+  "files": [
+    "cli/",
+    "core/",
+    "server/",
+    "hooks/",
+    "integrations/",
+    "frontend/dist/frontend/browser"
+  ],
   "workspaces": [
     "frontend"
   ],
@@ -19,6 +44,7 @@
     "dev": "bash scripts/dev.sh",
     "test": "node --test",
     "test:clean-machine": "bash test/clean-machine.sh",
+    "prepack": "npm run build",
     "frontend": "npm start -w frontend",
     "build": "npm run build -w frontend",
     "start": "node cli/cogyard.mjs serve",

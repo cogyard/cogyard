@@ -23,8 +23,15 @@
         <button class="btn-toggle" [class.on]="changedOnly()" (click)="changedOnly.set(!changedOnly())" [disabled]="!changedCount()">
           changed only @if (vsRef()) { <span class="cnt">{{ changedCount() }}</span> }
         </button>
-        <button class="btn-toggle" [class.on]="hideNonGit()" (click)="toggleHideNonGit()" pTooltip="hide files git doesn't track (node_modules, dist, .env, new untracked files)">
-          hide non-git @if (nonGitCount()) { <span class="cnt">{{ nonGitCount() }}</span> }
+        <button class="btn-toggle" [class.on]="showIgnored()" (click)="toggleShowIgnored()"
+                pTooltip="also list gitignored files (node_modules, dist, .env…) — can take a while on big repos">
+          show gitignored
+          @if (loadingIgnored()) {
+            <svg class="ig-spin" viewBox="0 0 24 24" width="11" height="11" fill="none"
+                 stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
+              <path d="M21 12a9 9 0 1 1-9-9" />
+            </svg>
+          }
         </button>
       </span>
     </div>

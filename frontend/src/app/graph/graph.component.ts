@@ -1,6 +1,7 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
 import { Skeleton } from 'primeng/skeleton';
 import { Tag } from 'primeng/tag';
+import { OriginLinkComponent } from '../shared/origin-link/origin-link.component';
 import { ApiService } from '../services/api.service';
 import { GraphResponse } from '../services/models';
 import { RefreshService } from '../services/refresh.service';
@@ -24,7 +25,7 @@ interface Row {
 
 @Component({
   selector: 'app-graph',
-  imports: [Tag, Skeleton],
+  imports: [Tag, Skeleton, OriginLinkComponent],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss',
 })
@@ -43,6 +44,7 @@ export class GraphComponent {
   private cached = computed(() => this.store.sig<GraphResponse>(`graph|${this.slug()}`)());
   rows = computed<Row[]>(() => (this.cached()?.rows || []).map((r: any) => this.toRow(r)));
   laneCount = computed(() => this.cached()?.laneCount ?? 0);
+  originUrl = computed(() => this.cached()?.originUrl ?? null);
   loading = computed(() => this.cached() === null);
   readonly RH = RH;
 

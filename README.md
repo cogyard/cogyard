@@ -49,19 +49,31 @@ all.
 ### 1. The engine
 
 ```sh
+npm i -g cogyard   # puts the `cogyard` command on your PATH
+cogyard serve      # → http://localhost:7440
+```
+
+Or try it without installing anything:
+
+```sh
+npx cogyard serve
+```
+
+The published package ships the portal UI prebuilt — no build step, no clone.
+
+<details>
+<summary><strong>From source</strong> (the dev path — hacking on cogyard itself)</summary>
+
+```sh
 git clone https://github.com/cogyard/cogyard.git cogyard
 cd cogyard
 npm install        # npm workspaces — root + the portal UI
 npm start          # builds the UI on first run (~30s), then serves → http://localhost:7440
+npm link           # optional: put this checkout's `cogyard` on your PATH
 ```
 
-That's the whole portal — `npm start` builds the (gitignored) UI for you on the
-first run; later runs are instant. To use the `cogyard` command inside your *own*
-projects (`init`, `tasks`, claims), also put it on your PATH:
-
-```sh
-npm link           # or: npm i -g .   (a published @cogyard/cli is planned)
-```
+See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the dev-server setup.
+</details>
 
 Verify with `cogyard --help`. To confirm the install is wired correctly — right
 Node, `git` on PATH, a writable `~/.cogyard/`, projects registered — run

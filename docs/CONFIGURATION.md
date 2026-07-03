@@ -117,7 +117,7 @@ To change the worktree ranges, edit the `ranges` object in `~/.cogyard/ports.jso
   desktop build needs ≥ 22.12). Enforced via `engines` in `package.json`.
 - **git** — used by nearly every command (init, the portal's git views, task sync,
   env detection). `cogyard` fails with a clear message if it's missing.
-- **npm** — install + `npm link`.
+- **npm** — `npm i -g cogyard` (or, from a clone, install + `npm link`).
 
 **Platform:** macOS and Linux. **Windows is supported via WSL** — the worktree
 hooks are bash scripts and port-ownership checks use `lsof`, neither of which runs

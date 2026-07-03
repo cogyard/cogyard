@@ -20,7 +20,10 @@ export async function handle(path, u, proj, res) {
   const wt = findWorktree(proj, wtName);
   if (!wt) return errJson(res, 404, 'unknown worktree: ' + wtName);
 
-  if (path === '/api/tree') return json(res, 200, { worktree: wt.name, ...(await fileTree(wt.path)) });
+  if (path === '/api/tree') {
+    const ignored = u.searchParams.get('ig') === '1';
+    return json(res, 200, { worktree: wt.name, ...(await fileTree(wt.path, { ignored })) });
+  }
 
   const f = u.searchParams.get('path') || '';
   const badPath = badRelPath(f);

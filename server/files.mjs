@@ -79,23 +79,31 @@ export function worktreeActivity(proj) {
 
 // --- File tree -------------------------------------------------------------------
 
-// Flat file list of the working tree as it exists on disk: tracked + untracked +
-// gitignored (only .git internals are excluded — git never lists those). Each
-// entry is tagged `tracked: true|false` — false means "non-git" (untracked,
+// Flat file list of the working tree: tracked + untracked, and — only when
+// `ignored: true` — gitignored files too (only .git internals are excluded —
+// git never lists those). Gitignored files are opt-in because enumerating them
+// walks node_modules/dist: ~220k entries and a ~25 MB response on a big repo,
+// vs ~1k entries without. The client lazy-loads the ignored view on demand.
+// Each entry is tagged `tracked: true|false` — false means "non-git" (untracked,
 // whether gitignored like node_modules or just not yet added). The client uses
-// it for the "hide non-git" filter and to gray non-git rows. Each entry also
-// carries its status vs the main branch (committed AND uncommitted differences):
-// A/M/D/R…, with untracked-but-not-ignored files reported as 'A' (additions
-// relative to main, though `git diff` itself doesn't list them). Files deleted
-// vs main aren't on disk but are included with status 'D' and onDisk:false so
-// the tree can still show them.
-export async function fileTree(wtPath) {
+// it to gray non-git rows. Each entry also carries its status vs the main
+// branch (committed AND uncommitted differences): A/M/D/R…, with
+// untracked-but-not-ignored files reported as 'A' (additions relative to main,
+// though `git diff` itself doesn't list them). Files deleted vs main aren't on
+// disk but are included with status 'D' and onDisk:false so the tree can still
+// show them.
+export async function fileTree(wtPath, { ignored = false } = {}) {
   const ref = await mainRef(wtPath);
-  // List EVERYTHING on disk (tracked + untracked + gitignored); git never lists
-  // .git internals. The ignored set is computed separately only to keep
-  // node_modules/dist out of the status counts (they aren't "changes vs main").
-  const listed = splitZ(gitZ(['ls-files', '--cached', '--others', '-z'], wtPath));
-  const ignoredSet = new Set(splitZ(gitZ(['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], wtPath)));
+  // Default: tracked + untracked-but-not-ignored (--exclude-standard skips the
+  // gitignored forest). With `ignored`: everything on disk, plus the ignored
+  // set computed separately only to keep node_modules/dist out of the status
+  // counts (they aren't "changes vs main").
+  const listed = ignored
+    ? splitZ(gitZ(['ls-files', '--cached', '--others', '-z'], wtPath))
+    : splitZ(gitZ(['ls-files', '--cached', '--others', '--exclude-standard', '-z'], wtPath));
+  const ignoredSet = ignored
+    ? new Set(splitZ(gitZ(['ls-files', '--others', '--ignored', '--exclude-standard', '-z'], wtPath)))
+    : new Set();
   const tracked = new Set(splitZ(gitZ(['ls-files', '--cached', '-z'], wtPath)));
   const goneFromDisk = new Set(splitZ(gitZ(['ls-files', '--deleted', '-z'], wtPath)));
 

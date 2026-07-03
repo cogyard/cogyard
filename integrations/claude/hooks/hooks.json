@@ -24,6 +24,17 @@
       ]
     }
   ],
+  "SessionEnd": [
+    {
+      "hooks": [
+        {
+          "type": "command",
+          "command": "cogyard usage collect --hook",
+          "timeout": 60
+        }
+      ]
+    }
+  ],
   "UserPromptSubmit": [
     {
       "hooks": [

@@ -6,7 +6,8 @@ import { InputText } from 'primeng/inputtext';
 import { MessageService } from 'primeng/api';
 import { ApiService } from '../services/api.service';
 import { ConfigService } from '../services/config.service';
-import { ProjectKind, StoreKind, OpenTargetFull } from '../services/models';
+import { ProjectKind, StoreKind, OpenTargetFull, WeekStart } from '../services/models';
+import { fmtHour } from '../shared/activity-punchcard/activity-punchcard.component';
 
 // The /settings view AND the first-run setup wizard (task 060) — the same form,
 // `wizard` just swaps the framing + shows the "add your first project" CTA. Every
@@ -37,6 +38,8 @@ export class SettingsComponent {
   // refreshed after a Save. Until config resolves they hold the built-in defaults.
   kind = signal<ProjectKind>('single');
   store = signal<StoreKind>('shared');
+  weekStart = signal<WeekStart>('sunday');
+  dayStart = signal(0);
   projectsRoot = signal('');
   targets = signal<OpenTargetFull[]>([]);
   savingConfig = signal(false);
@@ -48,6 +51,8 @@ export class SettingsComponent {
     { label: 'static', value: 'static' }, { label: 'library', value: 'library' },
   ];
   readonly storeOptions = [{ label: 'shared', value: 'shared' as const }, { label: 'normal', value: 'normal' as const }];
+  readonly weekStartOptions = [{ label: 'Sunday (GitHub)', value: 'sunday' as const }, { label: 'Monday', value: 'monday' as const }];
+  readonly dayStartOptions = Array.from({ length: 24 }, (_, h) => ({ label: fmtHour(h), value: h }));
 
   constructor() {
     effect(() => {
@@ -55,6 +60,8 @@ export class SettingsComponent {
       if (!c) return;
       this.kind.set(c.defaults.kind);
       this.store.set(c.defaults.store);
+      this.weekStart.set(c.ui?.weekStart ?? 'sunday');
+      this.dayStart.set(c.ui?.dayStart ?? 0);
       this.projectsRoot.set(c.projectsRoot);
       this.targets.set(c.openTargets.map((t) => ({ ...t, args: [...t.args] })));
     });
@@ -67,7 +74,7 @@ export class SettingsComponent {
   saveConfig() {
     if (!this.canSaveConfig()) return;
     this.savingConfig.set(true);
-    this.api.saveConfig({ defaults: { kind: this.kind(), store: this.store() }, projectsRoot: this.projectsRoot().trim() }).subscribe({
+    this.api.saveConfig({ defaults: { kind: this.kind(), store: this.store() }, ui: { weekStart: this.weekStart(), dayStart: this.dayStart() }, projectsRoot: this.projectsRoot().trim() }).subscribe({
       next: () => {
         this.savingConfig.set(false);
         this.cfg.reload(); // refresh so the New/Add drawer prefills with the new defaults

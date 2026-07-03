@@ -3,10 +3,15 @@ import { Skeleton } from 'primeng/skeleton';
 import { Tag } from 'primeng/tag';
 import { TableModule } from 'primeng/table';
 import { ApiService } from '../services/api.service';
-import { OverviewResponse, UsageResponse } from '../services/models';
+import { OverviewResponse, UsageResponse, ActivityResponse } from '../services/models';
 import { RefreshButtonComponent } from '../shared/refresh-button/refresh-button.component';
+import { ActivityHeatmapComponent } from '../shared/activity-heatmap/activity-heatmap.component';
+import { ActivityBraidComponent, projectColors, projectRank } from '../shared/activity-braid/activity-braid.component';
+import { ActivityDayComponent } from '../shared/activity-day/activity-day.component';
+import { ActivityPunchcardComponent } from '../shared/activity-punchcard/activity-punchcard.component';
 import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
+import { ConfigService } from '../services/config.service';
 
 type Money = { cost: number; bf: number }; // bf retained for future use; not shown
 
@@ -27,7 +32,7 @@ const PRICE_RANK: Record<string, number> = { Fable: 0, Mythos: 0, Opus: 1, Sonne
 
 @Component({
   selector: 'app-overview',
-  imports: [Tag, TableModule, Skeleton, RefreshButtonComponent],
+  imports: [Tag, TableModule, Skeleton, RefreshButtonComponent, ActivityHeatmapComponent, ActivityBraidComponent, ActivityDayComponent, ActivityPunchcardComponent],
   templateUrl: './overview.component.html',
   styleUrl: './overview.component.scss',
 })
@@ -35,6 +40,7 @@ export class OverviewComponent {
   private api = inject(ApiService);
   private refresh = inject(RefreshService);
   private store = inject(StoreService);
+  private cfg = inject(ConfigService);
   selectProject = output<string>();
 
   private cached = computed(() => this.store.sig<OverviewResponse>('overview')());
@@ -47,8 +53,61 @@ export class OverviewComponent {
       this.refresh.tick();
       this.store.load('overview', this.api.overview());
       this.store.load('usage', this.api.usage());
+      this.store.load('activity', this.api.activity());
     });
   }
+
+  // --- Activity views (task 064) ---
+  activity = computed(() => this.store.sig<ActivityResponse>('activity')());
+  // Aggregate commits across all projects for the ALL heatmap; the raw
+  // per-project map doubles as the tooltip breakdown.
+  commitsAllByDay = computed<Record<string, number>>(() => {
+    const a = this.activity();
+    const out: Record<string, number> = {};
+    if (!a) return out;
+    for (const byDay of Object.values(a.commits)) {
+      for (const [d, n] of Object.entries(byDay)) out[d] = (out[d] || 0) + n;
+    }
+    return out;
+  });
+  commitsBreakdown = computed<Record<string, Record<string, number>> | null>(() => {
+    const a = this.activity();
+    if (!a) return null;
+    const out: Record<string, Record<string, number>> = {};
+    for (const [slug, byDay] of Object.entries(a.commits)) {
+      for (const [d, n] of Object.entries(byDay)) {
+        if (!out[d]) out[d] = {};
+        out[d][slug] = n;
+      }
+    }
+    return out;
+  });
+  // Stable per-project lane colors, shared by the braid and the drill-down.
+  laneColors = computed<Record<string, string>>(() => {
+    const a = this.activity();
+    return a ? projectColors(a) : {};
+  });
+  laneOrder = computed<string[]>(() => {
+    const a = this.activity();
+    return a ? projectRank(a) : [];
+  });
+  weekStart = computed(() => this.cfg.config()?.ui?.weekStart ?? 'sunday');
+  dayStart = computed(() => this.cfg.config()?.ui?.dayStart ?? 0);
+  drillDay = signal<string | null>(null);
+  // Per window, the 7×24 prompt matrix aggregated across all projects.
+  punchcardAll = computed<Record<string, number[][]>>(() => {
+    const a = this.activity();
+    const out: Record<string, number[][]> = {};
+    if (!a?.punchcards) return out;
+    for (const [win, bySlug] of Object.entries(a.punchcards)) {
+      const agg = Array.from({ length: 7 }, () => Array(24).fill(0));
+      for (const m of Object.values(bySlug)) {
+        m.forEach((row, d) => row.forEach((n, h) => { agg[d][h] += n; }));
+      }
+      out[win] = agg;
+    }
+    return out;
+  });
 
   // One pass over the ledger: the ordered family columns present, each
   // project's cost split by family + total, and the column sums for the totals

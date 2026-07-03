@@ -31,6 +31,20 @@
       </label>
 
       <label class="set-field">
+        <span class="set-label">Activity week starts on</span>
+        <p-selectbutton size="small" [options]="weekStartOptions" optionLabel="label" optionValue="value"
+                        [allowEmpty]="false" [ngModel]="weekStart()" (ngModelChange)="weekStart.set($event)" name="weekStart" />
+        <span class="set-hint">First row of the activity heatmaps. Sunday matches GitHub's contribution graph.</span>
+      </label>
+
+      <label class="set-field">
+        <span class="set-label">Activity day starts at</span>
+        <p-select size="small" styleClass="set-input" [options]="dayStartOptions" optionLabel="label" optionValue="value"
+                  [ngModel]="dayStart()" (ngModelChange)="dayStart.set($event)" name="dayStart" />
+        <span class="set-hint">First hour on the "When you're active" axis — early-morning work reads as the previous evening's tail.</span>
+      </label>
+
+      <label class="set-field">
         <span class="set-label">Projects root <span class="req">*</span></span>
         <input pInputText pSize="small" class="set-input" name="projectsRoot"
                [ngModel]="projectsRoot()" (ngModelChange)="projectsRoot.set($event)" placeholder="/Users/you/gitroot" />

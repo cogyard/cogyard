@@ -68,13 +68,19 @@ export default {
     list() { return [/* abs file paths */] },          // every transcript file
     findBySession(sessionId) { return [/* abs paths */] }, // this session's transcript(s)
     // One raw transcript line (string) → normalized record, or null to skip.
-    //   { sessionId, cwd, usage }  — sessionId/cwd may be null on a given line.
+    //   { sessionId, cwd, usage, prompt }  — sessionId/cwd may be null on a line.
     //   usage (the billable turn, or null):
     //     { model, timestamp, dedupeKey, tokens }
     //   tokens: { input, output, cacheRead, cacheWrite5m, cacheWrite1h }
     //     (the ledger's fixed token shape — map your agent's fields onto it;
     //      leave cache tiers 0 if your agent has no prompt caching).
-    parseLine(line) { return { sessionId, cwd, usage } /* | null */ },
+    //   prompt (a HUMAN prompt event, or null — task 064's attention signal):
+    //     { timestamp, dedupeKey }
+    //     Emit it ONLY for messages the human actually typed — not tool results,
+    //     not injected/meta lines. If your agent's log can't tell those apart,
+    //     always return null: the attention views then show nothing for this
+    //     agent instead of counting machine noise as human attention.
+    parseLine(line) { return { sessionId, cwd, usage, prompt } /* | null */ },
   },
 
   // --- seam 3: pricing ------------------------------------------------------
@@ -101,8 +107,10 @@ export default {
 ```
 
 With the no-op adapter: worktree detection falls back to the engine's generic
-markers + registry/basename; `collectUsage()` harvests nothing; `priceFor()`
-returns `{ costUSD: null }` so tokens still ledger but cost is never invented.
+markers + registry/basename; `collectUsage()` harvests nothing (usage AND
+activity); `priceFor()` returns `{ costUSD: null }` so tokens still ledger but
+cost is never invented. The portal's attention/cost activity views render empty;
+the commits heatmap (pure git) keeps working with no agent at all.
 
 ## Adding an agent
 

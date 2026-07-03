@@ -29,7 +29,7 @@ first three are the everyday recipes; `sidebar-item` is the left-rail nav row.
 |---|---|---|
 | `btn-pill` | **Pick-or-act**: switchers + standalone actions — topbar project pills, worktree selector, usage refresh. Rounded, fillable. | `.active` = selected |
 | `btn-toggle` | **In-place mode/option**: Files tab changed-only / rendered / raw / diff. Compact, tinted when engaged. | `.on` = engaged |
-| `btn-link` | **Navigate somewhere**: `#task`, `⎇worktree`, project name, commit. Accent underline, no chrome. | `.mono` = monospace id label |
+| `btn-link` | **Navigate somewhere**: `#task`, `⎇worktree`, project name, commit. Accent underline, no chrome. | `.mono` = monospace id label · `.dim` = muted-at-rest, accent on hover (matches the Worktrees tab's links; for whole link columns) |
 | `sidebar-item` | **Pick-or-act in the left rail**: the project nav rows + `All` in the sidebar. Full-width, left-aligned, squared; transparent at rest, accent-filled when selected. Lives on the dark sidebar (colors derive from `--app-topbar-fg` + `--app-accent`). | `.active` = selected |
 
 Sanctioned one-offs (composite controls, local by design, NOT recipes to copy):

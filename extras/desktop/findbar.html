@@ -1,0 +1,80 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>find</title>
+<!--
+  The Cmd+F find bar. A tiny overlay WebContentsView, hidden until ⌘F,
+  positioned top-right of the window (see main.mjs layout()). It does NO searching
+  itself — it just posts the query / next / prev / close to main over IPC; main
+  drives the active tab's native webContents.findInPage() (the same Chromium find
+  engine Chrome's ⌘F uses) and relays {matches, activeMatchOrdinal} back here for
+  the "n/m" counter. Same shell-level pattern as tabstrip.html, so it works on
+  EVERY tab uniformly — portal and worktree dev-server tabs alike.
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: transparent; }
+  body {
+    font: 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    display: flex; align-items: center; height: 100%;
+  }
+  #bar {
+    display: flex; align-items: center; gap: 6px;
+    width: 100%; height: 100%; box-sizing: border-box; padding: 0 6px 0 10px;
+    background: #2f3338; color: #e8eaee;
+    border: 1px solid color-mix(in srgb, #fff 16%, transparent);
+    border-radius: 9px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .4);
+  }
+  #q {
+    flex: 1 1 auto; min-width: 0;
+    background: transparent; border: none; outline: none;
+    color: #e8eaee; font: inherit;
+  }
+  #q::placeholder { color: #757b83; }
+  #count {
+    color: #9aa0a6; font-variant-numeric: tabular-nums; white-space: nowrap;
+    padding: 0 2px; flex: 0 0 auto;
+  }
+  #count.none { color: #e06c6c; }
+  .sep { width: 1px; align-self: stretch; margin: 6px 2px; background: color-mix(in srgb, #fff 14%, transparent); }
+  button {
+    width: 24px; height: 24px; flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: center;
+    background: transparent; border: none; border-radius: 5px;
+    color: #c8ccd2; font-size: 15px; cursor: default; padding: 0;
+  }
+  button:hover:not(:disabled) { background: color-mix(in srgb, #fff 12%, transparent); color: #fff; }
+  button:active:not(:disabled) { background: color-mix(in srgb, #fff 18%, transparent); }
+</style>
+<div id="bar">
+  <input id="q" type="text" placeholder="Find" spellcheck="false" autocomplete="off">
+  <span id="count"></span>
+  <span class="sep"></span>
+  <button id="prev" title="Previous (⇧⏎)">&#8593;</button>
+  <button id="next" title="Next (⏎)">&#8595;</button>
+  <button id="close" title="Close (Esc)">&times;</button>
+</div>
+<script>
+  const q = document.getElementById('q');
+  const count = document.getElementById('count');
+
+  function setCount(matches, ordinal) {
+    if (!q.value) { count.textContent = ''; count.classList.remove('none'); return; }
+    if (matches > 0) { count.textContent = ordinal + '/' + matches; count.classList.remove('none'); }
+    else { count.textContent = 'No results'; count.classList.add('none'); }
+  }
+
+  q.addEventListener('input', () => { if (!q.value) setCount(0, 0); cogyardFind.query(q.value); });
+  q.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); e.shiftKey ? cogyardFind.prev() : cogyardFind.next(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cogyardFind.close(); }
+  });
+  document.getElementById('prev').addEventListener('click', () => { cogyardFind.prev(); q.focus(); });
+  document.getElementById('next').addEventListener('click', () => { cogyardFind.next(); q.focus(); });
+  document.getElementById('close').addEventListener('click', () => cogyardFind.close());
+
+  // main → bar: relay native found-in-page results to the counter.
+  cogyardFind.onResult(({ matches, activeMatchOrdinal }) => setCount(matches, activeMatchOrdinal));
+  // main → bar: ⌘F (re)opened — focus + select so typing replaces the old query.
+  cogyardFind.onFocus(() => { count.textContent = ''; count.classList.remove('none'); q.focus(); q.select(); });
+</script>

@@ -57,7 +57,7 @@ export class OverviewComponent {
     });
   }
 
-  // --- Activity views (task 064) ---
+  // --- Activity views ---
   activity = computed(() => this.store.sig<ActivityResponse>('activity')());
   // Aggregate commits across all projects for the ALL heatmap; the raw
   // per-project map doubles as the tooltip breakdown.

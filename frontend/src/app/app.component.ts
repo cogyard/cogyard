@@ -6,7 +6,10 @@ import { Tabs, TabList, Tab as PTab } from 'primeng/tabs';
 import { ApiService } from './services/api.service';
 import { BadgeService } from './services/badge.service';
 import { RefreshService } from './services/refresh.service';
+import { EditStateService } from './services/edit-state.service';
+import { ConfigService } from './services/config.service';
 import { Project } from './services/models';
+import { PORTAL_TABS, PortalTabId } from './shared/portal-tabs';
 import { FreshnessPieComponent } from './shared/freshness-pie/freshness-pie.component';
 import { TasksComponent } from './tasks/tasks.component';
 import { BoardComponent } from './board/board.component';
@@ -16,19 +19,19 @@ import { WorktreesComponent } from './worktrees/worktrees.component';
 import { OverviewComponent } from './overview/overview.component';
 import { CommitPanelComponent } from './shared/commit-panel/commit-panel.component';
 import { FilesComponent } from './files/files.component';
-import { ActivityComponent } from './activity/activity.component';
+import { StatsComponent } from './stats/stats.component';
 import { NewProjectComponent } from './shared/new-project/new-project.component';
 import { SettingsComponent } from './settings/settings.component';
 // Build-stamped at build time by scripts/generate-version.mjs — the single source
 // of version + commit (works in the packaged desktop app too; no /api/health call).
 import versionInfo from '../version.json';
 
-type Tab = 'tasks' | 'board' | 'branches' | 'worktrees' | 'graph' | 'files' | 'activity';
-const TAB_SET = new Set<string>(['tasks', 'board', 'branches', 'worktrees', 'graph', 'files', 'activity']);
+type Tab = PortalTabId;
+const TAB_SET = new Set<string>(PORTAL_TABS.map((t) => t.id));
 
 @Component({
   selector: 'app-root',
-  imports: [TasksComponent, BoardComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, ActivityComponent, NewProjectComponent, SettingsComponent, FreshnessPieComponent, Toast, Tabs, TabList, PTab],
+  imports: [TasksComponent, BoardComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, StatsComponent, NewProjectComponent, SettingsComponent, FreshnessPieComponent, Toast, Tabs, TabList, PTab],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
   host: { '(window:resize)': 'measureHeader()' },
@@ -38,6 +41,8 @@ export class AppComponent implements OnInit {
   private router = inject(Router);
   private badge = inject(BadgeService); // instantiate the dock-badge poller
   private refresh = inject(RefreshService);
+  private editState = inject(EditStateService);
+  private cfg = inject(ConfigService);
 
   constructor() {
     // Publish the toolbar height so the fixed commit sidebar can sit below it.
@@ -63,7 +68,7 @@ export class AppComponent implements OnInit {
   projects = signal<Project[]>([]);
   // Whether /api/projects has resolved at least once. Distinguishes "not fetched
   // yet" (empty because loading) from "fetched and genuinely empty" — the root
-  // redirect + wizard must only fire on the latter (task 060 redirect race).
+  // redirect + wizard must only fire on the latter (redirect race).
   loaded = signal<boolean>(false);
   // Build version shown in the sidebar foot, e.g. "v0.34.0 (aabd73f)" — build-stamped
   // (version.json), so it's correct in the web portal AND the packaged desktop app.
@@ -77,7 +82,7 @@ export class AppComponent implements OnInit {
   tab = signal<Tab>('tasks');
   taskFilter = signal<string>('');
   viewAll = signal<boolean>(false);
-  settingsRoute = signal<boolean>(false); // URL is /settings (task 060)
+  settingsRoute = signal<boolean>(false); // URL is /settings
   panelHash = signal<string | null>(null);
   wtParam = signal<string>('');
   fileParam = signal<string>('');
@@ -93,15 +98,13 @@ export class AppComponent implements OnInit {
   // than rebuilding the form.
   private newProject = viewChild(NewProjectComponent);
 
-  readonly tabs: { id: Tab; label: string }[] = [
-    { id: 'tasks', label: 'Tasks' },
-    { id: 'board', label: 'Board' },
-    { id: 'branches', label: 'Branches' },
-    { id: 'worktrees', label: 'Worktrees' },
-    { id: 'graph', label: 'Graph' },
-    { id: 'files', label: 'Files' },
-    { id: 'activity', label: 'Activity' },
-  ];
+  // The strip renders PORTAL_TABS minus ui.hiddenTabs. The current tab
+  // always shows even when hidden — a deep link (e.g. /p/x/board) must not leave
+  // the user on an invisible tab. Content rendering (@switch) stays unfiltered.
+  readonly tabs = computed<{ id: Tab; label: string }[]>(() => {
+    const hidden = new Set(this.cfg.config()?.ui?.hiddenTabs ?? []);
+    return PORTAL_TABS.filter((t) => !hidden.has(t.id) || t.id === this.tab());
+  });
 
   ngOnInit() {
     // URL drives state: re-parse on every navigation (incl. browser back/forward).
@@ -124,11 +127,15 @@ export class AppComponent implements OnInit {
     } else if (segs[0] === 'p' && segs[1]) {
       this.viewAll.set(false);
       this.slug.set(segs[1]);
-      this.tab.set((TAB_SET.has(segs[2]) ? segs[2] : 'tasks') as Tab);
+      // Legacy redirect: the tab formerly known as 'activity' is now 'stats'
+      // (full rename). Old bookmarks (/p/x/activity) resolve to the
+      // stats tab instead of falling through to the default (tasks).
+      const seg = segs[2] === 'activity' ? 'stats' : segs[2];
+      this.tab.set((TAB_SET.has(seg) ? seg : 'tasks') as Tab);
     } else {
       // root or unknown — wait until /api/projects has actually resolved before
       // deciding; otherwise the transient empty list on first load bounces us to
-      // /settings and sticks there (task 060 redirect race). The subscribe
+      // /settings and sticks there (redirect race). The subscribe
       // callback re-runs syncFromUrl once projects arrive, so this is reached
       // again with loaded=true and redirects correctly (first project, or the
       // wizard only when genuinely zero).
@@ -153,29 +160,35 @@ export class AppComponent implements OnInit {
   }
 
   // --- Navigation (all routes through the URL) ---
-  onProject(slug: string) { this.router.navigate(['/p', slug, 'tasks']); }
-  showAll() { this.router.navigate(['/all']); }
-  goSettings() { this.router.navigate(['/settings']); }
+  // Every nav funnels through guardedNav so an unsaved Files-tab edit
+  // prompts before being dropped — the files component is destroyed on nav.
+  private guardedNav(commands: unknown[], extras?: object) {
+    if (!this.editState.confirmDiscard()) return;
+    this.router.navigate(commands as string[], extras);
+  }
+  onProject(slug: string) { this.guardedNav(['/p', slug, 'tasks']); }
+  showAll() { this.guardedNav(['/all']); }
+  goSettings() { this.guardedNav(['/settings']); }
   // Wizard CTA → open the existing New/Add drawer (don't rebuild the form).
   openNewProject() { this.newProject()?.start('init'); }
-  setTab(t: Tab) { this.router.navigate(['/p', this.slug(), t]); }
-  jumpToTask(id: string) { this.router.navigate(['/p', this.slug(), 'tasks'], { queryParams: { task: id } }); }
-  jumpToWorktree(_name: string) { this.router.navigate(['/p', this.slug(), 'worktrees']); }
-  selectProject(slug: string) { this.router.navigate(['/p', slug, 'tasks']); }
+  setTab(t: Tab) { this.guardedNav(['/p', this.slug(), t]); }
+  jumpToTask(id: string) { this.guardedNav(['/p', this.slug(), 'tasks'], { queryParams: { task: id } }); }
+  jumpToWorktree(_name: string) { this.guardedNav(['/p', this.slug(), 'worktrees']); }
+  selectProject(slug: string) { this.guardedNav(['/p', slug, 'tasks']); }
   openCommit(hash: string) {
     this.router.navigate(['/p', this.slug(), this.tab()], { queryParams: { commit: hash }, queryParamsHandling: 'merge' });
   }
   // Clicking a branch jumps to the Graph tab with that branch's tip selected.
   openCommitInGraph(hash: string) {
-    this.router.navigate(['/p', this.slug(), 'graph'], { queryParams: { commit: hash } });
+    this.guardedNav(['/p', this.slug(), 'graph'], { queryParams: { commit: hash } });
   }
   // Branches tab honors ?branch=<name> like Graph honors ?commit= (scroll + highlight).
   jumpToBranch(name: string) {
-    this.router.navigate(['/p', this.slug(), 'branches'], { queryParams: { branch: name } });
+    this.guardedNav(['/p', this.slug(), 'branches'], { queryParams: { branch: name } });
   }
   // Files tab: worktree + file selection live in the URL like ?task / ?commit.
   filesNav(e: { wt: string; file: string | null }) {
-    this.router.navigate(['/p', this.slug(), 'files'], { queryParams: { wt: e.wt || null, file: e.file } });
+    this.guardedNav(['/p', this.slug(), 'files'], { queryParams: { wt: e.wt || null, file: e.file } });
   }
   closePanel() {
     this.router.navigate(['/p', this.slug(), this.tab()], { queryParams: { commit: null }, queryParamsHandling: 'merge' });

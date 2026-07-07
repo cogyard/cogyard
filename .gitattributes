@@ -22,12 +22,13 @@ scripts/githooks/pre-push export-ignore
 scripts/githooks/pre-commit export-ignore
 publish/public-manifest.txt export-ignore
 
-# Private maintainer note — names the owner's private backup repos.
-docs/PUBLISHING.md export-ignore
-
 # This machine's real deploy config (owner paths). Public repo has generic examples.
 local/** export-ignore
 local/ export-ignore
+
+# First-person portal design LOG (personal quotes, planet clone names, "Ben"
+# throughout). Kept in the private repo as a record; not public reference material.
+docs/PORTAL-V2-DESIGN.md export-ignore
 
 # Private owner notes (*.local.md — name ratings, deployment specifics, etc.). Tracked
 # so they're in the private backup, export-ignore'd so they never reach public. This

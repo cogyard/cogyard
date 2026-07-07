@@ -1,4 +1,4 @@
-// core/doctor.mjs — the `cogyard doctor` install preflight, as pure logic (task 62).
+// core/doctor.mjs — the `cogyard doctor` install preflight, as pure logic.
 //
 // runDoctor(ctx) runs a list of preflight checks and returns a structured report.
 // It does NO I/O of its own — no `console`, no `child_process`, no fs. Every
@@ -79,11 +79,11 @@ const CHECKS = [
           `Fix the JSON in ${ctx.home}/config.json (or delete it to use defaults).`,
         );
       }
-      const name = ctx.config.integration;
-      if (typeof name === 'string' && name !== 'none' && !ctx.integration.available.includes(name)) {
+      const name = ctx.config.driver;
+      if (typeof name === 'string' && name !== 'none' && !ctx.driver.available.includes(name)) {
         return warn(
-          `config.json names integration "${name}", which isn't installed — cogyard will fall back to auto-detect.`,
-          `Set "integration" to one of: ${ctx.integration.available.join(', ') || '(none installed)'} — or remove it.`,
+          `config.json names driver "${name}", which isn't installed — cogyard will fall back to auto-detect.`,
+          `Set "driver" to one of: ${ctx.driver.available.join(', ') || '(none installed)'} — or remove it.`,
         );
       }
       return ok('present and valid');
@@ -116,16 +116,16 @@ const CHECKS = [
     },
   },
   {
-    id: 'integration',
-    label: 'agent integration',
+    id: 'driver',
+    label: 'agent driver',
     run(ctx) {
-      if (!ctx.integration.active) {
+      if (!ctx.driver.active) {
         return warn(
-          'no agent integration active — cogyard runs fine, but usage cost will be null.',
-          'Run cogyard inside a supported agent (e.g. Claude Code), or set "integration" in config.json. See docs/INTEGRATIONS.md.',
+          'no agent driver active — cogyard runs fine, but usage cost will be null.',
+          'Run cogyard inside a supported agent (e.g. Claude Code), or set "driver" in config.json. See docs/DRIVERS.md.',
         );
       }
-      return ok(`${ctx.integration.active} active`);
+      return ok(`${ctx.driver.active} active`);
     },
   },
   {

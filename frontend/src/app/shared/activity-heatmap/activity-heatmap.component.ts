@@ -1,7 +1,7 @@
 import { Component, input, output, computed } from '@angular/core';
 import { WeekStart } from '../../services/models';
 
-// GitHub-style contribution heatmap (task 064): 7 rows (Sun..Sat) × N week
+// GitHub-style contribution heatmap: 7 rows (Sun..Sat) × N week
 // columns ending today, intensity = commits that local day. Pure presentation —
 // the parent hands in per-day counts (one project's, or the ALL aggregate with
 // a per-project breakdown for the tooltip).

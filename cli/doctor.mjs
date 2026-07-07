@@ -5,7 +5,7 @@
 // port), packs the facts into a `ctx`, calls the pure `runDoctor(ctx)`, renders the
 // ok/warn/fail report with a fix line per problem, and sets the exit code (non-zero
 // iff any check FAILED — warnings don't fail). It REPORTS only; it never mutates
-// config/registry/ports (auto-fix is out of scope, task 62).
+// config/registry/ports (auto-fix is out of scope).
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, accessSync, constants } from 'node:fs';
@@ -15,7 +15,7 @@ import net from 'node:net';
 
 import { COGYARD_HOME, PROJECTS_ROOT } from '../core/paths.mjs';
 import { discoverProjects } from '../core/registry.mjs';
-import { adapter, listIntegrationNames } from '../core/integrations.mjs';
+import { adapter, listDriverNames } from '../core/drivers.mjs';
 import { runDoctor } from '../core/doctor.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..'); // <pkg>
@@ -86,9 +86,9 @@ async function main() {
     projectsRoot: PROJECTS_ROOT,
     rootExists: () => existsSync(PROJECTS_ROOT),
     registry: discoverProjects(),
-    integration: {
+    driver: {
       active: adapter.name && adapter.name !== 'none' ? adapter.name : null,
-      available: listIntegrationNames(),
+      available: listDriverNames(),
     },
     frontendBuilt: () => existsSync(DIST),
     servePort: SERVE_PORT,

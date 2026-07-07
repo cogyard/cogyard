@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync, existsSync, renameSync, openSync, closeSyn
 import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { adapter } from '../core/integrations.mjs';
+import { adapter } from '../core/drivers.mjs';
 
 // Config home: $COGYARD_HOME overrides, default ~/.cogyard/ — same resolution
 // rule as core/paths.mjs (keep in sync).
@@ -123,10 +123,10 @@ function parsePlanet(planetPath) {
 // Walk up from worktreePath until we find a parent identifier:
 //   1) a .planet file (planet-style multi-clone projects), OR
 //   2) a .claude/worktree-config.json (projects with full env wiring), OR
-//   3) the active integration's worktree layout — allocation is universal, no
+//   3) the active driver's worktree layout — allocation is universal, no
 //      opt-in; the repo root is identity enough. The agent-specific positional
 //      fallback (the path regex) lives in the adapter's worktree.detect
-//      (integrations/<agent>/adapter.mjs; task 038), not here.
+//      (drivers/<agent>/adapter.mjs), not here.
 // Returns { parentDir, parentName } or null (null only for non-worktree paths
 // with no marker at all).
 // Exported: worktree-session.mjs uses this as the SINGLE project-discovery
@@ -152,7 +152,7 @@ export function findParentMarker(worktreePath) {
     }
     dir = dirname(dir);
   }
-  // Universal fallback: the active integration identifies the project root from
+  // Universal fallback: the active driver identifies the project root from
   // the worktree path positionally even when no marker file exists (the layout
   // regex lives in the adapter). No-op adapter → null here.
   const wt = adapter.worktree.detect(worktreePath);

@@ -88,7 +88,7 @@ var, state file, default port, and tool requirement is listed in
 
 ### 2. The Claude driver (optional)
 
-The Claude Code integration ships in-repo as a plugin; the repo is its own
+The Claude Code driver ships in-repo as a plugin; the repo is its own
 marketplace.
 
 - **Plugin marketplace** — add this repo as a marketplace and install the
@@ -330,7 +330,7 @@ cogyard usage backfill     # harvest all existing transcripts once
 cogyard usage report [project]   # cost/token rollup, all projects or one in detail
 ```
 
-Cost is computed from the active integration's price table; with no agent active
+Cost is computed from the active driver's price table; with no agent active
 (the no-op adapter) tokens still ledger but cost stays null rather than invented.
 
 ---
@@ -340,15 +340,15 @@ Cost is computed from the active integration's price table; with no agent active
 The engine (`core/`) and CLI (`cli/`) are agent-agnostic. Three things are
 inherently agent-specific — worktree layout, where transcripts live, and the
 model price table — and live behind a small **adapter** interface
-(`integrations/<name>/adapter.mjs`). The engine resolves the active adapter once
-at import (env var `COGYARD_INTEGRATION`, `~/.cogyard/config.json`, or
+(`drivers/<name>/adapter.mjs`). The engine resolves the active adapter once
+at import (env var `COGYARD_DRIVER`, `~/.cogyard/config.json`, or
 auto-detect) and falls back to a built-in no-op adapter so the CLI and portal run
 with no agent at all.
 
-Adding an agent = a new `integrations/<name>/adapter.mjs` against the contract;
-the engine never imports it by name. `integrations/claude/` is the reference
+Adding an agent = a new `drivers/<name>/adapter.mjs` against the contract;
+the engine never imports it by name. `drivers/claude/` is the reference
 driver (and a Claude Code plugin). Full contract:
-[`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md).
+[`docs/DRIVERS.md`](docs/DRIVERS.md).
 
 ---
 
@@ -364,7 +364,7 @@ drivers plug in behind an adapter and the engine never names one.
                     │      worktree · ports · lane graph. Importable, no CLI/HTTP/UI.
       ┌─────────────┼──────────────┬───────────────┐
       ▼             ▼              ▼               ▼
-    cli/         server/        hooks/        integrations/
+    cli/         server/        hooks/        drivers/
   cogyard,     read-only       worktree       agent drivers;
   tasks, env,    /api over     session setup   claude/ is the
   tunnel,        core/         (ports + _tasks  reference adapter

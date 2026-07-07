@@ -1,15 +1,19 @@
 // server/files.mjs — portal file-tree views for the Files tab: per-worktree file
 // listing (working tree as on disk — everything, gitignored entries tagged
 // `ignored` for the client filter), file content reads, diff-vs-main, and
-// per-worktree last-activity (git-index mtime) for pill sorting. All read-only.
+// per-worktree last-activity (git-index mtime) for pill sorting. Read-mostly:
+// writeWorkFile (the in-portal editing) is the one mutation, hash-guarded
+// and reached only through the routes/files.mjs POST behind the http.mjs seam.
 
-import { readFileSync, existsSync, statSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync, statSync, realpathSync } from 'node:fs';
 import { join, basename, extname, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import * as core from '../core/index.mjs';
+import { assertInProject } from './http.mjs';
 
 // Raw (untrimmed) NUL-separated git output. core.gitP trims, which can eat
-// significant bytes (the task-010 porcelain lesson) — -z output stays raw here.
+// significant bytes (the porcelain lesson) — -z output stays raw here.
 function gitZ(args, cwd) {
   try { return execFileSync('git', args, { cwd, maxBuffer: 1 << 26 }).toString(); }
   catch { return ''; }
@@ -149,9 +153,15 @@ const IMAGE_MIME = {
 };
 const MAX_TEXT = 1 << 20; // 1 MiB cap on text payloads
 
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+const isBinary = (buf) => buf.subarray(0, 8000).includes(0);
+
 // Read a file from the worktree's disk. Returns one of:
 //   { forbidden } | { missing } | { image: Buffer, mime } |
-//   { meta: { binary, size } } | { meta: { content, truncated, size } }
+//   { meta: { binary, size } } | { meta: { content, truncated, size, hash } }
+// `hash` is the sha256 of the SERVED bytes (the truncated slice when truncated),
+// the save flow's optimistic-concurrency token: a truncated read's hash can
+// never match the file on disk, so a truncated buffer can't round-trip a save.
 export function readWorkFile(wtPath, rel) {
   const abs = join(wtPath, rel);
   if (!existsSync(abs)) return { missing: true };
@@ -162,14 +172,71 @@ export function readWorkFile(wtPath, rel) {
   const buf = readFileSync(abs);
   const mime = IMAGE_MIME[extname(rel).toLowerCase()];
   if (mime) return { image: buf, mime };
-  if (buf.subarray(0, 8000).includes(0)) return { meta: { binary: true, size: buf.length } };
-  return { meta: { content: buf.subarray(0, MAX_TEXT).toString('utf8'), truncated: buf.length > MAX_TEXT, size: buf.length } };
+  if (isBinary(buf)) return { meta: { binary: true, size: buf.length } };
+  const served = buf.subarray(0, MAX_TEXT);
+  return { meta: { content: served.toString('utf8'), truncated: buf.length > MAX_TEXT, size: buf.length, hash: sha256(served) } };
+}
+
+// Format an edited buffer with prettier before it hits disk. Server-side on
+// purpose: the real prettier (a frontend devDep, hoisted to root node_modules)
+// can resolveConfig against the TARGET file's path, so an edit in any project's
+// worktree honors that project's own .prettierrc — a browser-side formatter
+// can't read those. Best-effort by design: no inferred parser (sh, toml…),
+// syntactically broken content, or prettier itself missing → save as typed.
+// Lazy-imported so the save path is the only thing that pays prettier's load.
+async function formatForSave(real, content) {
+  try {
+    const { format, resolveConfig, getFileInfo } = await import('prettier');
+    const info = await getFileInfo(real);
+    if (!info.inferredParser) return null;
+    const cfg = (await resolveConfig(real)) || {};
+    const out = await format(content, { ...cfg, filepath: real });
+    return out === content ? null : out;
+  } catch {
+    return null;
+  }
+}
+
+// Write an edited buffer back to the worktree's disk (the Files
+// tab's edit → save). Guards mirror the read side plus the write hazards:
+//   * containment via assertInProject (traversal, absolute paths, symlink escape)
+//   * only existing on-disk text files (no images/binaries, no creation)
+//   * files over the read cap are refused — the client only ever saw a
+//     truncated buffer, and saving it would amputate the file
+//   * baseHash must match the bytes on disk NOW, else 409-shaped { conflict } —
+//     live Claude sessions edit these same worktrees, never silently clobber
+// The buffer is prettier-formatted first (formatForSave above); when that
+// changed it, `content` rides back in the response so the editor re-baselines
+// to exactly what's on disk. The write is atomic (tmp file + rename in the
+// same dir) so a concurrent reader never sees a half-written file. Returns:
+//   { forbidden } | { missing } | { notText } | { tooLarge } |
+//   { conflict: { currentHash } } | { ok: { hash, size, content? } }
+export async function writeWorkFile(wtPath, rel, content, baseHash) {
+  const real = assertInProject(wtPath, rel);
+  if (!real) return { forbidden: true };
+  if (!existsSync(real) || statSync(real).isDirectory()) return { missing: true };
+  const cur = readFileSync(real);
+  if (IMAGE_MIME[extname(rel).toLowerCase()] || isBinary(cur)) return { notText: true };
+  if (cur.length > MAX_TEXT) return { tooLarge: true };
+  if (sha256(cur) !== baseHash) return { conflict: { currentHash: sha256(cur) } };
+  const formatted = await formatForSave(real, content);
+  const out = formatted ?? content;
+  const buf = Buffer.from(out, 'utf8');
+  const tmp = real + `.cogyard-save-${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, buf);
+    renameSync(tmp, real);
+  } catch (e) {
+    try { unlinkSync(tmp); } catch { /* already renamed or never written */ }
+    throw e;
+  }
+  return { ok: { hash: sha256(buf), size: buf.length, ...(formatted != null && { content: out }) } };
 }
 
 // --- Diff vs main ----------------------------------------------------------------------
 
 // Working-tree state of one file against the main branch. Untracked files have
-// no `git diff` vs main — synthesize an all-added patch (the task-010 pattern).
+// no `git diff` vs main — synthesize an all-added patch (the untracked-file pattern).
 export async function vsMainDiff(wtPath, rel, ignoreWs) {
   const isTracked = !!gitZ(['ls-files', '--cached', '-z', '--', rel], wtPath);
   if (!isTracked) {

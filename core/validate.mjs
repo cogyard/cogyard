@@ -11,7 +11,7 @@ import { STATUSES, isValidStatus, hasDoneDate, CATEGORIES, isValidCategory } fro
 
 // Top-level fields expected on a v2 task. Missing → warning (soft: older files
 // predate some fields); present-but-wrong-shape → error.
-// `labels` (task 39) is array-shaped but OPTIONAL and OPEN — listed here only so a
+// `labels` is array-shaped but OPTIONAL and OPEN — listed here only so a
 // scalar `labels: foo` is caught as a shape error; its absence is never flagged.
 const ARRAY_FIELDS = ['depends_on', 'related', 'touches_paths', 'out_of_scope', 'coordination', 'labels'];
 const RECOMMENDED = ['id', 'slug', 'title', 'status', 'created', 'created_at_commit',
@@ -55,7 +55,7 @@ export function validateTask(task, ctx = {}) {
   if (fm.status == null) err('status: missing');
   else if (!isValidStatus(fm.status)) err(`status: "${fm.status}" not one of ${STATUSES.join(' | ')}`);
 
-  // category — required, closed enum (task 39). Orthogonal to status: status is
+  // category — required, closed enum. Orthogonal to status: status is
   // lifecycle, category is kind. Required (error if missing/invalid); `labels` by
   // contrast is open and optional, so it is never required here.
   if (fm.category == null) err(`category: missing (required — one of ${CATEGORIES.join(' | ')})`);

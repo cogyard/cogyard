@@ -11,7 +11,7 @@ $dock-h: 46vh;
 }
 :host ::ng-deep .p-drawer.cdock-drawer {
   /* Span from the left rail's right edge to the viewport edge so the bottom dock
-     doesn't slice across the project sidebar (task 040). Both left AND right must
+     doesn't slice across the project sidebar. Both left AND right must
      be pinned — with right:auto, width:auto shrinks the fixed dock to its content
      instead of filling the main column (graph commit-diff bug). */
   left: var(--app-sidebar-w); right: 0; width: auto;

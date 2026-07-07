@@ -89,6 +89,21 @@ pre.code {
   font-size: 12px; line-height: 1.55; tab-size: 4; min-width: 0;
 }
 
+/* --- edit mode ------------------------------------------------------ */
+.body.editing { display: flex; flex-direction: column; overflow: hidden; }
+.cm-host { flex: 1; min-height: 0; }
+/* CodeMirror's DOM is runtime-created (no _ngcontent attrs) → ng-deep */
+:host ::ng-deep .cm-host .cm-editor { height: 100%; }
+:host ::ng-deep .cm-host .cm-editor.cm-focused { outline: none; }
+.edit-banner {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--app-border);
+}
+.edit-banner.conflict { background: #fef3c7; color: #b45309; }
+.edit-banner.error { background: #fde8e8; color: #b91c1c; }
+/* the save button lights accent-colored while there's something to save */
+button.save-btn.on { font-weight: 700; }
+
 /* --- dark mode — viewing area only (github-dark palette) ---------------------- */
 .body.dark { background: #0d1117; color: #c9d1d9; }
 .body.dark .empty { color: #8b949e; }

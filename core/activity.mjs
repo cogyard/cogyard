@@ -1,4 +1,4 @@
-// core/activity.mjs — activity rollups for the portal's activity views (task 064).
+// core/activity.mjs — activity rollups for the portal's activity views.
 //
 // Reads the two usage-dir ledgers and answers the portal's three questions:
 // attention (the human's own prompt timestamps, gap-coalesced into engaged
@@ -19,8 +19,8 @@ const GAP_MIN = 30;
 // An isolated prompt (span of zero length) still counts as one engaged minute.
 const MIN_SPAN_MIN = 1;
 
-// Local calendar day of an ISO timestamp — the server runs on the owner's
-// machine, so local days are the days the owner experienced.
+// Local calendar day of an ISO timestamp — the server runs on the user's
+// machine, so local days are the days the user experienced.
 function localDay(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
@@ -149,7 +149,7 @@ function round1(n) { return Math.round(n * 10) / 10; }
 function round2(n) { return Math.round(n * 100) / 100; }
 
 // The braid's data: per project, per local day —
-//   prompts          count of the owner's messages (mined)
+//   prompts          count of the user's messages (mined)
 //   attentionMin     gap-coalesced engaged minutes (mined)
 //   costUSD          cost spread across days by mined hour weights
 //   costApproxUSD    cost from sessions with NO activity coverage, spread
@@ -170,7 +170,7 @@ function activityRollup(days = 366) {
   };
 
   // Attention + prompt counts: per project, coalesce prompts across ALL its
-  // sessions (the owner's attention is one stream, whichever session it hit).
+  // sessions (the user's attention is one stream, whichever session it hit).
   const promptsByProject = new Map();
   for (const s of activity.values()) {
     const slug = s.project || '(unknown)';
@@ -286,8 +286,8 @@ function activityDay(date) {
   return { date, sessions, prompts };
 }
 
-// Punch card (task 064 round 6, windowed round 10): per time window, per
-// project, a 7×24 matrix of the owner's prompt counts by LOCAL weekday
+// Punch card: per time window, per
+// project, a 7×24 matrix of the user's prompt counts by LOCAL weekday
 // (0=Sunday, JS getDay) × hour — "when am I most active". Prompts only: it's
 // an attention chart, not a labor one. Windows are trailing day-counts.
 function activityPunchcard(windows = [7, 28, 91, 366]) {

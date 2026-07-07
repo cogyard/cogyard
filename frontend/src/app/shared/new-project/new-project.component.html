@@ -34,15 +34,9 @@
 
     <label class="np-field">
       <span class="np-label">Kind</span>
-      <p-select size="small" [options]="kindOptions" optionLabel="label" optionValue="value"
+      <p-select size="small" [options]="kindOptions()" optionLabel="label" optionValue="value"
                 [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
-    </label>
-
-    <label class="np-field">
-      <span class="np-label">Task store</span>
-      <p-selectbutton size="small" [options]="storeOptions" optionLabel="label" optionValue="value"
-                      [allowEmpty]="false" [ngModel]="store()" (ngModelChange)="store.set($event)" name="store" />
-      <span class="np-hint">shared = portal-visible store at ~/gitroot/_tasks/&lt;slug&gt;; normal = _tasks/ in-repo.</span>
+      @if (kindDescription()) { <span class="np-hint">{{ kindDescription() }}</span> }
     </label>
 
     <label class="np-field">

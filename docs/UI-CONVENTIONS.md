@@ -6,7 +6,7 @@ block); this doc explains when to use which and why the system exists.
 
 ## PrimeNG vs native — the dividing line
 
-Task 021 converted every custom-looking control from a styled `p-button` to a
+cogyard converted every custom-looking control from a styled `p-button` to a
 native `<button>`, because a `p-button` restyled past recognition via
 `styleClass` + `::ng-deep` inherits the theme's transitions, hover repaints, and
 prod-vs-dev CSS-order differences — including a pill gray-flash that reproduced

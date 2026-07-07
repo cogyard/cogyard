@@ -72,17 +72,27 @@
       }
       <span class="spacer"></span>
       @if (file()) {
-        @if (isMd() && !binary()) {
-          <button class="btn-toggle" [class.on]="view() === 'rendered'" (click)="setView('rendered')">rendered</button>
-        }
-        <!-- raw is only worth a toggle when there's an alternative to switch
-             to (a rendered markdown view, or a diff); otherwise it's the sole
-             view and the button is noise. -->
-        @if (!isImage() && !binary() && (isMd() || selected()?.status)) {
-          <button class="btn-toggle" [class.on]="view() === 'raw'" (click)="setView('raw')">raw</button>
-        }
-        @if (selected()?.status) {
-          <button class="btn-toggle" [class.on]="view() === 'diff'" (click)="setView('diff')">diff vs {{ vsRef() || 'main' }}</button>
+        @if (!editing()) {
+          @if (isMd() && !binary()) {
+            <button class="btn-toggle" [class.on]="view() === 'rendered'" (click)="setView('rendered')">rendered</button>
+          }
+          <!-- raw is only worth a toggle when there's an alternative to switch
+               to (a rendered markdown view, or a diff); otherwise it's the sole
+               view and the button is noise. -->
+          @if (!isImage() && !binary() && (isMd() || selected()?.status)) {
+            <button class="btn-toggle" [class.on]="view() === 'raw'" (click)="setView('raw')">raw</button>
+          }
+          @if (selected()?.status) {
+            <button class="btn-toggle" [class.on]="view() === 'diff'" (click)="setView('diff')">diff vs {{ vsRef() || 'main' }}</button>
+          }
+          @if (canEdit()) {
+            <button class="btn-toggle" (click)="startEdit()" [disabled]="loadingEditor()">{{ loadingEditor() ? 'edit…' : 'edit' }}</button>
+          }
+        } @else {
+          <!-- Save/Cancel replace the view toggles while editing (Cmd+S works too) -->
+          <button class="btn-toggle" [class.on]="wrap()" (click)="toggleWrap()" pTooltip="soft-wrap long lines">wrap</button>
+          <button class="btn-toggle save-btn" [class.on]="dirty()" [disabled]="!dirty() || saving()" (click)="save()">{{ saving() ? 'saving…' : 'save' }}</button>
+          <button class="btn-toggle" (click)="cancelEdit()">cancel</button>
         }
         <app-file-actions [slug]="slug()" [path]="file()" [worktree]="selectedWtPath()"
                           [worktreeName]="selectedWt()" />
@@ -94,6 +104,20 @@
     </div>
     @if (!file()) {
       <div class="body" [class.dark]="dark()"><div class="empty">Select a file.</div></div>
+    } @else if (editing()) {
+      <div class="body editing" [class.dark]="dark()">
+        @if (conflict()) {
+          <div class="edit-banner conflict">
+            File changed on disk since you loaded it — your save was refused.
+            <button class="btn-toggle" (click)="reloadFromDisk()">reload from disk (drops your edits)</button>
+            <button class="btn-toggle" (click)="conflict.set(false)">keep editing</button>
+          </div>
+        }
+        @if (saveError()) {
+          <div class="edit-banner error">{{ saveError() }}</div>
+        }
+        <div class="cm-host" #cmHost></div>
+      </div>
     } @else {
       <div class="body" [class.centered]="isImage()" [class.dark]="dark()">
         @if (view() === 'diff') {

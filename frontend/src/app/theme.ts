@@ -1,7 +1,7 @@
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 
-// cogyard preset over Aura (task 021). Accent: the blue scale, resting on
+// cogyard preset over Aura. Accent: the blue scale, resting on
 // {blue.600} (#2563eb) — the exact accent the hand-rolled SCSS uses everywhere.
 // Density: forms sit a step tighter than Aura's default to match the portal's
 // compact 12–13px UI. Radii: Aura's md (6px) already matches the SCSS; untouched.

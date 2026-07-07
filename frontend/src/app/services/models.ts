@@ -55,9 +55,12 @@ export interface TreeFile { path: string; status: string | null; oldPath?: strin
 export interface TreeResponse { worktree: string; branch: string; vsRef: string | null; files: TreeFile[]; }
 
 // /api/file
-export interface FileContent { content?: string; truncated?: boolean; size: number; binary?: boolean; }
+export interface FileContent { content?: string; truncated?: boolean; size: number; binary?: boolean; hash?: string; }
+// content is present only when the server-side prettier pass changed the buffer —
+// the editor re-baselines to it so the doc matches what's actually on disk.
+export interface SaveFileResult { hash: string; size: number; content?: string; }
 
-// /api/usage — token/cost ledger rollups (task 026). costUSD was locked in at
+// /api/usage — token/cost ledger rollups. costUSD was locked in at
 // collection time (see core/pricing.mjs); backfilledCostUSD is the slice priced
 // retroactively at current rates and rendered with an ≈ in the UI.
 export interface UsageTokens { input: number; output: number; cacheRead: number; cacheWrite5m: number; cacheWrite1h: number; }
@@ -75,7 +78,7 @@ export interface ProjectUsageResponse extends UsageBucket {
 // POST /api/usage/collect
 export interface CollectResult { rows: number; files: number; skippedModels: string[]; }
 
-// /api/activity — activity views (task 064). commits: slug → localDay → count.
+// /api/activity — activity views. commits: slug → localDay → count.
 // projects: slug → per-local-day attention/cost cells. costUSD is spread by
 // MINED hour weights; costApproxUSD is the even-spread estimate for sessions
 // whose transcripts were pruned before mining — the UI renders it distinctly.
@@ -83,6 +86,7 @@ export interface ActivityDayCell { prompts: number; attentionMin: number; costUS
 export interface ActivityResponse {
   days: number; sinceDay: string; gapMin: number;
   commits: Record<string, Record<string, number>>;
+  merges: Record<string, Record<string, string[]>>; // slug → YYYY-MM-DD → task ids that landed on the default branch that day
   projects: Record<string, { days: Record<string, ActivityDayCell> }>;
   punchcards: Record<string, Record<string, number[][]>>; // window days → slug → [weekday 0=Sun][hour 0-23] prompt counts
 }
@@ -96,39 +100,74 @@ export interface ActivityDaySession {
 }
 export interface ActivityDayResponse { date: string; sessions: ActivityDaySession[]; prompts: Record<string, string[]>; }
 
-// POST /api/wt/{stage,unstage,discard} · /api/open (task 12 working-tree actions)
+// POST /api/wt/{stage,unstage,discard} · /api/open (working-tree actions)
 export interface ActionResult { ok: boolean; }
 
 // GET /api/open-targets — the editable "Open in" app list (id + label only;
 // the command stays server-side in ~/.cogyard/open-targets.json).
 export interface OpenTarget { id: string; label: string; }
 
-// GET/POST /api/config + POST /api/open-targets (task 060). The /settings view +
+// GET/POST /api/config + POST /api/open-targets. The /settings view +
 // first-run wizard render this; the New/Add drawer prefills its form from `defaults`.
-export type StoreKind = 'shared' | 'normal';
-export interface CreationDefaults { kind: ProjectKind; store: StoreKind; }
+// Shared is the only store model; the field was removed from the
+// creation form. `defaults` from /api/config may still carry a `store: 'shared'`
+// — it's simply ignored client-side.
+export interface CreationDefaults { kind: ProjectKind; }
 export interface OpenTargetFull { id: string; label: string; exec: string; args: string[]; }
 export type WeekStart = 'sunday' | 'monday';
-export interface UiPrefs { weekStart: WeekStart; dayStart: number; }
+export interface UiPrefs { weekStart: WeekStart; dayStart: number; hiddenTabs: string[]; }
 export interface ConfigResponse {
   home: string; homeFromEnv: boolean;
   projectsRoot: string; projectsRootSource: 'env' | 'config' | 'default';
   version: string | null; commit: string | null;
   openTargets: OpenTargetFull[];
   defaults: CreationDefaults;
+  kinds: ScaffoldKindInfo[]; // the scaffold registry rows
   ui: UiPrefs;
-  integration: { active: string; available: string[] };
+  driver: { active: string; available: string[] };
 }
 // Wire-input shape for POST /api/config — only the settable bits, all optional.
-export interface SaveConfigRequest { defaults?: Partial<CreationDefaults>; ui?: Partial<UiPrefs>; projectsRoot?: string; }
+export interface SaveConfigRequest { defaults?: Partial<CreationDefaults>; ui?: Partial<UiPrefs>; projectsRoot?: string; disabledAddons?: string[]; }
 export interface SaveConfigResult { ok: boolean; defaults: CreationDefaults; projectsRoot: string; projectsRootSource: string; }
 export interface SaveOpenTargetsResult { ok: boolean; openTargets: OpenTargetFull[]; }
 
-// POST /api/projects/{init,onboard} (task 046)
-export type ProjectKind = 'single' | 'fullstack' | 'static' | 'library';
-export interface ScaffoldRequest { path: string; kind: ProjectKind; store?: 'shared' | 'normal'; remote?: string; }
+// POST /api/projects/{init,onboard}
+// Kinds come from the scaffold registry — built-ins plus any
+// drop-in at ~/.cogyard/scaffolds/<kind>/ — so the type is open, not a union.
+export type ProjectKind = string;
+export interface ScaffoldKindInfo { kind: ProjectKind; description: string; builtin: boolean; }
+export interface ScaffoldRequest { path: string; kind: ProjectKind; remote?: string; }
 export interface ScaffoldStep { step: string; status: string; detail: string; }
 export interface ScaffoldResult {
   ok: boolean; slug: string; repoRoot: string; store: string; kind: ProjectKind;
   steps: ScaffoldStep[]; warnings: string[];
 }
+
+// GET /api/addons · /api/addons/status · POST /api/addons/:id/:action.
+// The community add-on surface — MACHINE-LEVEL: add-ons extend cogyard itself and
+// render on the global /settings page; there is no project parameter anywhere.
+// A `type: 'project'` config field renders a registered-project dropdown and the
+// chosen slug travels in the POST cfg like any other value. `icon` is an emoji /
+// short glyph. `tier` decides execution: 'safe' runs server-side, 'manual' only
+// returns the copy-paste command (core-enforced, never executed).
+export type AddonTier = 'safe' | 'manual';
+export interface AddonPrereq { id: string; label: string; ok: boolean; fixHint?: string; }
+export interface AddonConfigField {
+  key: string; label: string; type: 'string' | 'enum' | 'boolean' | 'project';
+  required?: boolean; options?: string[]; default?: string | boolean; placeholder?: string;
+}
+export interface AddonAction { id: string; label: string; tier: AddonTier; destructive: boolean; needsConfig: boolean; }
+export interface AddonManifest {
+  id: string; label: string; description: string; icon: string | null;
+  thirdParty: boolean; platforms: string[] | null; supported: boolean;
+  active: boolean; // framework-level switch (config.json disabledAddons); off = inert
+  configSchema: AddonConfigField[]; actions: AddonAction[];
+  prereqs: AddonPrereq[]; prereqError?: string;
+}
+export interface AddonsCatalog { addons: AddonManifest[]; invalid: { id: string; error: string }[]; }
+export interface AddonStatus {
+  id: string; active: boolean; supported: boolean; enabled: boolean; healthy: boolean | null;
+  summary: string; details?: unknown; prereqs?: AddonPrereq[];
+}
+export interface AddonStatusesResponse { statuses: AddonStatus[]; }
+export interface AddonActionResult { ok: boolean; manual: boolean; message?: string; command?: string; note?: string | null; }

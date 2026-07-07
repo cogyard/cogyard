@@ -73,6 +73,27 @@ variable — so a checkout never has to hardcode machine paths.
 single Node process; `/api/health` reports the build's commit so a deploy can be
 verified.
 
+## Public files carry no internal references
+
+Everything published to the open-source snapshot is presentation an outsider
+reads, so it must not carry references that only mean something inside the project:
+
+- **No internal task-number provenance.** A `(task NNN)` / `task-NNN` reference in
+  prose — the task files themselves aren't public, so to a reader these point at
+  nothing. Strip them; keep the meaning. Two things that look similar are fine:
+  the `[#NN]` commit-tag *feature* syntax, and `"do task NNN"` trigger USAGE
+  EXAMPLES that teach a user how to phrase a request.
+- **No maintainer-private specifics** in public files — personal machine/infra,
+  a personal-toolbox skill that isn't part of cogyard, or a maintainer name in
+  prose. Legitimate public attribution stays (the LICENSE copyright, `owner`/`author`
+  metadata fields). Anything genuinely private lives in an export-ignore'd file
+  (`*.local.md`, `CLAUDE.md`) and may keep all of this.
+
+**A fail-closed gate enforces it.** `npm run lint:leaks` (→ `scripts/leak-scan.sh`)
+scans every manifested markdown/JSON file and exits non-zero on an internal
+reference; run it before a PR and it also runs as its own Layer inside
+`bin/publish-snapshot`, so a leak physically can't reach the public repo.
+
 ## Contributing
 
 - Match the surrounding code — comment density, naming, idioms.

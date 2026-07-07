@@ -2,14 +2,14 @@
 
 cogyard owns project creation. Two user-facing commands turn a directory into a
 project that the portal sees and that worktrees get ports for — the two things
-that silently failed when a project was hand-stitched (the task-044 cogyard-site
-incident: a loose folder, never registered, invisible to the portal).
+that silently failed when a project was hand-stitched (the classic failure
+mode: a loose folder, never registered, invisible to the portal).
 
 They split on **precondition only**:
 
 | Command | Precondition | What it does |
 |---|---|---|
-| `cogyard init <name>` | **greenfield** — nothing on disk | create the dir + `git init` + initial commit + a per-`kind` skeleton, then wire |
+| `cogyard init <name>` | **greenfield** — nothing on disk | create the dir + `git init` + initial commit + a README, then wire (no app code — see "Thin New" below) |
 | `cogyard onboard [path]` | **adopt** an existing folder (with or without git) | `git init` if absent, then wire — **additive-only**, never overwrites a file you already have |
 
 Both converge on one shared core (`ensureProjectWiring()` in
@@ -17,6 +17,18 @@ Both converge on one shared core (`ensureProjectWiring()` in
 `cogyard tasks doctor` reports the project clean. The portal's "New / Adopt"
 sidebar button POSTs to the same core through the `requireSameOrigin` write seam —
 identical behaviour, no second implementation.
+
+## Thin New — cogyard does not scaffold your app
+
+`init` is a **thin bootstrap**: it wires the project (git, portal registration, a
+local-only shared task store, worktree ports, build-time version stamping) and seeds
+a README — and nothing else. cogyard does **not** generate application code and does
+**not** run anyone's scaffolding process. The usual flow is to make the app scaffold
+your **first task**: create the project, then open it in your agent and scaffold the
+app (framework, entry points, dev server) as your first task. The task store is created
+**local-only**; publish it to a remote later (`cogyard tasks convert --remote <url>`)
+only when the project becomes team-shared. The point of a fresh project is that the
+write-a-task → do-the-task (worktree) loop works immediately.
 
 ## Two guarantees
 
@@ -32,15 +44,20 @@ identical behaviour, no second implementation.
 
 ```sh
 # greenfield
-cogyard init <name|path> --kind <k> [--store shared|normal] [--remote <url>] [--no-wiring]
+cogyard init <name|path> --kind <k> [--remote <url>] [--no-wiring]
 # adopt an existing folder
-cogyard onboard [path]   --kind <k> [--store shared|normal] [--remote <url>] [--no-wiring]
+cogyard onboard [path]   --kind <k> [--remote <url>] [--no-wiring]
 ```
+
+The task store is always **shared**: `_tasks/` is moved to the
+`~/gitroot/_tasks/<slug>` store (its own git repo on a `tasks` branch) so every
+worktree mounts the same target. (The old `--store normal` in-repo mode was removed
+— it's broken under worktrees; a pre-existing normal-dir `_tasks/` is still detected
+by `doctor` and offered a `convert`.)
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library`. Drives the skeleton + version stamping. |
-| `--store` | `shared` | `shared` moves `_tasks/` to the `~/gitroot/_tasks/<slug>` store (portal-visible default); `normal` keeps `_tasks/` as a tracked dir in the repo. |
+| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library`. Picks the wiring defaults (worktree ports on/off, version stamping) + the README; seeds **no** app code. |
 | `--remote` | none | git remote for the shared task store (passed through to `convert`). |
 | `--no-wiring` | off | skip `.claude/worktree-config.json`. Auto-skipped for `kind=library`. |
 
@@ -58,8 +75,10 @@ reimplementing it:
    existing one (warn if it has no `version`).
 4. **.gitignore** — append the essentials (`node_modules`, `dist/`, `version.json`,
    `.claude/launch.json`, `.env.worktree`); the `_tasks` line is added by `convert`.
-5. **skeleton** (init only) — per-`kind` minimal files (README + an entry file; a
-   static site gets an `index.html` with a version footer).
+5. **skeleton** (init only) — a per-`kind` `README.md` only. No app code: the README
+   states that cogyard seeds only wiring and that you scaffold the app as your first task.
+   (`kind` still shapes wiring — e.g. `static` seeds a port-correct `dev` script,
+   `library` sets `package.json` `main` — but never writes an entry file.)
 6. **version stamping** — a generated `scripts/generate-version.mjs` (the
    build-time version+SHA pattern from this repo's own
    [`scripts/generate-version.mjs`](../scripts/generate-version.mjs)); `library`
@@ -72,9 +91,10 @@ reimplementing it:
    `npm run dev` must source it and bind `$FRONTEND_PORT` (and `$PORT`) — never a
    hardcoded port, or the preview lands on the wrong one. `cogyard init --kind static`
    seeds a `dev` script that already does this; `single`/`fullstack` leave `dev` to
-   you/`bd-scaffold-*` (the config's `_comment` + the README state the contract).
-8. **task store** — shared by default via `convertToSharedStore` (extracted from
-   `cogyard tasks convert`); the `⚠ no _tasks` fix. No-ops when already a symlink.
+   you (the config's `_comment` + the README state the contract).
+8. **task store** — always shared via `convertToSharedStore` (extracted from
+   `cogyard tasks convert`); the `⚠ no _tasks` fix. No-ops when already a symlink,
+   and converts a pre-existing in-repo `_tasks/` dir to shared.
 
 `cogyard tasks init` is **not** the front door — it is a low-level primitive
 (`mkdir _tasks/` + register an already-set-up repo). Its help points here.
@@ -97,7 +117,10 @@ cogyard tasks projects list   # the slug appears without ⚠
 
 ## Kinds
 
-Start with four hardcoded kinds (`single` / `fullstack` / `static` / `library`);
-a general project-type plugin system is deliberately out of scope. `fullstack`
-seeds only the cogyard wiring — use the `bd-scaffold-fullstack` skill for the
-Angular + Node/Express + SQL monorepo shape.
+Kinds are a **drop-in registry**: the built-ins (`single` / `fullstack`
+/ `static` / `library`) ship in `core/scaffolds/`, and a community kind drops into
+`~/.cogyard/scaffolds/<kind>/scaffold.mjs` — additions only, nothing hardcodes the
+list. The `--kind` pickers (CLI + the New/Add drawer) read the registry rows from
+`/api/config`, so a new scaffold appears with no UI change. `fullstack` seeds only
+the cogyard wiring — you supply the application scaffold (e.g. an Angular +
+Node/Express + SQL monorepo shape). Contract: `docs/ADDONS.md`.

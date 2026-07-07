@@ -66,7 +66,7 @@ async function computeBranches(repo) {
   const nowS = Date.now() / 1000;
   // Branch → task association is a domain fact: compute it here (via the core
   // matcher) and serve `taskId`, so the SPA consumes it instead of re-deriving
-  // the tag/prefix/slug rules client-side (task 47).
+  // the tag/prefix/slug rules client-side.
   const tasks = core.loadTasks(join(repo, '_tasks'));
 
   const rows = (refsRaw || '').split('\n').filter(Boolean).map((line) => {

@@ -1,7 +1,7 @@
 // Task bucketing for the Tasks list and the Board view. The categorization
 // itself ("which group does this task fall into") is a domain fact computed once
 // server-side (core/status.mjs bucketOf) and served as `task.bucket` on
-// /api/tasks — the SPA does NOT re-derive it (task 47). This file is pure
+// /api/tasks — the SPA does NOT re-derive it. This file is pure
 // presentation: it maps each canonical bucket key to a display title and a
 // column order, so the list and board can't diverge from each other or from the
 // server's grouping.
@@ -27,7 +27,7 @@ const BUCKET_TITLES: Record<string, string> = {
 
 export const STATUSES = ['', 'OPEN', 'PARKED', 'BLOCKED_ON', 'ENOUGH', 'DONE', 'OBSOLETE', 'UNKNOWN'];
 
-// Task categories (task 39) — mirrors core/status.mjs CATEGORIES (the wire
+// Task categories — mirrors core/status.mjs CATEGORIES (the wire
 // contract: feature | maintenance | bug | docs). The icons are pure presentation
 // — there is no icon font in this portal, so each category shows a glyph.
 export const CATEGORIES = ['feature', 'maintenance', 'bug', 'docs'];

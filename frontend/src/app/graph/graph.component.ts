@@ -85,7 +85,7 @@ export class GraphComponent {
   private toRow(r: any): Row {
     if (r.kind === 'worktree' || r.kind === 'stash') return { ...r, chips: [], taskIds: [], cleanSubject: '' };
     // taskIds + cleanSubject are computed server-side (core/git-views parseTaskTags)
-    // and served on the row — the SPA consumes them, never re-parses [#NN] (task 47).
+    // and served on the row — the SPA consumes them, never re-parses [#NN].
     return { ...r, chips: this.chips(r.refs || []), taskIds: r.taskIds ?? [], cleanSubject: r.cleanSubject ?? '' };
   }
 

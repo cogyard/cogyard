@@ -4,9 +4,11 @@
 // Layout: http.mjs (transport + guards + the write seam) · git.mjs (portal git
 // views) · routes/{meta,project,git,files,usage,actions,projects}.mjs (endpoint
 // groups). Read-mostly: the only writes are routes/usage.mjs (POST
-// /api/usage/collect), routes/actions.mjs (task 12's working-tree discard + open),
-// and routes/projects.mjs (task 046's POST /api/projects/{init,onboard}) — all
-// through the http.mjs origin/containment seam.
+// /api/usage/collect), routes/actions.mjs (working-tree discard + open),
+// routes/projects.mjs (POST /api/projects/{init,onboard}),
+// routes/addons.mjs (safe-tier add-on actions), and
+// routes/files.mjs (POST /api/file save) — all through the http.mjs
+// origin/containment seam.
 //
 // Prod: PORT=7437 behind the com.cogyard.serve LaunchAgent (Caddy maps
 // http://cogyard → :7437). Dev: PORT=7440 with the Angular proxy in front.
@@ -24,6 +26,7 @@ import * as activity from './routes/activity.mjs';
 import * as actions from './routes/actions.mjs';
 import * as projectActions from './routes/projects.mjs';
 import * as config from './routes/config.mjs';
+import * as addons from './routes/addons.mjs';
 
 const PORT = Number(process.env.PORT) || 7440;
 const log = pino();
@@ -41,15 +44,19 @@ const server = createServer(async (req, res) => {
     if (!path.startsWith('/api')) return serveStatic(res, path);
 
     // Read-mostly API. Writes go ONLY through the http.mjs seam (requireSameOrigin
-    // + readBody): POST /api/usage/collect (task 026's refresh button), task 12's
-    // working-tree actions, POST /api/projects/{init,onboard} (task 046's New/Adopt
-    // button), and POST /api/{config,open-targets} (task 060's settings view).
-    // Everything else non-GET is rejected outright.
+    // + readBody): POST /api/usage/collect (the refresh button), the
+    // working-tree actions, POST /api/projects/{init,onboard} (the New/Adopt
+    // button), POST /api/{config,open-targets} (the settings view), and
+    // POST /api/addons/:id/:action (safe-tier add-on actions only),
+    // and POST /api/file (the Files-tab save). Everything else non-GET
+    // is rejected outright.
     if (req.method === 'POST') {
       if (await usage.handlePost(path, req, res) !== false) return;
       if (await actions.handlePost(path, req, res, core.discoverProjects()) !== false) return;
       if (await projectActions.handlePost(path, req, res) !== false) return;
       if (await config.handlePost(path, req, res) !== false) return;
+      if (await addons.handlePost(path, req, res) !== false) return;
+      if (await files.handlePost(path, req, res, core.discoverProjects()) !== false) return;
       return errJson(res, 405, 'method not allowed');
     }
     if (req.method !== 'GET') return errJson(res, 405, 'method not allowed (read-only API)');
@@ -59,6 +66,7 @@ const server = createServer(async (req, res) => {
     if (await usage.handle(path, u, projects, res) !== false) return;
     if (await activity.handle(path, u, projects, res) !== false) return;
     if (await config.handle(path, u, projects, res) !== false) return;
+    if (await addons.handle(path, u, projects, res) !== false) return;
 
     // Per-project endpoints below need a resolved project.
     const slug = u.searchParams.get('p');
@@ -78,7 +86,7 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, () => log.info({ port: PORT }, 'cogyard API listening'));
 
-// Orphan guard (task 043). scripts/dev.sh sets COGYARD_DEV_GUARD when it
+// Orphan guard. scripts/dev.sh sets COGYARD_DEV_GUARD when it
 // backgrounds this backend. If the launching shell dies (terminal closed,
 // kill -9, the Claude_Preview MCP reaping it), the trap in dev.sh never fires
 // and this process is reparented to launchd (ppid 1) — that's how dev backends
@@ -93,7 +101,7 @@ if (process.env.COGYARD_DEV_GUARD) {
   }, 3000).unref();
 }
 
-// Usage-ledger sweep (task 026): harvest any transcript content the SessionEnd
+// Usage-ledger sweep: harvest any transcript content the SessionEnd
 // hook missed (crashed sessions) before Claude Code retention prunes it.
 // Idempotent and off the request path; a failure only logs.
 setTimeout(() => {

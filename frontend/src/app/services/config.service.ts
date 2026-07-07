@@ -2,7 +2,7 @@ import { Injectable, inject, signal } from '@angular/core';
 import { ApiService } from './api.service';
 import { ConfigResponse, CreationDefaults } from './models';
 
-// Resolved machine config (task 060), shared app-wide. Loaded once at startup and
+// Resolved machine config, shared app-wide. Loaded once at startup and
 // re-fetched after any Save so the New/Add drawer prefills with the saved defaults
 // without a page reload (the "once set, it refills this UI" requirement). The
 // `defaults` signal is what the drawer reads; `config` carries the full picture
@@ -14,7 +14,7 @@ export class ConfigService {
   /** The full resolved config, or null until the first load resolves. */
   readonly config = signal<ConfigResponse | null>(null);
   /** Creation defaults for the New/Add drawer; the built-ins until config loads. */
-  readonly defaults = signal<CreationDefaults>({ kind: 'single', store: 'shared' });
+  readonly defaults = signal<CreationDefaults>({ kind: 'single' });
 
   constructor() { this.reload(); }
 

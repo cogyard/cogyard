@@ -1,4 +1,4 @@
-// test/config.test.mjs — the persistent machine-config layer (task 060).
+// test/config.test.mjs — the persistent machine-config layer.
 // Covers readConfig/writeConfig merge-patch, projectDefaults overlay + validation,
 // and the env → config → default precedence of PROJECTS_ROOT resolution.
 //
@@ -17,7 +17,7 @@ process.env.COGYARD_HOME = HOME;
 const CONFIG = join(HOME, 'config.json');
 
 // Import AFTER COGYARD_HOME is set (config.mjs/paths.mjs resolve it at import).
-const { readConfig, writeConfig, projectDefaults, CONFIG_PATH } = await import('../core/config.mjs');
+const { readConfig, writeConfig, projectDefaults, uiPrefs, CONFIG_PATH } = await import('../core/config.mjs');
 const { resolveProjectsRoot } = await import('../core/paths.mjs');
 
 function clearConfig() { if (existsSync(CONFIG)) rmSync(CONFIG); }
@@ -46,10 +46,10 @@ test('readConfig: malformed / non-object file → {}', () => {
 
 test('writeConfig: merge-patch preserves unknown keys', () => {
   clearConfig();
-  writeConfig({ integration: 'claude' });
+  writeConfig({ driver: 'claude' });
   writeConfig({ projectsRoot: '/srv/code' });
   const cfg = readConfig();
-  assert.equal(cfg.integration, 'claude'); // preserved across the second write
+  assert.equal(cfg.driver, 'claude'); // preserved across the second write
   assert.equal(cfg.projectsRoot, '/srv/code');
   clearConfig();
 });
@@ -62,8 +62,8 @@ test('projectDefaults: no file → built-in defaults', () => {
 });
 
 test('projectDefaults: valid config.defaults overlays the built-ins', () => {
-  writeConfig({ defaults: { kind: 'fullstack', store: 'normal' } });
-  assert.deepEqual(projectDefaults(), { kind: 'fullstack', store: 'normal' });
+  writeConfig({ defaults: { kind: 'fullstack', store: 'shared' } });
+  assert.deepEqual(projectDefaults(), { kind: 'fullstack', store: 'shared' });
   clearConfig();
 });
 
@@ -76,6 +76,39 @@ test('projectDefaults: invalid kind/store are dropped, not crashed on', () => {
 test('projectDefaults: partial overlay keeps the other built-in', () => {
   writeConfig({ defaults: { kind: 'library' } });
   assert.deepEqual(projectDefaults(), { kind: 'library', store: 'shared' });
+  clearConfig();
+});
+
+// --- uiPrefs.hiddenTabs ---------------------------------------------
+
+test('uiPrefs: no file → hiddenTabs defaults to []', () => {
+  clearConfig();
+  assert.deepEqual(uiPrefs().hiddenTabs, []);
+});
+
+test('uiPrefs: valid hiddenTabs subset persists', () => {
+  writeConfig({ ui: { hiddenTabs: ['board', 'branches'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['board', 'branches']);
+  clearConfig();
+});
+
+test("uiPrefs: a persisted 'settings' tab id (legacy config) is dropped on read", () => {
+  // The per-project settings tab no longer exists; stale configs that hid it
+  // must degrade silently instead of leaking an unknown id to the UI.
+  writeConfig({ ui: { hiddenTabs: ['board', 'settings'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['board']);
+  clearConfig();
+});
+
+test('uiPrefs: unknown tab ids are dropped, known ones kept', () => {
+  writeConfig({ ui: { hiddenTabs: ['bogus', 'graph'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['graph']);
+  clearConfig();
+});
+
+test('uiPrefs: non-array hiddenTabs is ignored → []', () => {
+  writeConfig({ ui: { hiddenTabs: 'board' } });
+  assert.deepEqual(uiPrefs().hiddenTabs, []);
   clearConfig();
 });
 
@@ -117,7 +150,7 @@ test('resolveProjectsRoot: env wins over config', () => {
 });
 
 test('writeConfig wrote a trailing newline (matches the registry/open-targets idiom)', () => {
-  writeConfig({ integration: 'claude' });
+  writeConfig({ driver: 'claude' });
   assert.ok(readFileSync(CONFIG, 'utf8').endsWith('}\n'));
   clearConfig();
 });

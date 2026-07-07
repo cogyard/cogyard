@@ -12,6 +12,28 @@
   }
 
   @if (config(); as c) {
+    <!-- Tab visibility -->
+    <section class="settings-card">
+      <h3 class="card-title">Portal tabs</h3>
+      <p class="card-hint">Untick a tab to hide it from every project's tab strip. Deep links to a hidden tab still work, and this page stays reachable via the sidebar cog.</p>
+
+      <div class="tab-checks">
+        @for (t of portalTabs; track t.id) {
+          <label class="tab-check">
+            <p-checkbox [binary]="true" size="small" [ngModel]="tabVisible(t.id)"
+                        (ngModelChange)="setTabVisible(t.id, $event)" [name]="'tab-' + t.id" />
+            <span>{{ t.label }}</span>
+          </label>
+        }
+      </div>
+
+      <div class="set-actions">
+        <button type="button" class="set-btn primary" [disabled]="savingTabs()" (click)="saveTabs()">
+          {{ savingTabs() ? 'Saving…' : 'Save tabs' }}
+        </button>
+      </div>
+    </section>
+
     <!-- Creation defaults + projects root -->
     <section class="settings-card">
       <h3 class="card-title">Project creation defaults</h3>
@@ -19,15 +41,9 @@
 
       <label class="set-field">
         <span class="set-label">Default project kind</span>
-        <p-select size="small" [options]="kindOptions" optionLabel="label" optionValue="value"
+        <p-select size="small" [options]="kindOptions()" optionLabel="label" optionValue="value"
                   [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
-      </label>
-
-      <label class="set-field">
-        <span class="set-label">Default task store</span>
-        <p-selectbutton size="small" [options]="storeOptions" optionLabel="label" optionValue="value"
-                        [allowEmpty]="false" [ngModel]="store()" (ngModelChange)="store.set($event)" name="store" />
-        <span class="set-hint">shared = portal-visible store at &lt;projects root&gt;/_tasks/&lt;slug&gt;; normal = _tasks/ in-repo.</span>
+        @if (kindDescription()) { <span class="set-hint">{{ kindDescription() }}</span> }
       </label>
 
       <label class="set-field">
@@ -91,7 +107,7 @@
       </div>
     </section>
 
-    <!-- Read-only: home + integration -->
+    <!-- Read-only: home + driver -->
     <section class="settings-card">
       <h3 class="card-title">Machine</h3>
 
@@ -106,19 +122,25 @@
       </label>
 
       <label class="set-field">
-        <span class="set-label">Integration (agent)</span>
-        @if (c.integration.available.length > 1) {
-          <!-- task 061 seam: multiple adapters available → render a selector here. -->
-          <p-select size="small" [options]="c.integration.available" [ngModel]="c.integration.active" name="integration" appendTo="body" [disabled]="true" />
+        <span class="set-label">Driver (agent)</span>
+        @if (c.driver.available.length > 1) {
+          <!-- seam: multiple adapters available → render a selector here. -->
+          <p-select size="small" [options]="c.driver.available" [ngModel]="c.driver.active" name="driver" appendTo="body" [disabled]="true" />
         } @else {
           <div class="set-readonly">
-            <code class="ro-value">{{ c.integration.active }}</code>
+            <code class="ro-value">{{ c.driver.active }}</code>
             <span class="ro-source">auto-detected</span>
           </div>
         }
         <span class="set-hint">cogyard v{{ c.version }} @if (c.commit) { ({{ c.commit }}) }</span>
       </label>
     </section>
+
+    <!-- Add-ons — machine-level capabilities; their one home is this
+         page. Hidden in wizard mode to keep first-run focused. -->
+    @if (!wizard()) {
+      <app-settings-addons />
+    }
 
     @if (wizard()) {
       <section class="settings-card cta-card">

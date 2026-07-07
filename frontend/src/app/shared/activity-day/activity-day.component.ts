@@ -3,7 +3,7 @@ import { ApiService } from '../../services/api.service';
 import { ActivityDayResponse, ActivityDaySession } from '../../services/models';
 import { fmtHour } from '../activity-punchcard/activity-punchcard.component';
 
-// Single-day drill-down (task 064): the braid zoomed into one local day.
+// Single-day drill-down: the braid zoomed into one local day.
 // Per session — YOUR prompt ticks (exact timestamps, the attention signal)
 // over the agent's active hours (labor). Attention hops between lanes; labor
 // genuinely overlaps, and the amber strip marks hours where ≥2 sessions ran
@@ -23,13 +23,16 @@ interface SessionRow {
   imports: [],
   templateUrl: './activity-day.component.html',
   styleUrl: './activity-day.component.scss',
+  // Escape closes the drill-down, matching its close button. Guarded
+  // on an open date so it's a no-op when nothing is showing.
+  host: { '(document:keydown.escape)': 'onEscape()' },
 })
 export class ActivityDayComponent {
   date = input<string | null>(null);
   colors = input<Record<string, string>>({});
   // Project order from the braid (projectRank) so the drill-down lanes match it.
   order = input<string[]>([]);
-  // When set, the view scopes to one project (the per-project Activity tab).
+  // When set, the view scopes to one project (the per-project Stats tab).
   project = input<string | null>(null);
   closed = output<void>();
 
@@ -141,4 +144,6 @@ export class ActivityDayComponent {
   });
 
   hasParallel = computed(() => this.parallel().some(Boolean));
+
+  onEscape() { if (this.date()) this.closed.emit(); }
 }

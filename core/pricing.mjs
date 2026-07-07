@@ -1,18 +1,18 @@
-// core/pricing.mjs — versioned model pricing for the usage ledger (task 026).
+// core/pricing.mjs — versioned model pricing for the usage ledger.
 //
 // Cost is computed ONCE, at collection time, with the table version in effect;
 // ledger rows store {costUSD, pricingVersion} and are never recomputed. Adding
 // a new version entry changes future collections only — historical rows keep the
 // version they were priced with.
 //
-// The price TABLE and shorthand ALIASES come from the active integration's
-// adapter (task 038 — see core/integrations.mjs + docs/INTEGRATIONS.md): Claude
+// The price TABLE and shorthand ALIASES come from the active driver's
+// adapter (see core/drivers.mjs + docs/DRIVERS.md): Claude
 // ships the reference table; the no-op adapter ships an empty one (tokens still
 // ledger, cost stays null). The cache-tier math + version-locking below are
 // engine-generic and stay here. Rates are $ per MILLION tokens. Cache multipliers
 // per Anthropic pricing: read = 0.1× input, 5-minute write = 1.25×, 1-hour = 2×.
 
-import { adapter } from './integrations.mjs';
+import { adapter } from './drivers.mjs';
 
 const CACHE_READ_MULT = 0.1;
 const CACHE_WRITE_5M_MULT = 1.25;
@@ -20,7 +20,7 @@ const CACHE_WRITE_1H_MULT = 2;
 
 // The active adapter's price versions (newest first). Snapshotted at import for
 // the barrel re-export; priceFor() re-reads the adapter live so a swapped
-// integration is reflected without a reload.
+// driver is reflected without a reload.
 const PRICING_VERSIONS = adapter.pricing.versions;
 
 function resolveModel(model) {

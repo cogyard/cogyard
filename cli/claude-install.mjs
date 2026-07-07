@@ -2,7 +2,7 @@
 // cli/claude-install.mjs — `cogyard claude install` / `uninstall`.
 //
 // Installs the Claude driver (the skills + commands vendored in
-// integrations/claude/) into the user's Claude config dir, for environments where
+// drivers/claude/) into the user's Claude config dir, for environments where
 // the `/plugin` marketplace flow isn't available. By DEFAULT it SYMLINKS the repo's
 // files into ~/.claude (single source of truth — edit the repo, changes are live;
 // uninstall just removes the links); `--copy` makes frozen copies instead.
@@ -21,7 +21,7 @@ import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));           // <pkg>/cli
-const DRIVER = join(HERE, '..', 'integrations', 'claude');     // the plugin tree
+const DRIVER = join(HERE, '..', 'drivers', 'claude');     // the plugin tree
 const CLAUDE_DIR = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 
 // The two component dirs we manage: <driver>/<kind> → <claude>/<kind>.
@@ -97,7 +97,7 @@ function uninstall() {
 // always-on channel. So `--rules` writes the canonical rules (instructions.md)
 // into <claude>/CLAUDE.md between markers (idempotent: refresh-in-place; uninstall
 // removes the block). This is the consented "copy the snippet" step, automated.
-const RULES_BEGIN = '<!-- cogyard:rules:begin (managed by `cogyard claude install --rules`; source: integrations/claude/instructions.md) -->';
+const RULES_BEGIN = '<!-- cogyard:rules:begin (managed by `cogyard claude install --rules`; source: drivers/claude/instructions.md) -->';
 const RULES_END = '<!-- cogyard:rules:end -->';
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function rulesRe() { return new RegExp('\\n*' + escapeRe(RULES_BEGIN) + '[\\s\\S]*?' + escapeRe(RULES_END) + '\\n*'); }

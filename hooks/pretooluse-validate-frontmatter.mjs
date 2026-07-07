@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // PreToolUse(Edit|Write|MultiEdit) forcing guard for task-file frontmatter.
 //
-// Task 35, Phase 3: stop malformed frontmatter at write time. Reads the hook
+// Stop malformed frontmatter at write time. Reads the hook
 // JSON on stdin; if the target is a `_tasks/<NNN>-*.md` file, it reconstructs
 // the post-edit content, validates it with the SAME validator as
 // `tasks.mjs validate` (core/validate.mjs), and DENIES the write iff it would
@@ -116,7 +116,7 @@ if (after.length > before.length) {
   const introduced = after.filter((e) => !beforeSet.has(e));
   const list = (introduced.length ? introduced : after).map((e) => `  • ${e}`).join('\n');
   deny(
-    `Task-frontmatter guard (task 35): this write would introduce ${after.length - before.length} new schema error(s) in ${fileBase}:\n${list}\n\n`
+    `Task-frontmatter guard: this write would introduce ${after.length - before.length} new schema error(s) in ${fileBase}:\n${list}\n\n`
     + `Fix the frontmatter so it validates, then retry. Run \`cogyard tasks validate\` to check. `
     + `(Pre-existing errors are allowed through — this only blocks NEW ones.)`,
   );

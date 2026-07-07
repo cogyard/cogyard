@@ -52,9 +52,9 @@ cogyard {
 ```
 
 Caddy is **not required** — it is purely a hostname/TLS convenience. The app is
-fully functional on `localhost:7437` without it. The owner's machine runs a
-local Caddy mapping `http://cogyard → :7437`; that live config is personal and
-is not committed (the committed `Caddyfile.example` is the documentation).
+fully functional on `localhost:7437` without it. A typical setup runs a
+local Caddy mapping `http://cogyard → :7437`; that live config is machine-specific
+and not committed (the committed `Caddyfile.example` is the documentation).
 
 ## TLS matters if you want dock badges / notifications
 
@@ -84,7 +84,7 @@ badge/notification layer needs the secure context.
 
 The reverse proxy, its TLS, and the per-machine process manager are all
 **platform- and service-specific** — exactly the kind of thing cogyard core
-must stay free of (core is cross-platform and ships no integrations). Today they
+must stay free of (core is cross-platform and ships no drivers). Today they
 live as personal/example config (this doc + `Caddyfile.example` + the reference
 plist). The planned home for them is the **add-on framework** (the planned community add-on ecosystem): a "serving/proxy" add-on
 would sit alongside the tunnel add-on, declaring its own platform and prereqs,

@@ -1,6 +1,6 @@
 {
   "name": "cogyard",
-  "version": "1.0.0",
+  "version": "1.15.0",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -33,7 +33,7 @@
     "core/",
     "server/",
     "hooks/",
-    "integrations/",
+    "drivers/",
     "frontend/dist/frontend/browser"
   ],
   "workspaces": [
@@ -44,6 +44,7 @@
     "dev": "bash scripts/dev.sh",
     "test": "node --test",
     "test:clean-machine": "bash test/clean-machine.sh",
+    "lint:leaks": "bash scripts/leak-scan.sh",
     "prepack": "npm run build",
     "frontend": "npm start -w frontend",
     "build": "npm run build -w frontend",
@@ -51,7 +52,7 @@
     "serve": "node cli/cogyard.mjs serve",
     "desktop": "bin/build-desktop",
     "desktop:build": "bin/build-desktop --no-open",
-    "desktop:dev": "npm --prefix desktop install && npm --prefix desktop run dev"
+    "desktop:dev": "npm --prefix extras/desktop install && npm --prefix extras/desktop run dev"
   },
   "overrides": {
     "rxjs": "7.8.2"

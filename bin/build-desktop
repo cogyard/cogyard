@@ -20,17 +20,17 @@ cd "$REPO"
 
 echo "▸ Building the cogyard desktop app — takes a minute or two…"
 # desktop is decoupled from the root workspaces (an opt-in extra) — install its
-# own deps on demand, then build. A committed desktop/package-lock.json pins the
+# own deps on demand, then build. A committed extras/desktop/package-lock.json pins the
 # whole toolchain (electron-builder 25.x — newer 26.14+ require()s an ESM-only
 # @noble/hashes, which breaks a CJS build), so `npm ci` reproduces the known-good
 # tree instead of drifting to whatever's latest.
-[ -d "$REPO/desktop/node_modules" ] || npm --prefix "$REPO/desktop" ci
+[ -d "$REPO/extras/desktop/node_modules" ] || npm --prefix "$REPO/extras/desktop" ci
 # Personal build is unsigned (ad-hoc): disable signing-identity auto-discovery so
 # the build is deterministic and never blocks on a Developer-ID cert.
-CSC_IDENTITY_AUTO_DISCOVERY=false npm --prefix "$REPO/desktop" run dist
+CSC_IDENTITY_AUTO_DISCOVERY=false npm --prefix "$REPO/extras/desktop" run dist
 
-DMG="$(ls -t "$REPO"/desktop/release/*.dmg 2>/dev/null | head -1)"
-[ -n "$DMG" ] || { echo "✗ build finished but no .dmg in desktop/release/" >&2; exit 1; }
+DMG="$(ls -t "$REPO"/extras/desktop/release/*.dmg 2>/dev/null | head -1)"
+[ -n "$DMG" ] || { echo "✗ build finished but no .dmg in extras/desktop/release/" >&2; exit 1; }
 
 cat <<EOF
 

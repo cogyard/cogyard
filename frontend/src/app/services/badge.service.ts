@@ -8,7 +8,7 @@ const POLL_MS = 60_000;
 // projects — work in flight that still needs landing.
 //
 // SINGLE WRITER PER SURFACE. Inside the Electron desktop shell the NATIVE poller
-// (desktop/main.mjs pollTick) owns the dock badge; this renderer service stays
+// (extras/desktop/main.mjs pollTick) owns the dock badge; this renderer service stays
 // out of its way. Two writers on one dock badge — even when they "should" agree
 // — is exactly the 14↔7 flip bug: the native side summed unmerged worktrees (14)
 // while this renderer summed claimed tasks (7), each overwriting the other on its

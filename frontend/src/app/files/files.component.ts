@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, signal, computed, untracked, viewChild, ElementRef, afterRenderEffect } from '@angular/core';
+import { Component, input, output, inject, effect, signal, computed, untracked, viewChild, ElementRef, afterRenderEffect, OnDestroy } from '@angular/core';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -27,8 +27,12 @@ import { ApiService } from '../services/api.service';
 import { WtInfo, TreeFile, WtActivityResponse, TreeResponse } from '../services/models';
 import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
+import { EditStateService } from '../services/edit-state.service';
 import { DiffViewComponent } from '../shared/diff-view/diff-view.component';
 import { FileActionsComponent } from '../shared/file-actions/file-actions.component';
+// Type-only — the editor module itself is dynamic-import'd on first Edit click
+// so CodeMirror stays out of the main bundle.
+import type { EditorHandle } from './editor';
 
 hljs.registerLanguage('typescript', typescript);
 hljs.registerLanguage('javascript', javascript);
@@ -73,12 +77,14 @@ interface Row {
   imports: [DiffViewComponent, FileActionsComponent, FormsModule, ToggleSwitch, TreeModule, Tag, TooltipModule, Skeleton],
   templateUrl: './files.component.html',
   styleUrl: './files.component.scss',
+  host: { '(window:beforeunload)': 'onBeforeUnload($event)' },
 })
-export class FilesComponent {
+export class FilesComponent implements OnDestroy {
   private api = inject(ApiService);
   private san = inject(DomSanitizer);
   private refresh = inject(RefreshService);
   private store = inject(StoreService);
+  private editState = inject(EditStateService);
 
   slug = input.required<string>();
   wt = input<string>('');     // worktree name from ?wt= ('' = main)
@@ -126,6 +132,31 @@ export class FilesComponent {
   missing = signal(false);
   view = signal<'rendered' | 'raw' | 'diff'>('raw');
   patch = signal<string | null>(null);
+
+  // Edit mode. `content` doubles as the saved baseline: dirty means
+  // the editor doc differs from it; save/reload move it forward.
+  editing = signal(false);
+  dirty = signal(false);
+  saving = signal(false);
+  conflict = signal(false);
+  saveError = signal<string | null>(null);
+  loadingEditor = signal(false);
+  baseHash = signal<string | null>(null);
+  // Soft-wrap long lines in the editor. Persisted like the dark switch.
+  wrap = signal(localStorage.getItem('cogyard-files-wrap') === '1');
+  toggleWrap() {
+    const w = !this.wrap();
+    this.wrap.set(w);
+    localStorage.setItem('cogyard-files-wrap', w ? '1' : '0');
+  }
+  private editor: EditorHandle | null = null;
+  private editorHost = viewChild<ElementRef<HTMLElement>>('cmHost');
+  // Editable = a loaded, on-disk, non-binary, non-image, non-truncated text file
+  // (a truncated buffer must never round-trip a save — it would amputate the file).
+  canEdit = computed(() =>
+    !!this.file() && !this.isImage() && !this.binary() && !this.truncated() &&
+    !this.missing() && this.content() != null && !!this.baseHash() &&
+    this.selected()?.onDisk !== false);
 
   // main first (primary clone first), then by latest activity desc.
   pills = computed(() => {
@@ -286,11 +317,34 @@ export class FilesComponent {
       for (let i = 1; i < segs.length; i++) m.set(segs.slice(0, i).join('/'), true);
       this.expandOverride.set(m);
     });
+    // Mount CodeMirror once edit mode is on AND its host div has rendered
+    // (viewChild signals update post-render, so this fires at the right time).
+    effect(() => {
+      const host = this.editorHost()?.nativeElement;
+      if (this.editing() && host && !this.editor) this.mountEditor(host);
+    });
+    // The pane's dark switch / wrap toggle restyle the live editor in place.
+    effect(() => { const d = this.dark(); this.editor?.setDark(d); });
+    effect(() => { const w = this.wrap(); this.editor?.setWrap(w); });
+    // Publish dirty state for the app-shell nav guard (tab/project switches).
+    effect(() => this.editState.dirty.set(this.dirty()));
+  }
+
+  ngOnDestroy() {
+    this.editState.dirty.set(false);
+    this.editor?.destroy();
+    this.editor = null;
+  }
+
+  onBeforeUnload(e: BeforeUnloadEvent) {
+    if (this.dirty()) e.preventDefault();
   }
 
   private resetContent() {
+    this.stopEdit();
     this.content.set(null); this.binary.set(false); this.truncated.set(false);
     this.size.set(0); this.missing.set(false); this.loadingFile.set(false);
+    this.baseHash.set(null);
   }
   private loadFile(slug: string, wt: string, path: string) {
     this.resetContent();
@@ -302,10 +356,87 @@ export class FilesComponent {
         this.binary.set(!!d.binary);
         this.truncated.set(!!d.truncated);
         this.size.set(d.size);
+        this.baseHash.set(d.hash ?? null);
         this.loadingFile.set(false);
       },
       error: () => { this.missing.set(true); this.loadingFile.set(false); },
     });
+  }
+
+  // --- Edit mode ----------------------------------------------------
+
+  async startEdit() {
+    if (this.editing() || !this.canEdit() || this.loadingEditor()) return;
+    this.loadingEditor.set(true);
+    try {
+      await import('./editor'); // warm the lazy chunk before showing the host
+    } finally {
+      this.loadingEditor.set(false);
+    }
+    this.saveError.set(null);
+    this.editing.set(true); // the host div renders; the mount effect attaches
+  }
+  private async mountEditor(host: HTMLElement) {
+    const { mountEditor } = await import('./editor'); // already loaded — instant
+    if (!this.editing() || this.editor) return;
+    this.editor = mountEditor(host, {
+      doc: this.content() ?? '',
+      fileExt: ext(this.file()),
+      dark: this.dark(),
+      wrap: this.wrap(),
+      onDocChanged: (doc) => this.dirty.set(doc !== this.content()),
+      onSave: () => this.save(),
+    });
+  }
+  private stopEdit() {
+    this.editor?.destroy();
+    this.editor = null;
+    this.editing.set(false); this.dirty.set(false);
+    this.saving.set(false); this.conflict.set(false); this.saveError.set(null);
+  }
+  cancelEdit() {
+    if (!this.editState.confirmDiscard()) return;
+    this.stopEdit();
+  }
+  save() {
+    const hash = this.baseHash();
+    if (!this.editor || !this.dirty() || this.saving() || !hash) return;
+    const doc = this.editor.getDoc();
+    this.saving.set(true); this.saveError.set(null);
+    this.api.saveFile(this.slug(), this.selectedWt(), this.file(), doc, hash).subscribe({
+      next: (r) => {
+        this.saving.set(false);
+        // r.content present = the server-side prettier pass reshaped the buffer;
+        // re-baseline the editor to exactly what's on disk.
+        const onDisk = r.content ?? doc;
+        if (r.content != null) this.editor?.setDoc(r.content);
+        this.content.set(onDisk); // new baseline — stay in edit mode
+        this.baseHash.set(r.hash);
+        this.size.set(r.size);
+        this.dirty.set(false); this.conflict.set(false);
+        this.patch.set(null); // stale the cached diff — content changed
+        this.refreshTree();
+      },
+      error: (e) => {
+        this.saving.set(false);
+        if (e.status === 409) this.conflict.set(true);
+        else this.saveError.set(e.error?.error || 'save failed');
+      },
+    });
+  }
+  // Conflict path: drop local edits and re-baseline from what's on disk now.
+  reloadFromDisk() {
+    this.api.file(this.slug(), this.selectedWt(), this.file()).subscribe((d) => {
+      this.content.set(d.content ?? null);
+      this.baseHash.set(d.hash ?? null);
+      this.size.set(d.size);
+      this.editor?.setDoc(d.content ?? '');
+      this.dirty.set(false); this.conflict.set(false);
+    });
+  }
+  private refreshTree() {
+    const s = this.slug(), w = this.selectedWt(), ig = this.showIgnored();
+    this.store.load(`tree|${s}|${w}${ig ? '|ig' : ''}`, this.api.tree(s, w, ig));
   }
 
   // Switching worktree drops back to the lean tree — each heavy listing is an

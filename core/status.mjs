@@ -24,7 +24,7 @@ export const STATUS = {
 // The valid status vocabulary.
 export const STATUSES = Object.keys(STATUS);
 
-// Task category — a required, closed enum orthogonal to status (task 39). Status
+// Task category — a required, closed enum orthogonal to status. Status
 // is lifecycle ("is it finished"); category is kind ("what sort of work"). A bug
 // is `category: bug` regardless of size — size is not the axis, kind is.
 //   feature     — new capability / view / user-facing behavior
@@ -51,7 +51,7 @@ export const hasDoneDate = (s) => !!(STATUS[s] && STATUS[s].doneDate);
 // sections). Was duplicated in core/project.mjs (generateIndexMd) and the SPA
 // (frontend task-buckets.ts); both now derive from this one function so a board
 // column and a list bucket with the same title can never hold different tasks
-// (task 47 — boundary correctness). The canonical KEYS live here; each consumer
+// (boundary correctness). The canonical KEYS live here; each consumer
 // maps a key to its own display title + ordering (that part is presentation).
 export const BUCKET_KEYS = [
   'ready', 'claimed', 'inProgress', 'blocked', 'parked', 'stale', 'enough', 'done', 'obsolete', 'unknown',

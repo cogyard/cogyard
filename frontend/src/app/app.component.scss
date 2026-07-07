@@ -57,18 +57,11 @@
 /* The freshness pie + full version stamp share the top row. */
 .sidebar-foot .foot-row { display: flex; align-items: center; gap: 9px; }
 
-/* Settings link — its own line ABOVE the version row (task 060). Gear icon +
-   label; quiet by default, brighter when the /settings view is active. */
-.sidebar-foot .settings-link {
-  align-self: flex-start;
-  display: inline-flex; align-items: center; gap: 6px;
-  background: none; border: 0; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600;
-  padding: 3px 6px; border-radius: 5px; white-space: nowrap;
-  color: color-mix(in srgb, var(--app-topbar-fg) 70%, transparent);
-}
+/* Settings link — its own line ABOVE the version row. Wears the shared
+   .sidebar-item recipe (styles.scss) so resting/hover/active render exactly like a
+   project row — including the full-width accent fill on /settings. Only the gear
+   icon needs a local rule. */
 .sidebar-foot .settings-link .settings-cog { flex: 0 0 auto; display: block; }
-.sidebar-foot .settings-link:hover { color: var(--app-topbar-fg); background: color-mix(in srgb, var(--app-topbar-fg) 12%, transparent); }
-.sidebar-foot .settings-link.active { color: var(--app-topbar-fg); }
 
 /* Build version + commit, muted, beside the freshness pie — shown in full. */
 .sidebar-foot .version {

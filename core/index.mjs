@@ -1,6 +1,6 @@
 // core/index.mjs — the cogyard data layer. Pure, importable, no CLI dispatch,
 // no HTTP, no UI. Barrel re-export over the per-concern modules in this dir
-// (task 14, extracted byte-identically from the original monolith and split into
+// (extracted byte-identically from the original monolith and split into
 // modules without behavior change).
 //
 // ============================================================================
@@ -19,7 +19,7 @@
 // ============================================================================
 
 export { COGYARD_HOME, REGISTRY_PATH, WORKTREE_PORTS_PATH, PROJECTS_ROOT, resolveProjectsRoot } from './paths.mjs';
-export { CONFIG_PATH, STORES, readConfig, writeConfig, projectDefaults, WEEK_STARTS, uiPrefs } from './config.mjs';
+export { CONFIG_PATH, STORES, readConfig, writeConfig, projectDefaults, WEEK_STARTS, PORTAL_TABS, uiPrefs } from './config.mjs';
 export { tryExec, execLoud, findRepoRoot, findTasksDir, gitP, defaultBranch, defaultBranchSync } from './exec.mjs';
 export { memoize, clearMemo } from './memo.mjs';
 export { STATUS, STATUSES, isValidStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate } from './status.mjs';
@@ -28,12 +28,14 @@ export { stripInlineComment, parseScalar, parseFrontmatter, readTaskFile, listTa
 export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject } from './registry.mjs';
 export { loadProject, computeStaleMap, loadProjectAsync, tasksToData, generateIndexMd } from './project.mjs';
 export { loadPortAllocations, gitWorktrees, computeWorktrees, worktreesForProject, projectWorktreePaths } from './worktrees.mjs';
-export { gitCommits, commitsPerDay, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees } from './git-views.mjs';
+export { gitCommits, commitsPerDay, mergesPerDay, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees } from './git-views.mjs';
 export { lightWorktreeStats, taskCountsFromFrontmatter, projectOverview, worktreeNamesForProject, annotateWorktree } from './overview.mjs';
 export { worktreeUnmergedCount, projectUnmerged } from './unmerged.mjs';
 export { inferStatus } from './analyze.mjs';
-export { KINDS, convertToSharedStore, ensureProjectWiring, prepareInitDir } from './scaffold.mjs';
-export { adapter, NOOP, listIntegrationNames, resolveActive, loadAdapter } from './integrations.mjs';
+export { KINDS, convertToSharedStore, joinSharedStore, ensureProjectWiring, prepareInitDir } from './scaffold.mjs';
+export { SCAFFOLDS_DIR, scaffoldFor, scaffoldKinds } from './scaffolds/index.mjs';
+export { adapter, NOOP, listDriverNames, resolveActive, loadAdapter } from './drivers.mjs';
+export { ADDONS_DIR, listAddonIds, loadManifest, loadAddons, listAddons, addonStatuses, runAddonAction, supportedHere, resetAddons } from './addons/index.mjs';
 export { PRICING_VERSIONS, priceFor } from './pricing.mjs';
 export { appendClaimEvent, resolveProjectForPath, collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage, transcriptsRoot, findTranscriptsForSession } from './usage.mjs';
 export { activityRollup, activityDay, activityPunchcard } from './activity.mjs';

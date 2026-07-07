@@ -1,24 +1,27 @@
-import { Component, inject, signal, input, output, effect } from '@angular/core';
+import { Component, inject, signal, input, output, effect, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Select } from 'primeng/select';
 import { SelectButton } from 'primeng/selectbutton';
 import { InputText } from 'primeng/inputtext';
+import { Checkbox } from 'primeng/checkbox';
 import { MessageService } from 'primeng/api';
 import { ApiService } from '../services/api.service';
 import { ConfigService } from '../services/config.service';
-import { ProjectKind, StoreKind, OpenTargetFull, WeekStart } from '../services/models';
+import { ProjectKind, OpenTargetFull, WeekStart } from '../services/models';
 import { fmtHour } from '../shared/activity-punchcard/activity-punchcard.component';
+import { PORTAL_TABS } from '../shared/portal-tabs';
+import { AddonsComponent } from './addons/addons.component';
 
-// The /settings view AND the first-run setup wizard (task 060) — the same form,
+// The /settings view AND the first-run setup wizard — the same form,
 // `wizard` just swaps the framing + shows the "add your first project" CTA. Every
 // settable field renders pre-filled with its resolved value; writable fields Save
 // through POST /api/config / /api/open-targets, then refresh ConfigService so the
 // New/Add drawer prefills with the new values without a reload. COGYARD_HOME and
-// the integration are read-only (the integration field is a selector-in-waiting
-// for task 061 — rendered as a plain label until a 2nd adapter exists).
+// the driver are read-only (the driver field is a selector-in-waiting
+// — rendered as a plain label until a 2nd adapter exists).
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, Select, SelectButton, InputText],
+  imports: [FormsModule, Select, SelectButton, InputText, Checkbox, AddonsComponent],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.scss',
 })
@@ -37,20 +40,37 @@ export class SettingsComponent {
   // Editable drafts, (re)seeded from the resolved config whenever it loads or is
   // refreshed after a Save. Until config resolves they hold the built-in defaults.
   kind = signal<ProjectKind>('single');
-  store = signal<StoreKind>('shared');
   weekStart = signal<WeekStart>('sunday');
   dayStart = signal(0);
   projectsRoot = signal('');
   targets = signal<OpenTargetFull[]>([]);
   savingConfig = signal(false);
   savingTargets = signal(false);
+  savingTabs = signal(false);
   copied = signal(false);
 
-  readonly kindOptions: { label: string; value: ProjectKind }[] = [
-    { label: 'single', value: 'single' }, { label: 'fullstack', value: 'fullstack' },
-    { label: 'static', value: 'static' }, { label: 'library', value: 'library' },
-  ];
-  readonly storeOptions = [{ label: 'shared', value: 'shared' as const }, { label: 'normal', value: 'normal' as const }];
+  // Tab visibility — one checkbox per strip tab; checked = visible.
+  // Persisted inverted as ui.hiddenTabs. Every tab is hideable: this view (the
+  // sidebar cog) is the un-hide surface, so there's no lock-out.
+  readonly portalTabs = PORTAL_TABS;
+  hiddenTabs = signal<ReadonlySet<string>>(new Set());
+  tabVisible(id: string) { return !this.hiddenTabs().has(id); }
+  setTabVisible(id: string, visible: boolean) {
+    this.hiddenTabs.update((prev) => {
+      const next = new Set(prev);
+      if (visible) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  // Kinds come from the scaffold registry via /api/config —
+  // a drop-in scaffold appears here with no UI change. Empty until config loads
+  // (the whole form is behind @if(config()) anyway).
+  readonly kindOptions = computed(() =>
+    (this.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind })));
+  // The one description line under the picker — reads the selected kind's row.
+  readonly kindDescription = computed(() =>
+    this.config()?.kinds.find((k) => k.kind === this.kind())?.description ?? '');
   readonly weekStartOptions = [{ label: 'Sunday (GitHub)', value: 'sunday' as const }, { label: 'Monday', value: 'monday' as const }];
   readonly dayStartOptions = Array.from({ length: 24 }, (_, h) => ({ label: fmtHour(h), value: h }));
 
@@ -59,10 +79,10 @@ export class SettingsComponent {
       const c = this.config();
       if (!c) return;
       this.kind.set(c.defaults.kind);
-      this.store.set(c.defaults.store);
       this.weekStart.set(c.ui?.weekStart ?? 'sunday');
       this.dayStart.set(c.ui?.dayStart ?? 0);
       this.projectsRoot.set(c.projectsRoot);
+      this.hiddenTabs.set(new Set(c.ui?.hiddenTabs ?? []));
       this.targets.set(c.openTargets.map((t) => ({ ...t, args: [...t.args] })));
     });
   }
@@ -74,7 +94,7 @@ export class SettingsComponent {
   saveConfig() {
     if (!this.canSaveConfig()) return;
     this.savingConfig.set(true);
-    this.api.saveConfig({ defaults: { kind: this.kind(), store: this.store() }, ui: { weekStart: this.weekStart(), dayStart: this.dayStart() }, projectsRoot: this.projectsRoot().trim() }).subscribe({
+    this.api.saveConfig({ defaults: { kind: this.kind() }, ui: { weekStart: this.weekStart(), dayStart: this.dayStart() }, projectsRoot: this.projectsRoot().trim() }).subscribe({
       next: () => {
         this.savingConfig.set(false);
         this.cfg.reload(); // refresh so the New/Add drawer prefills with the new defaults
@@ -82,6 +102,23 @@ export class SettingsComponent {
       },
       error: (e) => {
         this.savingConfig.set(false);
+        this.toast.add({ severity: 'error', summary: 'Save failed', detail: e?.error?.error || e?.message || 'request failed' });
+      },
+    });
+  }
+
+  // Persist only ui.hiddenTabs — the server merge-patches it into the ui block,
+  // so the other prefs (weekStart/dayStart) are untouched by this save.
+  saveTabs() {
+    this.savingTabs.set(true);
+    this.api.saveConfig({ ui: { hiddenTabs: [...this.hiddenTabs()] } }).subscribe({
+      next: () => {
+        this.savingTabs.set(false);
+        this.cfg.reload(); // the shell's tab strip reads ConfigService — refresh applies it live
+        this.toast.add({ severity: 'success', summary: 'Tab visibility saved' });
+      },
+      error: (e) => {
+        this.savingTabs.set(false);
         this.toast.add({ severity: 'error', summary: 'Save failed', detail: e?.error?.error || e?.message || 'request failed' });
       },
     });

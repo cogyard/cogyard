@@ -3,7 +3,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { RefreshService } from '../../services/refresh.service';
 import { StoreService } from '../../services/store.service';
 
-// Data-freshness affordance (task 008): a circle that fills radially over the
+// Data-freshness affordance: a circle that fills radially over the
 // 7s poll cycle and restarts when a response actually ARRIVES (a store write).
 // Age text appears only when the data is overdue (tab was hidden or requests
 // are failing); inside the normal cycle the pie alone suffices.

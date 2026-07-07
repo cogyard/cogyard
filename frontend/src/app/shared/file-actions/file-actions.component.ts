@@ -6,14 +6,14 @@ import { MenuItem, MessageService, ConfirmationService } from 'primeng/api';
 import { ApiService } from '../../services/api.service';
 
 // Toolbar actions for the current file, shared by the Graph diff dock and the
-// Files pane (task 12):
+// Files pane:
 //   • "Open in ▾" — opens the file in an external app (VS Code / Finder / …),
 //     built from the editable ~/.cogyard/open-targets.json list the server
 //     exposes at /api/open-targets. On the Graph page it also offers "Open in
 //     cogyard" (jump to the Files viewer). Both pages.
 //   • "Discard" — discard a working-tree file (tracked: git restore; untracked:
 //     delete), confirmed. Shown ONLY when `discardKind` is set, i.e. the Graph
-//     worktree panel (Ben does stage/unstage via Claude, not the portal).
+//     worktree panel (stage/unstage is done via Claude, not the portal).
 // The server resolves the open-target *id* to its command, so this only ever
 // sends an id — never a raw command.
 @Component({

@@ -1,8 +1,8 @@
 import { Component, input, output, computed, signal, effect, ElementRef, viewChild } from '@angular/core';
 import { ActivityResponse, ActivityDayCell } from '../../services/models';
 
-// The intertwine braid (task 064, a "lasagna plot"): one lane per project on a
-// shared day axis, cell shade = that day's metric — attention (the owner's
+// The intertwine braid (a "lasagna plot"): one lane per project on a
+// shared day axis, cell shade = that day's metric — attention (the user's
 // prompt minutes, mined) or cost (machine spend). A breadth strip below counts
 // projects active per day. Clicking a day emits it for the drill-down.
 // Cost cells that are wholly/partly APPROXIMATED (pruned transcripts, even

@@ -1,9 +1,0 @@
-@if (loading()) {
-  <div class="skel"><p-skeleton height="120px" /></div>
-} @else {
-  <div class="act-panel">
-    <app-activity-heatmap [byDay]="byDay()" [weekStart]="weekStart()" noun="commits" (dayClick)="selectedDay.set($event)" />
-    <div class="act-note">Author-dated commits on every local branch (merge commits excluded) — what landed when. Click a day for its session detail; attention and cost across projects live on the All page.</div>
-    <app-activity-day [date]="selectedDay()" [colors]="laneColors()" [project]="slug()" (closed)="selectedDay.set(null)" />
-  </div>
-}

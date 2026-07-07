@@ -15,8 +15,8 @@ const WORKTREE_PORTS_PATH = join(COGYARD_HOME, 'ports.json');
 // Used only as a default (convert's store location) and a label-shortener
 // (registry display), never a required path — a repo outside it still works.
 //
-// Resolves env → config.json.projectsRoot → ~/gitroot (task 060), mirroring how
-// `integration` resolves. The config.json read is a tiny inline JSON parse rather
+// Resolves env → config.json.projectsRoot → ~/gitroot, mirroring how
+// `driver` resolves. The config.json read is a tiny inline JSON parse rather
 // than an import of core/config.mjs, so paths.mjs stays dependency-light and free
 // of the import cycle that would form (config.mjs imports paths.mjs). Resolved at
 // import like the rest of this module: a config.json change takes effect on the

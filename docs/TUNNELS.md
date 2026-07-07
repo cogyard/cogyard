@@ -7,7 +7,7 @@ you're working in**.
 
 ## Why this is non-trivial
 
-cogyard assigns a **unique dynamic port per worktree** (task 042) so parallel
+cogyard assigns a **unique dynamic port per worktree** so parallel
 worktrees never collide on a port. But a Cloudflare tunnel needs **one stable
 target**. The reconciliation is `tunnel here`: it rewrites the tunnel's ingress
 to the *active* worktree's port on demand. One tunnel + one hostname per project,
@@ -121,7 +121,7 @@ registry, resolving the project root from the worktree path.
 Real owner-machine deployments (specific Cloudflare account, hostnames, tunnel
 IDs, LaunchAgent labels) are **personal** and kept out of the public tree — see
 `docs/DEPLOYMENTS.local.md` (gitignored). They eventually live in the private
-`cogyard-local` layer (task 024 phase 2 / task 32).
+`cogyard-local` layer.
 
 A registered deployment looks like:
 

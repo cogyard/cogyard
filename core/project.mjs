@@ -18,7 +18,7 @@ function loadProject(projectPath) {
 
 // Staleness only matters for tasks someone might still pick up — a closed task
 // is allowed to have the world move past it. Skipping these also drops the ⚠
-// from done rows in the portal (intended, task 8). "Closed" = DONE/ENOUGH/
+// from done rows in the portal (intended). "Closed" = DONE/ENOUGH/
 // OBSOLETE, defined once in core/status.mjs.
 
 // A task's stale verdict (`git log reviewed..HEAD -- paths`) can only change
@@ -83,9 +83,10 @@ function tasksToData(tasks) {
     progress: t.derived || {},
     claimedAt: t.derived?.claimedAt,
     claimedBy: t.derived?.claimedBy,
+    claimedByName: t.derived?.claimedByName,
     stale: !!t.derived?.stale,
     ready: !!t.derived?.ready,
-    bucket: bucketOf(t.derived || {}, t.hasFrontmatter), // server-computed group (task 47); SPA consumes, never re-derives
+    bucket: bucketOf(t.derived || {}, t.hasFrontmatter), // server-computed group; SPA consumes, never re-derives
     bodyMd: t.body || '',
     fm: t.frontmatter || {},
     hasFrontmatter: t.hasFrontmatter,
@@ -104,7 +105,7 @@ function generateIndexMd(tasks, project) {
     const title = fm.title || basename(t.path).replace(/^\d+[a-z]?-/, '').replace(/\.md$/, '');
     const file = basename(t.path);
     const progress = t.derived?.totalCount > 0 ? ` (${t.derived.checkedCount}/${t.derived.totalCount})` : '';
-    const claim = t.derived?.claimed ? ` 🔒 ${t.derived.claimedBy || '?'}` : '';
+    const claim = t.derived?.claimed ? ` 🔒 ${t.derived.claimedByName || t.derived.claimedBy || '?'}` : '';
     const stale = t.derived?.stale ? ' ⚠️ stale' : '';
     return `- **${id}** [${title}](${file})${progress}${claim}${stale}`;
   }

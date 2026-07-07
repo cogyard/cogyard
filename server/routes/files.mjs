@@ -1,9 +1,10 @@
 // routes/files.mjs — Files-tab endpoints: worktree pills (last activity), file
-// tree with status-vs-main, file content (text JSON / raw images), diff vs main.
-// Read-only.
+// tree with status-vs-main, file content (text JSON / raw images), diff vs main,
+// and the one write: POST /api/file (the edit → save), gated by the
+// http.mjs seam (origin + containment) with a baseHash concurrency check.
 
-import { json, errJson, badRelPath } from '../http.mjs';
-import { findWorktree, worktreeActivity, fileTree, readWorkFile, vsMainDiff } from '../files.mjs';
+import { json, errJson, badRelPath, parseGuarded } from '../http.mjs';
+import { findWorktree, worktreeActivity, fileTree, readWorkFile, writeWorkFile, vsMainDiff } from '../files.mjs';
 
 // Worktree pill param: a directory basename, never a path. '' = main checkout.
 function badWtName(w) {
@@ -44,4 +45,36 @@ export async function handle(path, u, proj, res) {
     return json(res, 200, { patch });
   }
   return false;
+}
+
+// POST /api/file — save an edited buffer back to disk. Body:
+// { p, wt, path, content, baseHash }. Same param guards as the GET, then
+// writeWorkFile does containment + hash check + atomic write.
+export async function handlePost(path, req, res, projects) {
+  if (path !== '/api/file') return false;
+
+  const body = await parseGuarded(req, res);
+  if (!body) return true;
+
+  const proj = body.p ? projects.find((x) => x.slug === body.p) : projects[0];
+  if (!proj) { errJson(res, 404, 'unknown project: ' + body.p); return true; }
+  const wtName = typeof body.wt === 'string' ? body.wt : '';
+  const badWt = badWtName(wtName);
+  if (badWt) { errJson(res, 400, badWt); return true; }
+  const wt = findWorktree(proj, wtName);
+  if (!wt) { errJson(res, 404, 'unknown worktree: ' + wtName); return true; }
+  const badPath = badRelPath(body.path || '');
+  if (badPath) { errJson(res, 400, badPath); return true; }
+  if (typeof body.content !== 'string' || typeof body.baseHash !== 'string') {
+    errJson(res, 400, 'content and baseHash required'); return true;
+  }
+
+  const r = await writeWorkFile(wt.path, body.path, body.content, body.baseHash);
+  if (r.forbidden) { errJson(res, 403, 'forbidden'); return true; }
+  if (r.missing) { errJson(res, 404, 'no such file in worktree'); return true; }
+  if (r.notText) { errJson(res, 400, 'not an editable text file'); return true; }
+  if (r.tooLarge) { errJson(res, 413, 'file exceeds the 1 MB edit cap'); return true; }
+  if (r.conflict) { json(res, 409, { error: 'file changed on disk', currentHash: r.conflict.currentHash }); return true; }
+  json(res, 200, r.ok);
+  return true;
 }

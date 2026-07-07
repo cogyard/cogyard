@@ -1,5 +1,5 @@
 // server/http.mjs — HTTP/transport plumbing: static SPA serving, JSON responses,
-// the one API error shape, param guards, and the middleware seam for task 12.
+// the one API error shape, param guards, and the middleware seam for writes.
 //
 // No CORS and no OPTIONS handling on purpose: the server delivers the SPA and
 // /api on the same origin in prod (:7437 / http://cogyard via Caddy) and dev
@@ -51,7 +51,7 @@ export function badKind(k) {
 }
 
 // ============================================================================
-// SEAM for task 12 (working-tree actions) — first consumed by task 026's
+// SEAM for working-tree actions — first consumed by
 // POST /api/usage/collect (the portal's usage-refresh button).
 // ----------------------------------------------------------------------------
 // 12 adds POST endpoints (routes/actions.mjs) that mutate the git index and
@@ -84,13 +84,22 @@ export function readBody(req) {
   });
 }
 
+// Shared POST preamble: origin gate + JSON body parse. Returns the parsed body,
+// or null after having already sent the error response.
+export async function parseGuarded(req, res) {
+  const originErr = requireSameOrigin(req);
+  if (originErr) { errJson(res, 403, originErr); return null; }
+  try { return JSON.parse((await readBody(req)) || '{}'); }
+  catch { errJson(res, 400, 'bad JSON body'); return null; }
+}
+
 // Path-containment guard for the working-tree actions. `baseDir` is a checkout
 // dir already validated as one of the project's real worktrees (never a raw
 // caller cwd); `rel` is the project-relative path the action targets. Returns
 // the contained absolute path, or null if `rel` escapes baseDir via traversal,
 // an absolute path, or a symlink that resolves outside. realpathSync collapses
 // symlinks on both sides so e.g. a `_tasks` shared-store symlink that points
-// outside the project is correctly rejected (the v1 posture for task 15).
+// outside the project is correctly rejected (the v1 posture).
 export function assertInProject(baseDir, rel) {
   if (!rel || typeof rel !== 'string' || rel.includes('\0')) return null;
   // Reject absolute paths and any `..` segment outright (mirrors badRelPath) —

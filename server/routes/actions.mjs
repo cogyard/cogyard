@@ -1,4 +1,4 @@
-// routes/actions.mjs — the portal's working-tree write/exec actions (task 12):
+// routes/actions.mjs — the portal's working-tree write/exec actions:
 // discard, and open-in-editor / reveal-in-Finder / open-default. (Stage/unstage
 // endpoints were removed — staging is done via Claude, not the portal.)
 //
@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { unlinkSync } from 'node:fs';
 import * as core from '../../core/index.mjs';
-import { json, errJson, requireSameOrigin, readBody, assertInProject } from '../http.mjs';
+import { json, errJson, parseGuarded, assertInProject } from '../http.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -29,15 +29,6 @@ function resolveCheckout(body, projects) {
     return { dir: body.worktree };
   }
   return { dir: proj.path };
-}
-
-// Shared preamble: origin gate + JSON body parse. Returns the parsed body, or
-// null after having already sent the error response.
-async function parseGuarded(req, res) {
-  const originErr = requireSameOrigin(req);
-  if (originErr) { errJson(res, 403, originErr); return null; }
-  try { return JSON.parse((await readBody(req)) || '{}'); }
-  catch { errJson(res, 400, 'bad JSON body'); return null; }
 }
 
 const stderrOf = (e) => String((e && e.stderr) || (e && e.message) || e).trim();

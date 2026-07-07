@@ -1,0 +1,30 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="120px" /></div>
+} @else {
+  @if (usage(); as u) {
+    @if (u.costUSD || u.sessions) {
+      <section class="usage-strip">
+        <h2>
+          <span>Usage — {{ usageCost(u) }} · {{ u.sessions }} sessions</span>
+          <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
+        </h2>
+        <app-usage-breakdown [models]="u.models" />
+      </section>
+    }
+  }
+
+  <div class="act-panel">
+    <app-activity-heatmap [byDay]="byDay()" [weekStart]="weekStart()" noun="commits" (dayClick)="selectedDay.set($event)" />
+    <div class="act-note">Author-dated commits on every local branch (merge commits excluded) — what landed when. Click a day for its session detail; the cross-project attention/cost view lives on the All page.</div>
+    <app-activity-day [date]="selectedDay()" [colors]="laneColors()" [project]="slug()" (closed)="selectedDay.set(null)" />
+
+    <section class="cal-panel">
+      <h3 class="section-h">Calendar</h3>
+      <app-stats-calendar
+        [cost]="costByDay()" [commits]="byDay()" [merges]="mergesByDay()" [weekStart]="weekStart()"
+        (taskClick)="jumpTask.emit($event)" (dayClick)="calDay.set($event)" />
+      <div class="act-note">Per day: machine cost ($; <em>≈</em> = estimated from a pruned transcript), commit count, and a <code>#NN</code> badge per task that landed on the default branch that day (click to open it on Tasks).</div>
+      <app-activity-day [date]="calDay()" [colors]="laneColors()" [project]="slug()" (closed)="calDay.set(null)" />
+    </section>
+  </div>
+}

@@ -3,7 +3,7 @@
 // worktree's dev server at a stable public Cloudflare hostname, and have the
 // tunnel follow whichever worktree you're working in.
 //
-// The tension this resolves: cogyard (task 42) hands every worktree a UNIQUE
+// The tension this resolves: cogyard hands every worktree a UNIQUE
 // dynamic port so parallel worktrees never collide — but a Cloudflare tunnel
 // needs ONE stable target. `tunnel here` reconciles them by rewriting the
 // tunnel's ingress to the active worktree's port on demand. One tunnel + one
@@ -41,7 +41,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from '
 import { join, dirname, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { adapter } from '../core/integrations.mjs';
+import { adapter } from '../core/drivers.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const ENV_CLI = join(SCRIPT_DIR, 'env.mjs');
@@ -122,7 +122,7 @@ function detectPort(cwd, side = 'frontend') {
 
 // Resolve tunnel metadata from a repo: prefer the .tunnel marker, else the
 // registry (keyed by the project's MAIN clone path — resolve it from a worktree
-// path via the active integration's worktree layout; task 038).
+// path via the active driver's worktree layout).
 function loadMeta(repoRoot) {
   if (!repoRoot) fail('not in a git repo');
   let meta = null;

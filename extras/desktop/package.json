@@ -1,0 +1,44 @@
+{
+  "name": "@cogyard/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "cogyard desktop shell — a thin Electron viewer onto the always-on portal server (:7437). It starts no server, forks nothing, caches nothing: one native window + dock badge + notifications pointed at localhost:7437. A self-contained workspace that touches core/ and server/ zero times (talks to :7437 over HTTP), so it can be relocated wholesale into an add-on/extras tree with no untangling.",
+  "main": "main.mjs",
+  "scripts": {
+    "dev": "electron .",
+    "dist": "electron-builder --config.extraMetadata.version=$(node -p \"require('../../package.json').version\")",
+    "dist:dir": "electron-builder --dir --config.extraMetadata.version=$(node -p \"require('../../package.json').version\")"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "yard.cog.desktop",
+    "productName": "cogyard",
+    "electronVersion": "33.4.11",
+    "asar": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.mjs",
+      "preload.cjs",
+      "nav-preload.cjs",
+      "find-preload.cjs",
+      "tabstrip.html",
+      "findbar.html",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "build/icon.icns"
+    }
+  }
+}

@@ -1,7 +1,7 @@
-// routes/projects.mjs — project creation/adoption writes (task 046).
+// routes/projects.mjs — project creation/adoption writes.
 //
 // The portal's "New / Adopt" sidebar button POSTs here. These are the SECOND set
-// of writes on the otherwise read-mostly /api surface (after task 026's
+// of writes on the otherwise read-mostly /api surface (after the
 // usage/collect), and they go through the SAME documented seam: requireSameOrigin
 // + readBody from http.mjs. No new write path. Both endpoints call the ONE shared
 // core function (core.ensureProjectWiring) — identical behaviour to the CLI.
@@ -29,10 +29,9 @@ export async function handlePost(path, req, res) {
   try { body = JSON.parse((await readBody(req)) || '{}'); }
   catch { return errJson(res, 400, 'invalid JSON body'); }
 
-  const { path: p, kind, store = 'shared', remote, wiring } = body;
+  const { path: p, kind, remote, wiring } = body;
   if (!p || typeof p !== 'string') return errJson(res, 400, 'path is required');
   if (!core.KINDS.includes(kind)) return errJson(res, 400, `kind must be one of: ${core.KINDS.join(', ')}`);
-  if (store !== 'shared' && store !== 'normal') return errJson(res, 400, "store must be 'shared' or 'normal'");
 
   try {
     let target = resolve(p);
@@ -42,7 +41,7 @@ export async function handlePost(path, req, res) {
       return errJson(res, 400, `path does not exist: ${target}`);
     }
     const result = core.ensureProjectWiring({
-      path: target, kind, store,
+      path: target, kind,
       remote: typeof remote === 'string' ? remote : undefined,
       wiring: wiring === false ? false : undefined,
       scaffold: mode === 'init',

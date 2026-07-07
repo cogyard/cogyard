@@ -159,6 +159,7 @@ function computeDerived(task, allTasks, repoRoot, staleOverride) {
 
   const claimedAt = fm.env?.claimed_at || null;
   const claimedBy = fm.env?.claimed_by_session || null;
+  const claimedByName = fm.env?.claimed_by || null; // human identity — who, not which session
 
   // Staleness: either use a precomputed value (the async server path prefetches
   // all of these in parallel via computeStaleMap — the slow part), or fall back
@@ -183,7 +184,7 @@ function computeDerived(task, allTasks, repoRoot, staleOverride) {
     status, checkedCount, totalCount,
     progressPct: totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : null,
     ready, stale, depsMet,
-    claimed: !!claimedAt, claimedAt, claimedBy,
+    claimed: !!claimedAt, claimedAt, claimedBy, claimedByName,
   };
 }
 

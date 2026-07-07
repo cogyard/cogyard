@@ -3,9 +3,7 @@
 Cross-project infrastructure that gives Claude Code worktrees their own port
 pair so dev servers don't collide with the parent project (or with each other).
 
-Origin: task 042 (worktree port management), first built in a sibling project
-whose task file holds the implementation history, design rationale, and rejected
-alternatives. This file is the operational reference — what exists, how it
+This file is the operational reference — what exists, how it
 works, how to use it, how to debug.
 
 ---
@@ -104,11 +102,11 @@ Code provides no built-in way to assign per-worktree ports.
 
 **Failure policy**: the hook always `exit 0`. Any failure (corrupt registry, disk full, allocator crash, port exhaustion, missing config) is logged to `worktree-hook.log` and surfaced via a `Worktree port hook FAILED` notification. A non-zero exit would block Claude session start — strictly worse than an unallocated worktree.
 
-## Permanent dev server — REMOVED (task 043, reverted 2026-06-24)
+## Permanent dev server — REMOVED (reverted 2026-06-24)
 
 **This feature is gone, permanently. It must never come back.**
 
-Task 043 added a launchd KeepAlive "supervisor" (`hooks/worktree-supervisor.mjs`,
+A launchd KeepAlive "supervisor" was added (`hooks/worktree-supervisor.mjs`,
 agent `com.cogyard.wtsup`) that the SessionStart hook installed
 automatically to keep worktree dev servers running in the background across
 crashes/logout/reboot. It was claimed to be "hard-bounded so it can never fan
@@ -119,8 +117,8 @@ single project alone) and froze the machine, which had to be recovered by hand.
 It has been torn out in full: the supervisor script, the `ensureSupervisorInstalled`
 call + `keepalive` stamp in the SessionStart hook, the `keepalive` CLI subcommand,
 the no-ad-hoc-server block-hook and its `hooks.json` entry, the launchd agent +
-plist, and the `~/.cogyard/supervisor.json` config — all deleted. The follow-up
-task 048 ("make the supervisor enforce itself") is marked OBSOLETE.
+plist, and the `~/.cogyard/supervisor.json` config — all deleted. A proposed
+follow-up ("make the supervisor enforce itself") is abandoned.
 
 **Do not reintroduce any of it.** No supervisor. No auto-installed launchd agent.
 No background process that starts servers on its own. No "disabled by default"
@@ -136,7 +134,7 @@ The hook prints a briefing to stdout. SessionStart hook stdout is injected into 
 Generated text lives in `worktree-session.mjs`. To change wording, edit that script. Concrete shape:
 
 ```
-=== Worktree dev environment (task 042) ===
+=== Worktree dev environment ===
 Project       : myproject
 Worktree      : keen-mayer-c3ead5
 Worktree path : ~/projects/myproject/.claude/worktrees/keen-mayer-c3ead5

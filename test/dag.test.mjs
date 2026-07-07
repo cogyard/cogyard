@@ -8,7 +8,7 @@ import { dagFromLog, spliceStashRows } from '../core/git-views.mjs';
 
 const SEP = '\x1f';
 const line = (hash, parents, refs = '', subject = 's') =>
-  [hash, hash.slice(0, 7), parents.join(' '), refs, subject, 'ben', '06/10/2026 01:00 PM'].join(SEP);
+  [hash, hash.slice(0, 7), parents.join(' '), refs, subject, 'alice', '06/10/2026 01:00 PM'].join(SEP);
 
 // Hashes long enough that slice(0,7) is distinct.
 const A = 'aaaaaaa0000000000000000000000000000000a';
@@ -151,7 +151,7 @@ test('row carries display fields through', () => {
   const { rows } = dagFromLog(raw, new Set());
   assert.equal(rows[0].shortHash, A.slice(0, 7));
   assert.equal(rows[0].subject, 'fix(core): something [#20]');
-  assert.equal(rows[0].author, 'ben');
+  assert.equal(rows[0].author, 'alice');
 });
 
 const S = 'sssssss0000000000000000000000000000000e';

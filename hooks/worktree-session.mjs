@@ -12,11 +12,11 @@
 //     re-fire on EnterWorktree, so the skill runs this directly.
 //
 // What it does, in order, for every Claude Code session:
-//   1. Exits unless the path is one of the active integration's worktrees
-//      (the adapter's worktree.detect decides; task 038).
-//   2. Auto-mounts the shared _tasks symlink (task 015) — all projects.
+//   1. Exits unless the path is one of the active driver's worktrees
+//      (the adapter's worktree.detect decides).
+//   2. Auto-mounts the shared _tasks symlink — all projects.
 //   3. Reserves a port pair via worktree-ports.mjs — UNIVERSAL, no opt-in
-//      (task 042). Reservation is a registry row + briefing only.
+//      Reservation is a registry row + briefing only.
 //   4. If the project has a committed .claude/worktree-config.json, wires the
 //      worktree: .planet (kind=planet), env files (symlink/copy/merge),
 //      .claude/launch.json — then notifies and prints the full briefing.
@@ -37,7 +37,7 @@ import { join, dirname, basename, resolve, normalize } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { findParentMarker } from './worktree-ports.mjs';
-import { adapter } from '../core/integrations.mjs';
+import { adapter } from '../core/drivers.mjs';
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const COGYARD_HOME = process.env.COGYARD_HOME || join(homedir(), '.cogyard');
@@ -93,12 +93,12 @@ function isFile(p) {
 // --- gates -------------------------------------------------------------------
 
 if (!WT) process.exit(0);
-// Only act inside one of the active integration's worktrees (the adapter's
-// worktree.detect decides). No agent active → nothing to wire (task 038).
+// Only act inside one of the active driver's worktrees (the adapter's
+// worktree.detect decides). No agent active → nothing to wire.
 const wtInfo = adapter.worktree.detect(WT);
 if (!wtInfo) process.exit(0);
 
-// --- _tasks automount (task 015) — all worktrees, ports-unrelated -------------
+// --- _tasks automount — all worktrees, ports-unrelated -------------
 
 try {
   const out = execFileSync('node', [TASKS_CLI, 'mount'], { cwd: WT, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -107,7 +107,7 @@ try {
   logRaw(e.stdout); logRaw(e.stderr); // never blocks the session
 }
 
-// --- allocate — universal reservation (task 042) -------------------------------
+// --- allocate — universal reservation -------------------------------
 
 if (!existsSync(ALLOCATOR)) failSoft(`allocator not found at ${ALLOCATOR}`);
 let alloc = null;
@@ -130,8 +130,8 @@ const projectRoot = parent ? parent.parentDir : wtInfo.parentRepo;
 const configPath = join(projectRoot, '.claude', 'worktree-config.json');
 
 // --- tunnel follow (optional) --------------------------------------------------
-// If this project is tunnel-enabled with follow_worktrees on (cli/tunnel.mjs,
-// task 031), repoint its Cloudflare tunnel at THIS worktree's port so the stable
+// If this project is tunnel-enabled with follow_worktrees on (cli/tunnel.mjs),
+// repoint its Cloudflare tunnel at THIS worktree's port so the stable
 // hostname follows the worktree with zero manual steps. Best-effort: never blocks.
 maybeFollowTunnel(projectRoot, WT);
 
@@ -230,7 +230,7 @@ try {
     } else if (strategy === 'merge') {
       let body = readFileSync(srcAbs, 'utf8');
       if (body && !body.endsWith('\n')) body += '\n';
-      body += '\n# --- worktree overrides (task 042 SessionStart hook) ---\n';
+      body += '\n# --- worktree overrides (SessionStart hook) ---\n';
       for (const [k, v] of Object.entries(portAssignments)) body += `${k}=${v}\n`;
       // If target is a symlink (leftover from a previous run), drop it.
       try { if (lstatSync(tgtAbs).isSymbolicLink()) unlinkSync(tgtAbs); } catch { /* absent is fine */ }
@@ -254,7 +254,7 @@ try {
   log(`${projectName}/${worktreeName} → backend=:${backend} frontend=:${frontend}`);
   notify(`Worktree ready: ${worktreeName}`, `Frontend: http://localhost:${previewPort}\nBackend:  :${backend}`);
 
-  briefing = `=== Worktree dev environment (task 042) ===
+  briefing = `=== Worktree dev environment ===
 
 Project       : ${projectName}
 Worktree      : ${worktreeName}

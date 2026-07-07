@@ -1,7 +1,7 @@
 import { Component, input, computed } from '@angular/core';
 import { UsageBucket } from '../../services/models';
 
-// Per-model token + cost table (task 026). Values come straight from the
+// Per-model token + cost table. Values come straight from the
 // ledger (priced at collection time) — never recomputed here.
 @Component({
   selector: 'app-usage-breakdown',

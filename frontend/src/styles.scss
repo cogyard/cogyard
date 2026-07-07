@@ -16,7 +16,7 @@
      into unreadable oceans. Set to `none` for edge-to-edge. */
   --app-content-max: 1440px;
 
-  /* Left project rail width (task 040). The app-shell grid + the commit diff
+  /* Left project rail width. The app-shell grid + the commit diff
      dock (which must stop at the rail's right edge) both read this. */
   --app-sidebar-w: 210px;
 
@@ -24,7 +24,7 @@
   --app-topbar-bg: #2f3338;        /* dark gray header */
   --app-topbar-fg: #e8eaee;        /* text on the topbar */
 
-  /* The left project rail (task 040) — the brand's dark indigo, i.e. the logo's
+  /* The left project rail — the brand's dark indigo, i.e. the logo's
      dark background field (matches the favicon's filled square). */
   --app-sidebar-bg: #3f3d9e;
 
@@ -64,7 +64,7 @@
   --app-primary: var(--app-sidebar-bg);  /* brand indigo (the logo / left rail) */
   --app-primary-contrast: #ffffff;        /* text on the solid primary */
 
-  /* Activity views (task 064). Heat ramp = the commits heatmap's 5 intensity
+  /* Activity views. Heat ramp = the commits heatmap's 5 intensity
      stops (GitHub-graph green — deliberately NOT the accent family; the graph
      is a quotation of a well-known form). Cat palette = braid lane colors,
      assigned by lane order; color follows the project, never its value. */
@@ -119,7 +119,7 @@ p-table .p-datatable-thead > tr > th {
   border-bottom: 1px solid var(--app-border); white-space: nowrap; text-align: left;
 }
 
-/* Activity-view panel (task 064) — the same white box the shared table chrome
+/* Activity-view panel — the same white box the shared table chrome
    gives p-tables, for the non-table activity widgets (heatmap, braid). ONE
    definition; components add only internal layout. */
 .act-panel {
@@ -130,7 +130,7 @@ p-table .p-datatable-thead > tr > th {
 /* ============================================================================
    Buttons — the THREE recipes, ONE definition each (docs/UI-CONVENTIONS.md).
    Every clickable control is a NATIVE <button> wearing exactly one of these
-   classes (never a styled p-button — task 021 killed those). Component SCSS
+   classes (never a styled p-button — those were removed). Component SCSS
    may add LAYOUT (margins, flex) and color MODIFIERS (e.g. .pill-all) on top;
    it must never define a fourth recipe.
 
@@ -198,7 +198,7 @@ button.sidebar-item.active, button.sidebar-item.active:hover {
 }
 button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
 
-/* Topbar data-freshness pie (task 008): the Web Animations API (in the
+/* Topbar data-freshness pie: the Web Animations API (in the
    freshness-pie component) interpolates --pie-p, which only animates if
    registered via @property — and @property must live in global styles. */
 @property --pie-p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }

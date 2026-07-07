@@ -1,9 +1,9 @@
-// core/usage.mjs — token/cost usage ledger (task 026).
+// core/usage.mjs — token/cost usage ledger.
 //
 // Harvests the active agent's session transcripts into a durable append-only
 // ledger under $COGYARD_HOME/usage/. WHERE transcripts live and HOW a line parses
-// into token rows is the active integration's job (task 038 — the `transcripts`
-// adapter seam; see core/integrations.mjs + docs/INTEGRATIONS.md). This module
+// into token rows is the active driver's job (the `transcripts`
+// adapter seam; see core/drivers.mjs + docs/DRIVERS.md). This module
 // owns the agent-agnostic half: cursors, aggregation, the claim↔session join, and
 // the ledger. With the no-op adapter (no agent) harvesting is a no-op and the
 // usage tab degrades gracefully. Cost is locked in at collection time via
@@ -13,14 +13,14 @@
 //   usage.jsonl   — one row per (sessionId, model, taskId) aggregate per collection
 //   claims.jsonl  — claim/release events appended by cli/env.mjs (task↔session join)
 //   cursors.json  — per-transcript byte offset + recent dedupe keys (idempotency)
-//   activity.jsonl        — attention/labor rows (task 064): per collection, per
+//   activity.jsonl        — attention/labor rows: per collection, per
 //                           session — exact HUMAN prompt timestamps + per-UTC-hour
 //                           assistant message counts. Derived counts, never priced.
 //   cursors-activity.json — activity's OWN cursor namespace, deliberately separate
 //                           from cursors.json: its first run walks every on-disk
 //                           transcript from byte 0, retro-filling hour-level data
 //                           for history the usage cursors already consumed (the
-//                           task-064 "rebucket"; pruned transcripts stay
+//                           "rebucket"; pruned transcripts stay
 //                           approximated from usage rows' firstTs/lastTs).
 
 import {
@@ -31,7 +31,7 @@ import { join, basename } from 'node:path';
 import { COGYARD_HOME } from './paths.mjs';
 import { readRegistry } from './registry.mjs';
 import { priceFor } from './pricing.mjs';
-import { adapter } from './integrations.mjs';
+import { adapter } from './drivers.mjs';
 
 const USAGE_DIR = join(COGYARD_HOME, 'usage');
 const LEDGER_PATH = join(USAGE_DIR, 'usage.jsonl');
@@ -40,7 +40,7 @@ const CURSORS_PATH = join(USAGE_DIR, 'cursors.json');
 const ACTIVITY_PATH = join(USAGE_DIR, 'activity.jsonl');
 const ACTIVITY_CURSORS_PATH = join(USAGE_DIR, 'cursors-activity.json');
 
-// Transcript location + per-session lookup come from the active integration.
+// Transcript location + per-session lookup come from the active driver.
 function transcriptsRoot() { return adapter.transcripts.root(); }
 function findTranscriptsForSession(sessionId) { return adapter.transcripts.findBySession(sessionId); }
 
@@ -171,7 +171,7 @@ function collectUsage(opts = {}) {
 
     for (const line of chunk.toString('utf8').split('\n')) {
       if (!line.trim()) continue;
-      // The active integration owns the transcript format: a line → {sessionId,
+      // The active driver owns the transcript format: a line → {sessionId,
       // cwd, usage}, where usage (or null) is the billable turn.
       const parsed = adapter.transcripts.parseLine(line);
       if (!parsed) continue;
@@ -236,12 +236,12 @@ function collectUsage(opts = {}) {
   return { rows: newRows.length, files: touchedFiles, skippedModels: [...skippedModels], activity };
 }
 
-// --- activity collection (task 064) ------------------------------------------
+// --- activity collection ------------------------------------------
 
 // UTC hour bucket key for an ISO timestamp: "2026-07-02T14".
 function hourKey(ts) { return String(ts).slice(0, 13); }
 
-// Task-file references in raw transcript text (task 064): `_tasks/NNN-…` is the
+// Task-file references in raw transcript text: `_tasks/NNN-…` is the
 // cogyard task-file naming convention, so counting matches per task id tells us
 // which task a session was actually working — far better coverage than the
 // claims join (most sessions never formally claim). Format-agnostic: it greps

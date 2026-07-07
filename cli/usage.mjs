@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// cli/usage.mjs — token/cost usage collection + reporting (task 026).
+// cli/usage.mjs — token/cost usage collection + reporting.
 //
 // Subcommands:
 //   usage.mjs collect [--session <id>]   harvest new transcript content into the
@@ -22,7 +22,7 @@ function fail(msg, code = 1) {
 }
 
 function collectForSession(sessionId) {
-  // The active integration knows where its transcripts live (task 038).
+  // The active driver knows where its transcripts live.
   const files = findTranscriptsForSession(sessionId);
   if (!files.length) fail(`no transcript found for session ${sessionId}`);
   return collectUsage({ files });
@@ -73,7 +73,7 @@ function report(project) {
 }
 
 function help() {
-  process.stdout.write(`usage.mjs — token/cost usage ledger (task 026)
+  process.stdout.write(`usage.mjs — token/cost usage ledger
 
 Subcommands:
   collect [--session <id>]   Harvest new transcript content (idempotent)

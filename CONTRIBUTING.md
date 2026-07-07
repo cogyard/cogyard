@@ -45,7 +45,7 @@ notice if Docker isn't available.
 ## The layering — the one rule that matters
 
 ```
-core/  -->  imported by  cli/ . server/ . hooks/ . integrations/
+core/  -->  imported by  cli/ . server/ . hooks/ . drivers/
                               |
                           server/ exposes read-only /api  -->  frontend/
 ```
@@ -61,8 +61,8 @@ core/  -->  imported by  cli/ . server/ . hooks/ . integrations/
   one port; dev uses the Angular proxy). Don't add CORS headers.
 - **Stay agent-agnostic.** Nothing in `core/`/`cli/`/`hooks/` may hardcode a
   Claude-Code literal (worktree path shape, transcript format, model price table).
-  Those live behind the adapter in `integrations/<name>/adapter.mjs` — see
-  [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md). Adding an agent is a new adapter,
+  Those live behind the adapter in `drivers/<name>/adapter.mjs` — see
+  [`docs/DRIVERS.md`](docs/DRIVERS.md). Adding an agent is a new adapter,
   never a new `if (claude)` branch.
 
 ## Versioning

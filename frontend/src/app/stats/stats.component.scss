@@ -1,0 +1,20 @@
+.skel { padding: 4px 0; }
+
+.usage-strip {
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px;
+  padding: 10px 12px; margin-bottom: 16px;
+}
+.usage-strip h2 {
+  display: flex; align-items: center;
+  font-size: 11px; font-weight: 700; color: var(--app-fg-muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin: 0 0 6px; border: none; padding: 0;
+}
+.usage-strip h2 app-refresh-button { margin-left: auto; }
+.act-note { margin-top: 8px; font-size: 11px; color: var(--app-fg-muted); }
+.act-note code { font-family: var(--app-mono, monospace); }
+
+.cal-panel { margin-top: 22px; }
+.section-h {
+  font-size: 11px; font-weight: 700; color: var(--app-fg-muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin: 0 0 10px; border: none; padding: 0;
+}

@@ -9,7 +9,7 @@
 #   - `cogyard init` commits even with no git user.name/email configured
 #   - `cogyard serve` auto-builds the SPA and serves it (GET / = 200, not 503)
 #   - the Claude driver installs/uninstalls cleanly
-#   - the PUBLISHED-PACKAGE path (task 53): `npm pack` the real tarball on the
+#   - the PUBLISHED-PACKAGE path: `npm pack` the real tarball on the
 #     host, `npm i -g` it in the container (no repo, no devDeps), and assert
 #     `cogyard serve` serves the BUNDLED SPA without attempting a build
 #
@@ -92,7 +92,7 @@ else
 fi
 kill "$SPID" 2>/dev/null || true
 
-hr; echo "PUBLISHED PACKAGE (task 53): npm i -g tarball — no repo, no devDeps, no build"
+hr; echo "PUBLISHED PACKAGE: npm i -g tarball — no repo, no devDeps, no build"
 npm rm -g cogyard >/dev/null 2>&1 || true   # drop the npm-link'd /app bin first
 export HOME=/root/home-pkg && mkdir -p "$HOME" && cd "$HOME"
 npm i -g /cogyard.tgz >/tmp/gi.log 2>&1 && ok "npm i -g cogyard tarball" || { bad "npm i -g cogyard tarball"; tail -25 /tmp/gi.log; }

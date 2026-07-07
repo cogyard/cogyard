@@ -11,7 +11,7 @@ import { Routes } from '@angular/router';
 //     ?commit=hash          → open the commit side panel
 export const routes: Routes = [
   { path: 'all', children: [] },
-  { path: 'settings', children: [] }, // /settings view + the empty-state setup wizard (task 060)
+  { path: 'settings', children: [] }, // /settings view + the empty-state setup wizard
   { path: 'p/:slug/:tab', children: [] },
   { path: '', pathMatch: 'full', children: [] },
   { path: '**', children: [] },

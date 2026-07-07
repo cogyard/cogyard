@@ -9,7 +9,7 @@ import { ApiService } from '../../services/api.service';
 import { ConfigService } from '../../services/config.service';
 import { ProjectKind, ScaffoldResult } from '../../services/models';
 
-// The sidebar "New / Add existing" front door (task 046). Two trigger buttons that
+// The sidebar "New / Add existing" front door. Two trigger buttons that
 // open a drawer form, which POSTs to /api/projects/{init,onboard} (the
 // requireSameOrigin write seam). New = greenfield (creates the dir + skeleton);
 // Add existing = onboard an existing folder (additive-only). On success emits the
@@ -34,31 +34,31 @@ export class NewProjectComponent {
   // `<projectsRoot>/<name>` so the user only types a name, not the full path.
   readonly projectsRoot = computed(() => this.config.config()?.projectsRoot ?? '');
   readonly initFullPath = computed(() => `${this.projectsRoot()}/${this.name().trim()}`);
-  // kind/store seed from the saved creation defaults (task 060) — the built-in
-  // defaults until config loads, the persisted values once it has. start() resets
-  // them to the *current* saved defaults, not back to hardcoded literals.
+  // kind seeds from the saved creation defaults — the built-in default until
+  // config loads, the persisted value once it has. start() resets it to the
+  // *current* saved default, not back to a hardcoded literal. (The store model is
+  // always shared — the choice was removed.)
   kind = signal<ProjectKind>(this.config.defaults().kind);
-  store = signal<'shared' | 'normal'>(this.config.defaults().store);
   remote = signal('');
   busy = signal(false);
 
   readonly modeOptions = [{ label: 'New', value: 'init' }, { label: 'Existing', value: 'onboard' }];
-  readonly kindOptions: { label: string; value: ProjectKind }[] = [
-    { label: 'single', value: 'single' }, { label: 'fullstack', value: 'fullstack' },
-    { label: 'static', value: 'static' }, { label: 'library', value: 'library' },
-  ];
-  readonly storeOptions = [{ label: 'shared', value: 'shared' as const }, { label: 'normal', value: 'normal' as const }];
+  // Kinds come from the scaffold registry via /api/config —
+  // a drop-in scaffold appears in the drawer with no UI change.
+  readonly kindOptions = computed(() =>
+    (this.config.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind })));
+  // "What does this kind scaffold?" — the selected kind's registry description.
+  readonly kindDescription = computed(() =>
+    this.config.config()?.kinds.find((k) => k.kind === this.kind())?.description ?? '');
 
   start(mode: 'init' | 'onboard') {
     this.mode.set(mode);
     this.path.set('');
     this.name.set('');
     this.remote.set('');
-    // Reset kind/store to the current saved defaults (refreshed live after a Save
-    // in /settings), so the drawer prefills with what the user configured.
-    const d = this.config.defaults();
-    this.kind.set(d.kind);
-    this.store.set(d.store);
+    // Reset kind to the current saved default (refreshed live after a Save in
+    // /settings), so the drawer prefills with what the user configured.
+    this.kind.set(this.config.defaults().kind);
     this.open.set(true);
   }
 
@@ -75,7 +75,6 @@ export class NewProjectComponent {
     const body = {
       path: isInit ? this.initFullPath() : this.path().trim(),
       kind: this.kind(),
-      store: this.store(),
       remote: this.remote().trim() || undefined,
     };
     const call = isInit ? this.api.initProject(body) : this.api.onboardProject(body);

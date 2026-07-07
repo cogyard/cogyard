@@ -1,8 +1,8 @@
 import { Component, input, computed, signal } from '@angular/core';
 import { WeekStart } from '../../services/models';
 
-// Punch card (task 064): weekday rows × hour-of-day columns, intensity = the
-// owner's prompt counts — "when am I most active". Attention only (prompts),
+// Punch card: weekday rows × hour-of-day columns, intensity = the
+// user's prompt counts — "when am I most active". Attention only (prompts),
 // not labor. Row order honors the week-start preference; scaling is quartile
 // (same idea as the heatmap) over nonzero cells.
 

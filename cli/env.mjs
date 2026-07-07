@@ -12,11 +12,11 @@
 //   env.mjs --help
 
 import { execSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'node:fs';
-import { join, dirname, resolve, basename } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, renameSync, realpathSync } from 'node:fs';
+import { join, dirname, resolve, basename, relative } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
 
-// Claims-ledger side effect (task 026): claim/release also append an event to
+// Claims-ledger side effect: claim/release also append an event to
 // ~/.cogyard/usage/claims.jsonl — the durable task↔session join the usage
 // collector uses. A ledger failure must NEVER fail the claim itself.
 async function recordClaimEvent(event, taskFile, sessionId) {
@@ -206,52 +206,143 @@ function readEnvField(fmText, key) {
   return null;
 }
 
-function claim(taskFile, sessionId, opts = {}) {
-  if (!taskFile || !sessionId) fail('usage: env.mjs claim <task-file> <session-id> [--force]');
-  const abs = resolve(taskFile);
-  const content = readFileSync(abs, 'utf8');
-  const end = content.indexOf('\n---\n', 4);
-  if (end !== -1) {
-    const fmText = content.slice(4, end);
-    const existingClaim = readEnvField(fmText, 'claimed_at');
-    const existingBy = readEnvField(fmText, 'claimed_by_session');
-    if (existingClaim && existingBy && existingBy !== sessionId && !opts.force) {
-      process.stderr.write(JSON.stringify({
-        error: 'already_claimed',
-        taskFile: abs,
-        claimed_at: existingClaim,
-        claimed_by_session: existingBy,
-        attempted_by: sessionId,
-        hint: 'pass --force to override (will displace the other session\'s claim)',
-      }, null, 2) + '\n');
-      process.exit(2);
-    }
-  }
-  const now = new Date().toISOString();
-  // Besides the claim lock, record WHERE the work happens. These two are the
-  // durable trail (worktrees/sessions outlive the claim — Ben keeps them as the
-  // feature's history), so release() deliberately leaves them in place.
-  const here = findRepoRoot();
-  const worktree = here ? here.split('/').pop() : null;
-  const branch = here ? tryExec('git branch --show-current', { cwd: here }) || null : null;
-  const fields = { claimed_at: now, claimed_by_session: sessionId };
-  if (worktree) fields.worktree = worktree;
-  if (branch) fields.branch = branch;
-  editFrontmatter(abs, (fm) => setEnvFields(fm, fields));
-  process.stdout.write(JSON.stringify({ taskFile: abs, claimed_at: now, claimed_by_session: sessionId, worktree, branch }) + '\n');
-  return recordClaimEvent('claim', abs, sessionId);
+// Who is claiming — the human identity teammates see. Self-reported,
+// advisory (v1 has no auth): env override, else git identity,
+// else OS user.
+function resolveClaimant(cwd) {
+  return process.env.COGYARD_USER
+    || tryExec('git config user.name', { cwd: cwd || process.cwd() })
+    || process.env.USER
+    || null;
 }
 
-function release(taskFile) {
+// Team-store plumbing. A store is "remote-backed" when the canonical
+// _tasks dir (symlink resolved) is a git repo with an origin AND a tasks branch
+// — the same conditions tasks.mjs `sync` keys on. Local-only stores get NONE of
+// the pull/push behavior below: single-user flow is unchanged.
+function storeInfo(taskFile) {
+  const dir = dirname(realpathSync(taskFile));
+  const inRepo = !!tryExec('git rev-parse --show-toplevel', { cwd: dir });
+  if (!inRepo) return { dir, remote: false };
+  const remotes = (tryExec('git remote', { cwd: dir }) || '').split('\n');
+  const hasTasksBranch = !!tryExec('git rev-parse --verify --quiet refs/heads/tasks', { cwd: dir });
+  return { dir, remote: remotes.includes('origin') && hasTasksBranch };
+}
+
+function storePull(store) {
+  if (!store.remote) return;
+  // Best-effort: offline must not block claiming (the push below will surface
+  // real divergence). --autostash tolerates uncommitted task edits in the store.
+  tryExec('git pull --rebase --autostash origin tasks', { cwd: store.dir });
+}
+
+// Commit + push ONLY the task file. Returns 'pushed' | 'nothing' | 'lost' |
+// 'push-failed'. 'lost' = a concurrent commit touched the same file and the
+// rebase conflicted (someone else claimed): our commit is unwound, the file is
+// restored to the remote's truth, and ONLY that file is touched.
+function storePushFile(store, abs, message) {
+  if (!store.remote) return 'nothing';
+  const rel = relative(store.dir, realpathSync(abs));
+  if (tryExec(`git add -- ${JSON.stringify(rel)}`, { cwd: store.dir }) === null) return 'push-failed';
+  if (tryExec(`git diff --cached --quiet -- ${JSON.stringify(rel)}`, { cwd: store.dir }) !== null) return 'nothing';
+  if (tryExec(`git commit -m ${JSON.stringify(message)} -- ${JSON.stringify(rel)}`, { cwd: store.dir }) === null) return 'push-failed';
+  if (tryExec('git push origin tasks', { cwd: store.dir }) !== null) return 'pushed';
+  if (tryExec('git pull --rebase --autostash origin tasks', { cwd: store.dir }) !== null) {
+    return tryExec('git push origin tasks', { cwd: store.dir }) !== null ? 'pushed' : 'push-failed';
+  }
+  // Rebase conflict on our claim commit — we lost the race. Unwind touching
+  // only our file: abort, drop the commit (keep the edit staged), restore the
+  // file to the remote's version, then fast-forward.
+  tryExec('git rebase --abort', { cwd: store.dir });
+  tryExec('git reset --soft HEAD~1', { cwd: store.dir });
+  tryExec(`git restore --source origin/tasks --staged --worktree -- ${JSON.stringify(rel)}`, { cwd: store.dir });
+  tryExec('git pull --rebase --autostash origin tasks', { cwd: store.dir });
+  return 'lost';
+}
+
+function refuseClaim(abs, fmText, sessionId) {
+  process.stderr.write(JSON.stringify({
+    error: 'already_claimed',
+    taskFile: abs,
+    claimed_at: readEnvField(fmText, 'claimed_at'),
+    claimed_by: readEnvField(fmText, 'claimed_by'),
+    claimed_by_session: readEnvField(fmText, 'claimed_by_session'),
+    attempted_by: sessionId,
+    hint: 'pass --force to override (will displace the other session\'s claim)',
+  }, null, 2) + '\n');
+  process.exit(2);
+}
+
+async function claim(taskFile, sessionId, opts = {}) {
+  if (!taskFile || !sessionId) fail('usage: env.mjs claim <task-file> <session-id> [--force]');
+  const abs = resolve(taskFile);
+  const store = storeInfo(abs);
+
+  // Remote-backed stores (team model): pull → claim → push, so the
+  // claim is visible to teammates immediately and a lost race surfaces as
+  // "claimed by <name>", never a rebase conflict. Up to 3 attempts; each
+  // attempt re-reads the file AFTER pulling, so the check runs on fresh state.
+  const attempts = store.remote ? 3 : 1;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    storePull(store);
+    const content = readFileSync(abs, 'utf8');
+    const end = content.indexOf('\n---\n', 4);
+    if (end !== -1) {
+      const fmText = content.slice(4, end);
+      const existingClaim = readEnvField(fmText, 'claimed_at');
+      const existingBy = readEnvField(fmText, 'claimed_by_session');
+      if (existingClaim && existingBy && existingBy !== sessionId && !opts.force) {
+        refuseClaim(abs, fmText, sessionId);
+      }
+    }
+    const now = new Date().toISOString();
+    // Besides the claim lock, record WHERE the work happens. These two are the
+    // durable trail (worktrees/sessions outlive the claim — they're kept as the
+    // feature's history), so release() deliberately leaves them in place.
+    const here = findRepoRoot();
+    const worktree = here ? here.split('/').pop() : null;
+    const branch = here ? tryExec('git branch --show-current', { cwd: here }) || null : null;
+    const claimedBy = resolveClaimant(here);
+    const fields = { claimed_at: now, claimed_by_session: sessionId };
+    if (claimedBy) fields.claimed_by = claimedBy;
+    if (worktree) fields.worktree = worktree;
+    if (branch) fields.branch = branch;
+    editFrontmatter(abs, (fm) => setEnvFields(fm, fields));
+    const outcome = storePushFile(store, abs, `claim ${basename(abs)}${claimedBy ? ` by ${claimedBy}` : ''}`);
+    if (outcome === 'lost') continue; // file now holds the winner's claim; next attempt re-checks it
+    if (outcome === 'push-failed') process.stderr.write('env.mjs: warning — claim written locally but push failed; run `cogyard tasks sync push` when the remote is reachable\n');
+    process.stdout.write(JSON.stringify({ taskFile: abs, claimed_at: now, claimed_by: claimedBy, claimed_by_session: sessionId, worktree, branch }) + '\n');
+    return recordClaimEvent('claim', abs, sessionId);
+  }
+  // 3 lost races in a row: the file now shows the current holder — refuse with it.
+  const content = readFileSync(abs, 'utf8');
+  const end = content.indexOf('\n---\n', 4);
+  refuseClaim(abs, end !== -1 ? content.slice(4, end) : '', sessionId);
+}
+
+async function release(taskFile) {
   if (!taskFile) fail('usage: env.mjs release <task-file>');
   const abs = resolve(taskFile);
+  const store = storeInfo(abs);
+  storePull(store);
   // Capture the releasing session BEFORE the frontmatter is cleared — the
   // claims ledger needs it to close this session's claim window.
   let sessionId = null;
   const content = readFileSync(abs, 'utf8');
   const end = content.indexOf('\n---\n', 4);
   if (end !== -1) sessionId = readEnvField(content.slice(4, end), 'claimed_by_session');
-  editFrontmatter(abs, (fm) => setEnvFields(fm, { claimed_at: 'null', claimed_by_session: 'null' }));
+  editFrontmatter(abs, (fm) => setEnvFields(fm, { claimed_at: 'null', claimed_by: 'null', claimed_by_session: 'null' }));
+  const outcome = storePushFile(store, abs, `release ${basename(abs)}`);
+  if (outcome === 'lost') {
+    // Someone touched the file concurrently; the release edit was unwound.
+    // Redo it on the fresh state and push again (best-effort second try).
+    editFrontmatter(abs, (fm) => setEnvFields(fm, { claimed_at: 'null', claimed_by: 'null', claimed_by_session: 'null' }));
+    if (storePushFile(store, abs, `release ${basename(abs)}`) === 'push-failed') {
+      process.stderr.write('env.mjs: warning — release written locally but push failed; run `cogyard tasks sync push`\n');
+    }
+  } else if (outcome === 'push-failed') {
+    process.stderr.write('env.mjs: warning — release written locally but push failed; run `cogyard tasks sync push`\n');
+  }
   process.stdout.write(JSON.stringify({ taskFile: abs, released: true }) + '\n');
   return recordClaimEvent('release', abs, sessionId);
 }

@@ -19,7 +19,7 @@ export async function handle(path, u, projects, res) {
   if (path === '/api/health') return json(res, 200, { ok: true, commit: COMMIT, version: VERSION, projects: projects.length });
   if (path === '/api/projects') return json(res, 200,
     await Promise.all(projects.map(async (p) => ({ slug: p.slug, label: p.label, unmerged: await core.projectUnmerged(p) }))));
-  // The editable "Open in" target list (task 12) — id + label only; the
+  // The editable "Open in" target list — id + label only; the
   // command (exec/args) stays server-side, the client just renders the menu.
   if (path === '/api/open-targets') return json(res, 200, core.openTargets().map((t) => ({ id: t.id, label: t.label })));
   if (path === '/api/overview') {

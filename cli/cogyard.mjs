@@ -29,7 +29,7 @@ const ROUTES = {
 };
 
 // `cogyard init|onboard …` → cli/scaffold.mjs, with the subcommand prepended so
-// the one module handles both (task 046). These are top-level (project creation
+// the one module handles both. These are top-level (project creation
 // is a first-class action), distinct from the low-level `cogyard tasks init`.
 const SCAFFOLD_CMDS = new Set(['init', 'onboard']);
 

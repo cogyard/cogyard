@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// cli/scaffold.mjs — `cogyard init <name>` and `cogyard onboard [path]` (task 046).
+// cli/scaffold.mjs — `cogyard init <name>` and `cogyard onboard [path]`.
 //
 // The two user-facing front doors for turning a directory into a first-class
 // cogyard project. They differ ONLY in the precondition:
@@ -7,7 +7,7 @@
 //               per-kind app skeleton).
 //   * onboard — adopt an EXISTING folder (with or without git). Additive-only;
 //               no skeleton (it adopts what's there). The recovery path for a
-//               loose, invisible folder (the task-044 cogyard-site situation).
+//               loose, invisible folder.
 //
 // Both converge on core/scaffold.mjs `ensureProjectWiring()` — the single shared
 // wiring core (git · package.json · .gitignore · store · register · worktree-config
@@ -48,8 +48,8 @@ function help() {
   process.stdout.write(`cogyard init / onboard — create or adopt a first-class cogyard project.
 
 Usage:
-  cogyard init <name|path> --kind <k> [--store shared|normal] [--remote <url>] [--no-wiring]
-  cogyard onboard [path]   --kind <k> [--store shared|normal] [--remote <url>] [--no-wiring]
+  cogyard init <name|path> --kind <k> [--remote <url>] [--no-wiring]
+  cogyard onboard [path]   --kind <k> [--remote <url>] [--no-wiring]
 
   init      Greenfield: create the directory + git + initial commit + a per-kind
             skeleton, then run the shared wiring. Fails if the dir already has
@@ -60,15 +60,15 @@ Usage:
 
 Flags:
   --kind <k>          one of: ${KINDS.join(', ')}  (required)
-  --store <model>     shared (default) | normal. shared moves _tasks/ to the
-                      <COGYARD_PROJECTS_ROOT>/_tasks/<slug> store (default);
-                      normal keeps _tasks/ as a tracked dir in the repo.
   --remote <url>      git remote for the shared task store (passed to convert).
   --no-wiring         skip writing .claude/worktree-config.json (default off;
                       auto-skipped for kind=library).
 
-After wiring, the project is registered (visible at http://cogyard/) and any
-worktree created in it gets a port pair automatically.
+The task store is always shared: _tasks/ is moved to the
+<COGYARD_PROJECTS_ROOT>/_tasks/<slug> store (its own git repo on a 'tasks' branch)
+so every worktree mounts the same target. After wiring, the project is registered
+(visible at http://cogyard/) and any worktree created in it gets a port pair
+automatically.
 `);
 }
 
@@ -76,11 +76,9 @@ function resolveOpts(flags) {
   const kind = flags.kind;
   if (!kind) fail(`--kind is required (one of: ${KINDS.join(', ')})`);
   if (!KINDS.includes(kind)) fail(`unknown --kind '${kind}' (one of: ${KINDS.join(', ')})`);
-  const store = flags.store || 'shared';
-  if (store !== 'shared' && store !== 'normal') fail(`--store must be 'shared' or 'normal' (got '${store}')`);
   const wiring = flags['no-wiring'] ? false : undefined; // undefined → kind default
   const remote = typeof flags.remote === 'string' ? flags.remote : undefined;
-  return { kind, store, wiring, remote };
+  return { kind, wiring, remote };
 }
 
 // Run the existing doctor and surface only this project's rows — the acceptance
@@ -114,7 +112,7 @@ function finish(result) {
 function cmdInit(positional, flags) {
   const name = positional[0];
   if (!name) fail('usage: cogyard init <name|path> --kind <k>');
-  const { kind, store, wiring, remote } = resolveOpts(flags);
+  const { kind, wiring, remote } = resolveOpts(flags);
   // <name> may be a bare name (created under cwd) or a path.
   let target;
   try {
@@ -122,11 +120,11 @@ function cmdInit(positional, flags) {
     target = r.target;
     if (r.created) process.stdout.write(`Created ${target}\n`);
   } catch (e) { fail(e.message.replace('use onboard', 'use `cogyard onboard`')); }
-  process.stdout.write(`\nWiring ${basename(target)} (kind=${kind}, store=${store})…\n`);
+  process.stdout.write(`\nWiring ${basename(target)} (kind=${kind})…\n`);
   let result;
   try {
     result = ensureProjectWiring({
-      path: target, kind, store, wiring, remote, scaffold: true,
+      path: target, kind, wiring, remote, scaffold: true,
       log: (m) => process.stdout.write(m + '\n'),
     });
   } catch (e) { fail(e.message); }
@@ -136,12 +134,12 @@ function cmdInit(positional, flags) {
 function cmdOnboard(positional, flags) {
   const target = resolve(positional[0] || process.cwd());
   if (!existsSync(target)) fail(`path does not exist: ${target} — use \`cogyard init\` to create it`);
-  const { kind, store, wiring, remote } = resolveOpts(flags);
-  process.stdout.write(`\nAdopting ${basename(target)} (kind=${kind}, store=${store}, additive-only)…\n`);
+  const { kind, wiring, remote } = resolveOpts(flags);
+  process.stdout.write(`\nAdopting ${basename(target)} (kind=${kind}, additive-only)…\n`);
   let result;
   try {
     result = ensureProjectWiring({
-      path: target, kind, store, wiring, remote, scaffold: false,
+      path: target, kind, wiring, remote, scaffold: false,
       log: (m) => process.stdout.write(m + '\n'),
     });
   } catch (e) { fail(e.message); }

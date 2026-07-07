@@ -30,7 +30,7 @@ export class WorktreesComponent {
   worktrees = computed<any[]>(() => this.cached()?.worktrees ?? []);
   loading = computed(() => this.cached() === null);
 
-  // Per-worktree cost (task 026), joined by worktree name. Deleted worktrees
+  // Per-worktree cost, joined by worktree name. Deleted worktrees
   // still carry historical spend in the ledger but aren't listed here (this tab
   // is live `git worktree list`); their total shows in the summary line.
   private usage = computed(() => this.store.sig<ProjectUsageResponse>(`usage|${this.slug()}`)());
@@ -49,6 +49,12 @@ export class WorktreesComponent {
     const c = this.usage()?.costUSD || 0;
     return c > 0 ? '$' + Math.round(c).toLocaleString('en-US') : null;
   });
+  // Merge each worktree's numeric cost onto the row so p-table can sort the Cost
+  // column. cost(name) stays the display formatter; costUSD is the
+  // sort key. Worktrees with no ledger entry sort as 0 (still render '—').
+  private rows = computed<any[]>(() =>
+    this.worktrees().map((w) => ({ ...w, costUSD: this.costByName().get(w.name) ?? 0 })),
+  );
 
   // Group by clone (planet projects); single repo => one group keyed ''.
   private groupByClone(items: any[]) {
@@ -65,7 +71,7 @@ export class WorktreesComponent {
   }
   // Active (top) vs Stale (bottom); each still clone-grouped. Empty sections drop.
   sections = computed(() => {
-    const all = this.worktrees();
+    const all = this.rows();
     return [
       { key: 'active', label: 'Active', groups: this.groupByClone(all.filter((w) => !w.stale)) },
       { key: 'stale', label: 'Stale', groups: this.groupByClone(all.filter((w) => w.stale)) },

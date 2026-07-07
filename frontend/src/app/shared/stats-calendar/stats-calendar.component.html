@@ -1,0 +1,43 @@
+<div class="cal">
+  <div class="cal-head">
+    <button class="nav" (click)="prevMonth()" aria-label="Previous month">‹</button>
+    <span class="cal-title">{{ monthLabel() }}</span>
+    <button class="nav" (click)="nextMonth()" [disabled]="atCurrentMonth()" aria-label="Next month">›</button>
+    @if (!atCurrentMonth()) { <button class="today-btn" (click)="goToday()">Today</button> }
+  </div>
+
+  <div class="cal-grid">
+    @for (w of weekdayLabels(); track $index) { <div class="dow">{{ w }}</div> }
+
+    @for (week of weeks(); track $index) {
+      @for (cell of week; track $index) {
+        @if (cell.date) {
+          <div class="cell"
+               [class.today]="cell.today"
+               [class.blank]="!cell.commits && !cell.costUSD && !cell.costApproxUSD && !cell.taskIds.length"
+               (click)="dayClick.emit(cell.date!)">
+            <div class="dom">{{ cell.dom }}</div>
+            <div class="metrics">
+              @if (cell.commits) {
+                <span class="commits">{{ cell.commits }} commits</span>
+              }
+              <span class="cost-wrap">
+                @if (cell.costUSD > 0) { <span class="cost">{{ fmtCost(cell.costUSD) }}</span> }
+                @if (cell.costApproxUSD > 0) { <span class="cost approx" title="estimated — transcript pruned before mining">≈{{ fmtCost(cell.costApproxUSD) }}</span> }
+              </span>
+            </div>
+            @if (cell.taskIds.length) {
+              <div class="badges">
+                @for (id of cell.taskIds; track id) {
+                  <button class="badge" (click)="$event.stopPropagation(); taskClick.emit(id)" [title]="'task ' + id + ' merged this day — open on Tasks'">#{{ id }}</button>
+                }
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="cell pad"></div>
+        }
+      }
+    }
+  </div>
+</div>

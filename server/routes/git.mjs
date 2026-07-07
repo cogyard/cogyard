@@ -1,7 +1,7 @@
 // routes/git.mjs — per-project git views: commit detail, branches, working-tree
 // status and diffs. Read-only.
 //
-// (Task 12 adds routes/actions.mjs next to this file: POST /api/wt/discard,
+// (routes/actions.mjs sits next to this file: POST /api/wt/discard,
 // /api/open — guarded by requireSameOrigin + assertInProject from ../http.mjs.)
 
 import * as core from '../../core/index.mjs';
@@ -10,7 +10,7 @@ import { gitBranches, gitStatus, workDiff, commitDetail, isStashCommit, stashFil
 
 // Resolve the optional `worktree=` param to a checkout dir. Validated against
 // the project's real worktree list — never a raw caller-supplied cwd (same
-// posture as /api/diff's traversal guards). Shared with task 018's per-worktree
+// posture as /api/diff's traversal guards). Shared with the per-worktree
 // reads: reuse this, don't re-derive.
 export function resolveWorktreeDir(u, proj) {
   const wt = u.searchParams.get('worktree');

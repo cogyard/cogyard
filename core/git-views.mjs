@@ -12,7 +12,7 @@ import { worktreesForProject } from './worktrees.mjs';
 // the subject with the tag(s) stripped. Every consumer — the CLI, the portal API
 // (commit log, the lane DAG, the per-task worktree annotation), and the SPA via
 // the fields these projections SERVE — goes through here instead of re-writing the
-// regex in its own layer (task 47: no client-side re-derivation of a domain fact).
+// regex in its own layer (no client-side re-derivation of a domain fact).
 function parseTaskTags(subject) {
   const s = subject || '';
   return {
@@ -21,7 +21,7 @@ function parseTaskTags(subject) {
   };
 }
 
-// Commits per local day for the activity heatmap (task 064) — GitHub-graph
+// Commits per local day for the activity heatmap — GitHub-graph
 // semantics: author-dated, merge commits excluded, every local branch counted
 // (worktree-branch work is work; git walks each commit once however many refs
 // reach it). Memoized on the branch-tip OIDs — the portal polls, tips rarely move.
@@ -34,6 +34,49 @@ function commitsPerDay(proj, days = 366) {
       const byDay = {};
       for (const d of (raw || '').split('\n').filter(Boolean)) byDay[d] = (byDay[d] || 0) + 1;
       return byDay;
+    });
+}
+
+// Task ids a merge-day commit carries. The workhorse is the agent-agnostic
+// [#NN] tag (parseTaskTags — the same SSOT the commit log/DAG use); it lands on
+// main whether a task was squashed, rebased, or merged --no-ff (the merge
+// commit subject keeps the tag). The supplementary regex catches OLD-style
+// merge commits from before the /commit-tag convention — "Merge task NNN:" or
+// "Merge worktree-task-NNN-…" — without hardcoding any agent-specific branch
+// literal (`worktree-`/`claude/` are tolerated as surrounding text, never
+// required). "task-cost", "Tasks tab" etc. don't match — a digit must follow.
+function mergeTaskIds(subject) {
+  const ids = new Set(parseTaskTags(subject).taskIds.filter((t) => /^\d+$/.test(t)));
+  for (const m of (subject || '').matchAll(/\btask[- ]0*(\d+)/gi)) ids.add(m[1]);
+  return [...ids];
+}
+
+// Per local day, the task ids that LANDED on the default branch that day —
+// feeds the Stats-tab month calendar's #NN merge badges. "When it
+// merged" is the commit's date on the trunk's first-parent line (unlike the
+// commits heatmap, which is author-dated across every branch). NOTE: this repo
+// (like most cogyard projects) lands work via squash/rebase into a LINEAR main,
+// so the reliable signal is the [#NN] tag on first-parent commits, not
+// `git log --merges` (which would miss every squashed landing). Memoized on the
+// branch tips like commitsPerDay. → { 'YYYY-MM-DD': [taskId, …] }
+function mergesPerDay(proj, days = 366) {
+  const repo = proj.path;
+  return memoize('mergesPerDay', `${repo}|${days}`,
+    () => gitP(['rev-parse', '--branches'], repo),
+    async () => {
+      const base = (await defaultBranch(repo)) || 'main';
+      const raw = await gitP(['log', base, '--first-parent', `--since=${days} days ago`, '--date=format-local:%Y-%m-%d', '--pretty=%ad%x1f%s'], repo);
+      const sets = {};
+      for (const line of (raw || '').split('\n').filter(Boolean)) {
+        const [day, subject] = line.split('\x1f');
+        const ids = mergeTaskIds(subject);
+        if (!ids.length) continue;
+        (sets[day] ||= new Set());
+        for (const id of ids) sets[day].add(id);
+      }
+      const out = {};
+      for (const [day, set] of Object.entries(sets)) out[day] = [...set].sort((a, b) => Number(a) - Number(b));
+      return out;
     });
 }
 
@@ -74,7 +117,7 @@ async function aheadBehind(repo, base, ref) {
 }
 
 // Associate a branch with the task it belongs to — the SSOT for that mapping
-// (task 47: the portal's Branches tab used to re-derive this client-side). The
+// (the portal's Branches tab used to re-derive this client-side). The
 // /commit + worktree conventions leave several traces; check them strongest-first:
 // the [#NN] or _tasks/NNN tag in the branch tip's subject, the NNN- branch-name
 // prefix, then the branch name matching a task's slug or recorded env.branch.
@@ -197,7 +240,7 @@ function dagFromLog(raw, mainSet) {
     const refs = (refStr || '').split(', ').map((r) => r.trim()).filter(Boolean)
       .map((r) => r.replace(/^HEAD -> /, '').replace(/^tag: /, 'tag: ')).filter((r) => r !== 'HEAD');
     // taskIds + cleanSubject computed here (core) so the SPA consumes them off the
-    // row instead of re-parsing the [#NN] tag itself (task 47).
+    // row instead of re-parsing the [#NN] tag itself.
     const { taskIds, cleanSubject } = parseTaskTags(subject);
     return { hash, shortHash, parents: parentStr ? parentStr.split(' ') : [], refs, subject, cleanSubject, taskIds, author, date };
   });
@@ -420,4 +463,4 @@ async function gitDagWithWorktrees(proj, limit = 250) {
   return spliceStashRows(spliceWorktreeRows(dag, wts), stashes);
 }
 
-export { parseTaskTags, matchBranchTask, commitsPerDay, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees };
+export { parseTaskTags, matchBranchTask, commitsPerDay, mergesPerDay, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees };

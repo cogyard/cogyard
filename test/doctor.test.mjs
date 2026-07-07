@@ -12,7 +12,7 @@ const healthy = () => ({
   projectsRoot: '/home/u/gitroot',
   rootExists: () => true,
   registry: [{ slug: 'a', path: '/p/a', label: 'a' }],
-  integration: { active: 'claude', available: ['claude'] },
+  driver: { active: 'claude', available: ['claude'] },
   frontendBuilt: () => true,
   portFree: () => true,
 });
@@ -56,9 +56,9 @@ test('empty registry warns but does not fail', () => {
   assert.equal(r.ok, true, 'a fresh, unconfigured machine is runnable → no fail');
 });
 
-test('no integration detected warns (cost will be null), still runnable', () => {
-  const r = runDoctor({ ...healthy(), integration: { active: null, available: [] } });
-  assert.equal(byId(r, 'integration').status, 'warn');
+test('no driver detected warns (cost will be null), still runnable', () => {
+  const r = runDoctor({ ...healthy(), driver: { active: null, available: [] } });
+  assert.equal(byId(r, 'driver').status, 'warn');
   assert.equal(r.ok, true);
 });
 
@@ -80,8 +80,8 @@ test('busy serve port warns', () => {
   assert.equal(r.ok, true);
 });
 
-test('unparseable / unknown-integration config warns', () => {
-  const r = runDoctor({ ...healthy(), config: { integration: 'does-not-exist' } });
+test('unparseable / unknown-driver config warns', () => {
+  const r = runDoctor({ ...healthy(), config: { driver: 'does-not-exist' } });
   assert.equal(byId(r, 'config').status, 'warn');
   assert.equal(r.ok, true);
 });

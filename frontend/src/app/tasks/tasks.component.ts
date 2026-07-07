@@ -15,11 +15,10 @@ import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
 import { STATUSES, CATEGORIES, CATEGORY_ICONS, buildBuckets } from '../shared/task-buckets';
 import { UsageBreakdownComponent } from '../shared/usage-breakdown/usage-breakdown.component';
-import { RefreshButtonComponent } from '../shared/refresh-button/refresh-button.component';
 
 @Component({
   selector: 'app-tasks',
-  imports: [FormsModule, Select, SelectButton, MultiSelect, InputText, TableModule, TooltipModule, Skeleton, UsageBreakdownComponent, RefreshButtonComponent],
+  imports: [FormsModule, Select, SelectButton, MultiSelect, InputText, TableModule, TooltipModule, Skeleton, UsageBreakdownComponent],
   templateUrl: './tasks.component.html',
   styleUrl: './tasks.component.scss',
 })
@@ -39,7 +38,7 @@ export class TasksComponent {
   all = computed(() => this.cached()?.tasks ?? []);
   loading = computed(() => this.cached() === null);
   statusFilter = signal('');
-  categoryFilter = signal('');           // '' = all categories (task 39)
+  categoryFilter = signal('');           // '' = all categories
   labelFilter = signal<string[]>([]);    // OR-match: task shown if it has any selected label
   search = signal('');
   // Flat (single list, sorted by task number) vs Grouped (status buckets). Default grouped.
@@ -65,8 +64,8 @@ export class TasksComponent {
     return [...set].sort().map((l) => ({ label: l, value: l }));
   });
 
-  // Token/cost usage for this project (task 026) — feeds the summary strip and
-  // the per-task USAGE box in expanded rows.
+  // Token/cost usage for this project — feeds the per-task USAGE
+  // box in expanded rows. The project-level table lives on the Stats tab.
   usage = computed(() => this.store.sig<ProjectUsageResponse>(`usage|${this.slug()}`)());
 
   constructor() {
@@ -82,17 +81,6 @@ export class TasksComponent {
   taskUsage(t: any): TaskUsage | null {
     if (t?.id == null) return null;
     return this.usage()?.tasks?.find((u) => u.taskId === t.id) ?? null;
-  }
-
-  // Ad-hoc refresh: harvest new transcript content server-side, then re-fetch.
-  collecting = signal(false);
-  collectNow() {
-    if (this.collecting()) return;
-    this.collecting.set(true);
-    this.api.collectUsage().subscribe({
-      next: () => { this.store.load(`usage|${this.slug()}`, this.api.projectUsage(this.slug())); this.collecting.set(false); },
-      error: () => this.collecting.set(false),
-    });
   }
 
   // Whole dollars, thousands-separated (matches the overview + usage table).
@@ -137,7 +125,7 @@ export class TasksComponent {
   isExpanded(t: any) { return this.expanded().has(t.file); }
   // Every row (incl. unknown / pre-frontmatter) just expands read-only. Such
   // files are migrated by asking Claude, not via the portal (backfill removed
-  // in task 14).
+  // in a prior version).
   toggle(t: any) {
     const s = new Set(this.expanded());
     s.has(t.file) ? s.delete(t.file) : s.add(t.file);
@@ -148,4 +136,13 @@ export class TasksComponent {
   // component members inside the template scope.
   bodyHtml(t: any): SafeHtml { return this.san.bypassSecurityTrustHtml(marked.parse(t.bodyMd || '*(no body)*') as string); }
   worktreeName(t: any): string | null { return t.worktreeName || null; }
+
+  // Claim holder line: "name · since <date> · session <id>" — the
+  // name is the team-facing identity; the session id stays for debugging.
+  claimTooltip(t: any): string {
+    const parts: string[] = [t.claimedByName || 'claimed'];
+    if (t.claimedAt) parts.push(`since ${new Date(t.claimedAt).toLocaleString()}`);
+    if (t.claimedBy) parts.push(`session ${t.claimedBy}`);
+    return parts.join(' · ');
+  }
 }

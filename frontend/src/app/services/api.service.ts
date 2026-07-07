@@ -4,10 +4,11 @@ import { Observable } from 'rxjs';
 import {
   Project, TasksResponse, WorktreesResponse, GraphResponse, OverviewResponse,
   CommitDetail, DiffResponse, StatusResponse, BranchesResponse,
-  WtActivityResponse, TreeResponse, FileContent, UsageResponse, ProjectUsageResponse, CollectResult,
+  WtActivityResponse, TreeResponse, FileContent, SaveFileResult, UsageResponse, ProjectUsageResponse, CollectResult,
   ActivityResponse, ActivityDayResponse,
   HealthResponse, ActionResult, OpenTarget, ScaffoldRequest, ScaffoldResult,
   ConfigResponse, SaveConfigRequest, SaveConfigResult, OpenTargetFull, SaveOpenTargetsResult,
+  AddonsCatalog, AddonStatusesResponse, AddonActionResult,
 } from './models';
 
 // Thin client over the cogyard API (proxied to :7440 in dev). No business
@@ -44,6 +45,11 @@ export class ApiService {
   file(slug: string, wt: string, path: string): Observable<FileContent> {
     return this.http.get<FileContent>(this.fileUrl(slug, wt, path));
   }
+  // Save an edited buffer. baseHash = the hash the GET served; the
+  // server 409s (with currentHash) if the file changed on disk since.
+  saveFile(slug: string, wt: string, path: string, content: string, baseHash: string): Observable<SaveFileResult> {
+    return this.http.post<SaveFileResult>('/api/file', { p: slug, wt, path, content, baseHash });
+  }
   // Direct URL (images are served raw — usable as an <img src>).
   fileUrl(slug: string, wt: string, path: string): string {
     return `/api/file?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}&path=${encodeURIComponent(path)}`;
@@ -60,11 +66,11 @@ export class ApiService {
     return this.http.get<DiffResponse>(`/api/wtdiff?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}&path=${encodeURIComponent(path)}${ignoreWs ? '&w=1' : ''}`);
   }
 
-  // --- Working-tree actions (task 12) — the only mutating/exec POSTs. The
+  // --- Working-tree actions — the only mutating/exec POSTs. The
   // server gates each on Origin + path containment. `worktree` is the absolute
   // checkout path (same value the status/workdiff reads carry); omitted = main.
-  // (stage/unstage are server-side endpoints but unused by the portal UI — Ben
-  // does staging via Claude; the portal only surfaces discard.)
+  // (stage/unstage are server-side endpoints but unused by the portal UI —
+  // staging is done via Claude; the portal only surfaces discard.)
   wtDiscard(slug: string, path: string, untracked: boolean, worktree?: string | null): Observable<ActionResult> {
     return this.http.post<ActionResult>('/api/wt/discard', { slug, path, untracked, worktree });
   }
@@ -73,13 +79,25 @@ export class ApiService {
     return this.http.post<ActionResult>('/api/open', { slug, path, target, line, worktree });
   }
   openTargets(): Observable<OpenTarget[]> { return this.http.get<OpenTarget[]>('/api/open-targets'); }
-  // Project creation/adoption (task 046) — through the requireSameOrigin write seam.
+  // Project creation/adoption — through the requireSameOrigin write seam.
   initProject(body: ScaffoldRequest): Observable<ScaffoldResult> { return this.http.post<ScaffoldResult>('/api/projects/init', body); }
   onboardProject(body: ScaffoldRequest): Observable<ScaffoldResult> { return this.http.post<ScaffoldResult>('/api/projects/onboard', body); }
 
-  // Config/settings (task 060) — the resolved config picture + its two writers,
+  // Config/settings — the resolved config picture + its two writers,
   // all through the same write seam.
   config(): Observable<ConfigResponse> { return this.http.get<ConfigResponse>('/api/config'); }
   saveConfig(body: SaveConfigRequest): Observable<SaveConfigResult> { return this.http.post<SaveConfigResult>('/api/config', body); }
   saveOpenTargets(targets: OpenTargetFull[]): Observable<SaveOpenTargetsResult> { return this.http.post<SaveOpenTargetsResult>('/api/open-targets', targets); }
+
+  // Add-ons — machine-level, rendered on the global /settings page.
+  // POST goes through the same write seam; 'manual'-tier actions only ever
+  // return the command to copy-paste. No project parameter anywhere — a
+  // project-targeting add-on carries the slug inside cfg (type:'project' field).
+  addons(): Observable<AddonsCatalog> { return this.http.get<AddonsCatalog>('/api/addons'); }
+  addonStatuses(): Observable<AddonStatusesResponse> {
+    return this.http.get<AddonStatusesResponse>('/api/addons/status');
+  }
+  runAddonAction(id: string, action: string, cfg: Record<string, unknown>): Observable<AddonActionResult> {
+    return this.http.post<AddonActionResult>(`/api/addons/${encodeURIComponent(id)}/${encodeURIComponent(action)}`, cfg);
+  }
 }

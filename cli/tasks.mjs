@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 // cli/tasks.mjs — the cogyard CLI: the single command surface for skills,
 // hooks, and humans; the data layer lives in ../core/index.mjs. (Extracted from
-// the old ~/.claude engine by task 14; task 16 repointed every adapter here —
-// the old copy is dormant and dies in task 017. The lockstep rule is OVER:
-// edit only this file.)
+// the old ~/.claude engine; every adapter points here now and the old copy is
+// dormant. The lockstep rule is OVER: edit only this file.)
 //
 // Subcommands: init / sync / projects / next-id / current / analyze /
 //              convert / mount / doctor / default-branch / staleness / drift /
@@ -23,7 +22,7 @@ import {
   gitWorktrees, worktreesForProject,
   inferStatus,
   validateTasks,
-  convertToSharedStore,
+  convertToSharedStore, joinSharedStore,
 } from '../core/index.mjs';
 
 const HOME = homedir();
@@ -40,7 +39,7 @@ function cmdInit() {
   // Low-level primitive: mkdir _tasks/ + register. NOT the project-creation front
   // door — that's `cogyard init <name>` (greenfield) / `cogyard onboard [path]`
   // (adopt an existing folder), which orchestrate git, store, version stamping,
-  // and worktree wiring (task 046). This stays for the bare "register an
+  // and worktree wiring. This stays for the bare "register an
   // already-set-up repo" case.
   process.stderr.write('note: `cogyard tasks init` is a low-level primitive. To create or adopt a\n      full project, use `cogyard init <name>` or `cogyard onboard [path]`.\n');
   const repoRoot = findRepoRoot();
@@ -82,7 +81,7 @@ function cmdSync(args) {
   if (!existsSync(tasksDir)) fail('_tasks/ does not exist — run `tasks.mjs init` first');
 
   if (sub === 'pull') {
-    // Same local-only tolerance as push (task 15).
+    // Same local-only tolerance as push.
     const remotes = (tryExec('git remote', { cwd: tasksDir }) || '').split('\n');
     if (!remotes.includes('origin')) { process.stdout.write('No remote configured — nothing to pull (local-only).\n'); return; }
     try { execLoud(`git pull --rebase origin tasks`, { cwd: tasksDir }); }
@@ -93,7 +92,7 @@ function cmdSync(args) {
     const status = tryExec(`git status --porcelain`, { cwd: tasksDir });
     if (!status) { process.stdout.write(`Nothing to commit.\n`); return; }
     execLoud(`git commit -m ${JSON.stringify(message)}`, { cwd: tasksDir });
-    // Local-only tolerance (task 15): push only when the store actually has an
+    // Local-only tolerance: push only when the store actually has an
     // origin AND a tasks branch. Local-only shared stores and normal-dir
     // projects (where _tasks rides the project repo) commit locally + notice —
     // they must NOT fail(), or every skill sync errors on them.
@@ -159,7 +158,7 @@ function cmdProjects(args) {
   fail('usage: tasks.mjs projects [list | remove <slug> | register]');
 }
 
-// --- Shared-store model: convert · mount · doctor (task 15) ------------------
+// --- Shared-store model: convert · mount · doctor ------------------
 // convert: relocate a project's tracked _tasks/ into its own git repo (the
 // "store", branch `tasks`) and replace it with an ABSOLUTE symlink, so every
 // git worktree of the project shares one physical _tasks/ (mounted via `mount`).
@@ -168,7 +167,7 @@ function cmdProjects(args) {
 // until the copy is verified file-by-file.
 //
 // The conversion logic itself lives in core/scaffold.mjs (convertToSharedStore),
-// so `cogyard init`/`onboard` and this command share ONE implementation (task 046).
+// so `cogyard init`/`onboard` and this command share ONE implementation.
 
 function cmdConvert(flags) {
   const repoRoot = findRepoRoot();
@@ -185,6 +184,26 @@ function cmdConvert(flags) {
     return;
   }
   process.stdout.write(`\nConverted. _tasks → ${r.store} (branch tasks). Worktrees: run \`cogyard tasks mount\` inside each (the SessionStart hook does this automatically).\n`);
+}
+
+// join: member-#2 onboarding for a TEAM store. The lead ran
+// `convert --remote <url>`; a fresh clone of the project repo has a dangling
+// gitignored _tasks symlink. This clones the store, mounts the symlink,
+// registers the project, then runs the doctor audit so the result is verified.
+function cmdJoin(flags, positional) {
+  const remote = positional[1];
+  if (!remote) fail('usage: tasks.mjs join <remote-url> [--slug <s>] [--store <path>]');
+  const repoRoot = findRepoRoot();
+  if (!repoRoot) fail('not in a git repo');
+  let r;
+  try {
+    r = joinSharedStore({
+      repoRoot, remote, store: flags.store, slug: flags.slug,
+      log: (m) => process.stdout.write(m + '\n'),
+    });
+  } catch (e) { fail(e.message); }
+  process.stdout.write(`\nJoined: ${r.slug} — _tasks → ${r.store}. Doctor audit:\n\n`);
+  cmdDoctor();
 }
 
 function cmdMount() {
@@ -314,6 +333,16 @@ function cmdNextId(slug) {
   let canonical;
   try { canonical = realpathSync(localTasksDir); } catch { canonical = localTasksDir; }
 
+  // Team stores: the O_EXCL sentinel serializes same-machine callers
+  // only — two MACHINES cloning the same store can both reserve the same id. When
+  // the store is remote-backed (origin + tasks branch), sync with the remote:
+  // pull before scanning, then commit+push the reservation (re-allocating on a
+  // clash a competitor pushed first). Local-only stores skip all of this.
+  const storeRemotes = (tryExec('git remote', { cwd: canonical }) || '').split('\n');
+  const remoteBacked = storeRemotes.includes('origin')
+    && !!tryExec('git rev-parse --verify --quiet refs/heads/tasks', { cwd: canonical });
+  if (remoteBacked) tryExec('git pull --rebase --autostash origin tasks', { cwd: canonical });
+
   // Sweep stale sentinels: a `.id-NNN.lock` older than 5 min is considered abandoned
   // (the creator process crashed between locking and writing the real file). Without
   // this sweep, a single crash burns an id forever.
@@ -357,10 +386,56 @@ function cmdNextId(slug) {
       throw e;
     }
     try { unlinkSync(sentinel); } catch {}
-    process.stdout.write(JSON.stringify({ id: nextId, padded, file: filepath, canonical }) + '\n');
+    if (!remoteBacked) {
+      process.stdout.write(JSON.stringify({ id: nextId, padded, file: filepath, canonical }) + '\n');
+      return;
+    }
+    publishReservation(canonical, cleanSlug, nextId);
     return;
   }
   fail('next-id: too many collisions (gave up after 100 attempts)');
+}
+
+// Remote-backed reservation: commit the placeholder and push it,
+// re-allocating the id when a competitor's file arrives with the same number.
+// Offline is tolerated: the reservation stays as a local commit (a warning says
+// so) and the next `sync push` publishes it — never block task creation.
+function publishReservation(canonical, cleanSlug, id) {
+  const scanIds = (excludeFile) => {
+    const used = new Set();
+    for (const f of readdirSync(canonical)) {
+      if (f === excludeFile) continue;
+      const m = f.match(/^(\d+)/) || f.match(/^\.id-(\d+)\.lock$/);
+      if (m) used.add(parseInt(m[1], 10));
+    }
+    return used;
+  };
+  let padded = String(id).padStart(3, '0');
+  let filename = `${padded}-${cleanSlug}.md`;
+  const msg = () => `reserve id ${padded} (${cleanSlug})`;
+  tryExec(`git add -- ${JSON.stringify(filename)}`, { cwd: canonical });
+  tryExec(`git commit -m ${JSON.stringify(msg())} -- ${JSON.stringify(filename)}`, { cwd: canonical });
+  let pushed = false;
+  for (let i = 0; i < 20; i++) {
+    // A competitor's same-id file may have arrived on the last pull — even when
+    // our push WOULD succeed (different filenames never conflict in git, which
+    // is exactly how silent duplicate ids happen). Re-id before pushing.
+    if (scanIds(filename).has(id)) {
+      const used = scanIds(filename);
+      let next = id;
+      while (used.has(next)) next++;
+      const newPadded = String(next).padStart(3, '0');
+      const newFilename = `${newPadded}-${cleanSlug}.md`;
+      tryExec(`git mv ${JSON.stringify(filename)} ${JSON.stringify(newFilename)}`, { cwd: canonical });
+      id = next; padded = newPadded; filename = newFilename;
+      tryExec(`git commit --amend -m ${JSON.stringify(msg())}`, { cwd: canonical });
+      continue; // re-check before pushing (mv target could clash again after another pull)
+    }
+    if (tryExec('git push origin tasks', { cwd: canonical }) !== null) { pushed = true; break; }
+    if (tryExec('git pull --rebase --autostash origin tasks', { cwd: canonical }) === null) break; // offline/unreachable
+  }
+  if (!pushed) process.stderr.write('tasks.mjs: warning — id reserved locally but not pushed (remote unreachable?); it publishes on the next sync push\n');
+  process.stdout.write(JSON.stringify({ id, padded, file: join(canonical, filename), canonical, pushed }) + '\n');
 }
 
 // --- Currently-claimed task (used by the /commit skill to tag commits) -------
@@ -384,6 +459,7 @@ function cmdCurrent() {
         id: fm.id != null ? fm.id : null,
         file: basename(t.path),
         claimed_at: claimedAt,
+        claimed_by: env.claimed_by || null,
         claimed_by_session: env.claimed_by_session || null,
       };
     })
@@ -516,7 +592,7 @@ function cmdAnalyze(opts) {
           'commit_policy: end', 'out_of_scope: []', 'parallel_safe: true', 'coordination: []',
           'env:', '  planet: null', '  ports:', '    backend: null', '    frontend: null',
           '  hostname: null', '  worktree: null', '  branch: null', '  db: development',
-          '  claimed_at: null', '  claimed_by_session: null', '---', '',
+          '  claimed_at: null', '  claimed_by: null', '  claimed_by_session: null', '---', '',
         ].join('\n');
         writeFileSync(t.path, fm + (t.body || ''));
         writeCount++;
@@ -585,12 +661,12 @@ function cmdBackfill() {
   }
 }
 
-// --- inbox: low-ceremony bug capture + triage (task 39) ----------------------
+// --- inbox: low-ceremony bug capture + triage ----------------------
 // `_tasks/INBOX.md` is an append-only sink: jot a one-line bug mid-flow in ~5s
 // without writing a full task. A line is throwaway capture, not a tracked record
 // — triage either fixes it inline (then `clear`), promotes it to a `category: bug`
 // task via the write-task skill (then `clear`), or clusters related lines.
-const INBOX_HEADER = `# INBOX — one-line bug/idea capture (task 39)
+const INBOX_HEADER = `# INBOX — one-line bug/idea capture
 
 Zero ceremony: \`cogyard tasks inbox add "<thing>"\`. Triage with the write-task
 skill — fix inline, promote to a \`category: bug\` task, or cluster — then
@@ -659,7 +735,7 @@ function cmdInbox(args) {
   fail(`inbox: unknown action "${sub}" (use add | list | clear)`);
 }
 
-// --- cleanup: reclaim build/install dirs from MERGED, CLEAN worktrees (task 27) -
+// --- cleanup: reclaim build/install dirs from MERGED, CLEAN worktrees -
 // Worktrees share the parent repo's git objects, so the only heavy per-worktree
 // thing is regenerable build/install output (DISPOSABLE_DIRS) once a build/install
 // has run. The user keeps the worktrees (chat-archiving removes those) but wants
@@ -668,8 +744,8 @@ function cmdInbox(args) {
 // ports, git state, source, and local files (*.local.md) are untouched.
 //
 // Eligibility is "nothing unique left to lose", NOT a task-status lookup (a task
-// can span several worktrees, so the worktree→task map is unreliable — task 027
-// dogfood). A worktree is eligible iff it is STALE — fully merged into main
+// can span several worktrees, so the worktree→task map is unreliable). A
+// worktree is eligible iff it is STALE — fully merged into main
 // (ahead === 0) AND its working tree is clean (no uncommitted changes). That alone
 // proves every file is already in main, so deleting build dirs loses nothing, and
 // it protects in-flight work for free: uncommitted edits (dirty) or unmerged
@@ -686,7 +762,7 @@ function dirSizeKb(p) {
 function fmtMb(kb) { return `${(kb / 1024).toFixed(1)} MB`; }
 
 // The disposable dirs: build/install output that's heavy and 100% regenerable.
-// Matched by name at ANY depth (root, frontend/, desktop/…) so workspaces and
+// Matched by name at ANY depth (root, frontend/, extras/desktop/…) so workspaces and
 // sub-packages are all caught — `node_modules` (install; desktop's holds the
 // ~250 MB Electron binary), `dist`/`.angular`/`out-tsc`/`coverage` (build + cache),
 // `release` (electron-builder's packaged .app/dmg). NOT a "delete everything
@@ -777,7 +853,7 @@ Subcommands:
   init                                Low-level: mkdir _tasks/ + register an
                                       already-set-up repo. To CREATE or ADOPT a
                                       full project use \`cogyard init <name>\` /
-                                      \`cogyard onboard [path]\` instead (task 046).
+                                      \`cogyard onboard [path]\` instead.
   sync pull                           Rebase _tasks/ from origin/tasks
   sync push <message>                 Commit and push _tasks/ to origin/tasks
   projects [list]                     Show registered projects
@@ -795,6 +871,12 @@ Subcommands:
                                       git repo on branch "tasks", absolute
                                       symlink + gitignore.
                                       Worktrees then share one _tasks.
+  join <remote-url> [--slug <s>] [--store <p>]  Join an EXISTING team store
+                                      (member onboarding): clone it (branch
+                                      "tasks") to <COGYARD_PROJECTS_ROOT>/_tasks/<slug>
+                                      (or --store), mount the absolute _tasks
+                                      symlink, register the project, run doctor.
+                                      Idempotent; never repoints at a different store.
   mount                               In a worktree: recreate the base checkout's
                                       _tasks symlink here. No-op when the base
                                       uses a normal _tasks dir.
@@ -851,6 +933,7 @@ switch (cmd) {
   case 'next-id': cmdNextId(opts.positional[1]); break;
   case 'current': cmdCurrent(); break;
   case 'convert': cmdConvert(opts.flags); break;
+  case 'join': cmdJoin(opts.flags, opts.positional); break;
   case 'mount': cmdMount(); break;
   case 'doctor': cmdDoctor(); break;
   case 'default-branch': cmdDefaultBranch(); break;

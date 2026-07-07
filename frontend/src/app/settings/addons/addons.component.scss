@@ -1,0 +1,100 @@
+:host { display: block; }
+
+/* Layout only — colors/typography derive from the app's theme knobs. Embedded
+   as a SECTION of the global /settings page (settings.component owns the page
+   width/padding); the compact-row + pill + button idiom mirrors
+   settings.component.scss so the whole page reads as one family. */
+.addons-section {
+  display: flex; flex-direction: column; gap: 14px;
+}
+
+.addons-head { display: flex; flex-direction: column; gap: 4px; }
+.addons-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--app-page-fg-strong); }
+.addons-sub { margin: 0; font-size: 13px; color: var(--app-fg-dim); }
+.addons-sub code { font-size: 12px; }
+
+/* --- the list ------------------------------------------------------------- */
+.addon-list {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--app-border); border-radius: 10px;
+  background: var(--app-surface); overflow: hidden;
+}
+.addon-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 16px;
+}
+.addon-row + .addon-row { border-top: 1px solid var(--app-border-soft); }
+.addon-row.inert .addon-icon, .addon-row.inert .addon-titles { opacity: 0.55; }
+
+.addon-icon { font-size: 20px; line-height: 1.2; flex: 0 0 auto; }
+.addon-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.addon-name {
+  font-size: 13.5px; font-weight: 700; color: var(--app-page-fg-strong);
+  display: flex; align-items: center; gap: 8px;
+}
+.addon-summary {
+  font-size: 12px; color: var(--app-fg-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.addon-empty {
+  border: 1px dashed var(--app-border); border-radius: 10px;
+  background: var(--app-surface); padding: 14px 16px;
+}
+
+.pill {
+  font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+  padding: 3px 8px; border-radius: 999px; white-space: nowrap; flex: 0 0 auto;
+  border: 1px solid var(--app-border); color: var(--app-fg-muted); background: var(--app-surface-2);
+}
+.pill.on { color: #16a34a; border-color: currentColor; background: transparent; }
+.pill.warn { color: var(--app-accent); border-color: currentColor; background: transparent; }
+.pill.off { color: var(--app-fg-dim); }
+.pill.third-party { font-weight: 600; text-transform: none; letter-spacing: 0; }
+
+/* --- the dialog ------------------------------------------------------------ */
+.addon-dialog { display: flex; flex-direction: column; gap: 14px; }
+.card-hint { margin: 0; font-size: 12px; color: var(--app-fg-dim); }
+.card-hint code { font-size: 11.5px; }
+
+.prereqs { display: flex; flex-direction: column; gap: 4px; }
+.prereq { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--app-fg-muted); }
+.prereq-mark { font-weight: 700; color: var(--app-accent); }
+.prereq.ok .prereq-mark { color: #16a34a; }
+.prereq-fix { font-size: 11.5px; padding: 1px 6px; border-radius: 4px; background: var(--app-surface-2); }
+
+.addon-config { display: flex; flex-direction: column; gap: 10px; }
+.set-field { display: flex; flex-direction: column; gap: 6px; }
+.set-label {
+  font-size: 12px; font-weight: 600; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.req { color: var(--app-accent); }
+.set-input { width: 100%; box-sizing: border-box; }
+.set-hint { font-size: 11.5px; color: var(--app-fg-dim); }
+
+.addon-actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.set-btn {
+  border: 1px solid var(--app-border); border-radius: 6px; padding: 7px 14px;
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  background: var(--app-surface); color: var(--app-page-fg-strong);
+  flex: 0 0 auto;
+}
+.set-btn:hover:not(:disabled) { background: var(--app-surface-2); }
+.set-btn:disabled { opacity: 0.5; cursor: default; }
+.set-btn.primary { background: var(--app-primary); color: var(--app-primary-contrast); border-color: var(--app-primary); }
+.set-btn.primary:hover:not(:disabled) { background: var(--app-primary); border-color: var(--app-primary); filter: brightness(1.12); }
+.set-btn.danger { color: var(--app-accent); border-color: var(--app-accent); }
+.tier-mark { opacity: 0.6; }
+
+.manual-result { display: flex; flex-direction: column; gap: 8px; }
+.command-row { display: flex; align-items: center; gap: 10px; }
+.command {
+  flex: 1; font-size: 12.5px; padding: 8px 10px; border-radius: 6px;
+  background: var(--app-surface-2); color: var(--app-page-fg-strong);
+  overflow-x: auto; white-space: nowrap;
+}
+.safe-result { margin: 0; font-size: 12.5px; color: #16a34a; }
+.safe-result.failed { color: var(--app-accent); }
+
+.addons-loading { font-size: 13px; color: var(--app-fg-dim); }

@@ -1,8 +1,8 @@
-// core/scaffold.mjs — the project-creation/adoption engine (task 046).
+// core/scaffold.mjs — the project-creation/adoption engine.
 //
 // The SINGLE source of truth both the CLI (`cogyard init` / `cogyard onboard`)
 // and the portal (Phase 4 POST through the requireSameOrigin seam) call to turn a
-// directory into a first-class cogyard project. Agent-agnostic (task 038): no
+// directory into a first-class cogyard project. Agent-agnostic: no
 // `/.claude/` literals beyond the worktree-config path that the port hook itself
 // keys on — that path is the documented opt-in, not a Claude-specific behaviour.
 //
@@ -26,8 +26,12 @@ import { join, dirname, basename, resolve } from 'node:path';
 import { PROJECTS_ROOT } from './paths.mjs';
 import { tryExec, execLoud } from './exec.mjs';
 import { readRegistry, registerProject } from './registry.mjs';
+import { KINDS, scaffoldFor } from './scaffolds/index.mjs';
 
-export const KINDS = ['single', 'fullstack', 'static', 'library'];
+// Kinds come from the scaffold registry: built-ins ship in
+// core/scaffolds/builtins.mjs, community kinds drop into ~/.cogyard/scaffolds/.
+// Re-exported here so existing consumers (core/config.mjs, routes) keep working.
+export { KINDS };
 
 // --- Shared-store conversion (extracted from cli/tasks.mjs cmdConvert) --------
 // Throws Error on failure (the CLI maps that to its `fail()`); calls log(msg) for
@@ -124,26 +128,74 @@ export function convertToSharedStore({ repoRoot, store, remote, log = () => {} }
   return { converted: true, store: resolvedStore };
 }
 
-// --- Per-kind skeletons (init-only; create-if-absent) ------------------------
+// --- Join an EXISTING team store -----------------------------------
+// Member-#2 onboarding: the team lead ran `convert --remote <url>`; a new member
+// clones the project repo and gets a gitignored (dangling) _tasks symlink and no
+// store. `join` closes that gap in one command: clone the store (branch tasks) to
+// <PROJECTS_ROOT>/_tasks/<slug>, mount the absolute symlink, register the project.
+// Same guarantees as the rest of this module: idempotent (healthy setup → no-op
+// messages) and additive-only (never repoints a symlink at a DIFFERENT store).
+export function joinSharedStore({ repoRoot, remote, store, slug, log = () => {} }) {
+  if (!remote || typeof remote !== 'string') throw new Error('join needs the store remote URL');
+  const tasksDir = join(repoRoot, '_tasks');
+  const reg = readRegistry().find((p) => resolve(p.path) === repoRoot);
+  const storeName = slug || (reg ? reg.slug : basename(repoRoot));
+  const resolvedStore = resolve(String(store || join(PROJECTS_ROOT, '_tasks', storeName)));
+  if (resolvedStore === repoRoot || resolvedStore.startsWith(repoRoot + '/')) throw new Error('store must live OUTSIDE the repo (default: <COGYARD_PROJECTS_ROOT>/_tasks/<slug>)');
 
-function pkgJson(slug, kind) {
-  const base = {
-    name: slug,
-    version: '0.1.0',
-    private: true,
-    type: 'module',
-    scripts: {},
-  };
-  if (kind !== 'library') base.scripts['generate-version'] = 'node scripts/generate-version.mjs';
-  // `static` is the one kind with an unambiguous server, so seed a WORKING dev:
-  // source .env.worktree (the SessionStart hook writes this worktree's reserved
-  // ports there) and bind $FRONTEND_PORT — so the preview lands on the reserved
-  // port, not a hardcoded one. Replaceable starter; other kinds leave `dev` to the
-  // developer/scaffold (the worktree-config _comment documents the contract).
-  if (kind === 'static') base.scripts['dev'] = '[ -f .env.worktree ] && . ./.env.worktree; python3 -m http.server ${FRONTEND_PORT:-8044}';
-  if (kind === 'library') { delete base.private; base.main = 'src/index.mjs'; }
-  return JSON.stringify(base, null, 2) + '\n';
+  let l = null;
+  try { l = lstatSync(tasksDir); } catch {}
+  if (l && !l.isSymbolicLink()) {
+    throw new Error('_tasks exists as a normal directory — this project already has a local store. Use `cogyard tasks convert --remote <url>` to publish it, or move it aside before joining.');
+  }
+
+  // Store: reuse an existing clone of the SAME remote; clone fresh otherwise.
+  if (existsSync(resolvedStore)) {
+    const origin = tryExec('git remote get-url origin', { cwd: resolvedStore });
+    if (!origin) throw new Error(`store path exists but is not a git clone with an origin: ${resolvedStore}`);
+    if (origin !== remote) throw new Error(`store path exists but its origin is ${origin}, not ${remote} — pass a different --store`);
+    log(`Store already cloned at ${resolvedStore} (origin matches).`);
+  } else {
+    mkdirSync(dirname(resolvedStore), { recursive: true });
+    execLoud(`git clone -b tasks ${JSON.stringify(remote)} ${JSON.stringify(resolvedStore)}`);
+    log(`Cloned store → ${resolvedStore} (branch tasks).`);
+  }
+  const branch = tryExec('git branch --show-current', { cwd: resolvedStore });
+  if (branch !== 'tasks') throw new Error(`store is on branch ${branch || '?'} (expected tasks)`);
+
+  // Mount the ABSOLUTE symlink (worktrees resolve the same target via `mount`).
+  if (l && l.isSymbolicLink()) {
+    if (existsSync(tasksDir)) {
+      const current = realpathSync(tasksDir);
+      if (current === realpathSync(resolvedStore)) log(`_tasks already → ${resolvedStore}. Nothing to mount.`);
+      else throw new Error(`_tasks is a symlink to a DIFFERENT store (${current}) — refusing to repoint; remove it first if that is intended`);
+    } else {
+      const old = readlinkSync(tasksDir);
+      rmSync(tasksDir);
+      symlinkSync(resolvedStore, tasksDir);
+      log(`Replaced broken symlink (was → ${old}) with _tasks → ${resolvedStore}`);
+    }
+  } else {
+    symlinkSync(resolvedStore, tasksDir);
+    log(`Mounted _tasks → ${resolvedStore}`);
+  }
+
+  // .gitignore: normally already committed by the lead's convert; append only if missing.
+  const giPath = join(repoRoot, '.gitignore');
+  const gi = existsSync(giPath) ? readFileSync(giPath, 'utf8') : '';
+  if (!gi.split('\n').some((x) => x.trim() === '_tasks' || x.trim() === '_tasks/')) {
+    writeFileSync(giPath, gi + (gi === '' || gi.endsWith('\n') ? '' : '\n') + '# task system: _tasks is a symlink to the shared store (cogyard join)\n_tasks\n');
+    log('Added _tasks to .gitignore (uncommitted — the lead\'s convert usually ships this; commit if yours lacked it).');
+  }
+
+  const entry = registerProject(repoRoot);
+  log(`Registered ${entry.slug} → ${entry.path}`);
+  return { joined: true, store: resolvedStore, slug: entry.slug };
 }
+
+// --- Per-kind skeletons (init-only; create-if-absent) ------------------------
+// The per-kind content lives in the scaffold registry (core/scaffolds/); this
+// module only asks the resolved descriptor for it.
 
 // generate-version.mjs, modelled on this repo's own (commits d216063/401652d):
 // one build-time source for version + commit. Writes version.json at the repo
@@ -172,44 +224,6 @@ catch { /* no git (packaged tree) — commit stays null */ }
 writeFileSync(join(ROOT, 'version.json'), JSON.stringify({ version, commit }, null, 2) + '\\n');
 process.stdout.write(\`generate-version: v\${version} (\${commit || 'no-git'}) → version.json\\n\`);
 `;
-}
-
-function skeletonFiles(slug, kind) {
-  // Returns { relPath: content } for files this kind seeds. README is universal.
-  const portsNote = kind === 'library' ? '' : `
-## Worktree ports
-
-Each cogyard worktree reserves a unique port pair. The SessionStart hook writes
-them into \`.env.worktree\` (gitignored). Your \`npm run dev\` must read them — e.g.
-\`. ./.env.worktree\` then bind \`$FRONTEND_PORT\` (and \`$PORT\` for a backend) — so the
-preview lands on the reserved port. **Never hardcode a port.**${kind === 'static' ? ' The seeded `dev` script already does this.' : ''}
-`;
-  const readme = `# ${slug}\n\nA cogyard \`${kind}\` project.\n\nVersion + commit are stamped at build time via \`scripts/generate-version.mjs\`.\n${portsNote}`;
-  const files = { 'README.md': readme };
-  if (kind === 'single') {
-    files['index.mjs'] = `// ${slug} — entry point\nconsole.log('hello from ${slug}');\n`;
-  } else if (kind === 'library') {
-    files['src/index.mjs'] = `// ${slug} — library entry\nexport const hello = () => 'hello from ${slug}';\n`;
-  } else if (kind === 'static') {
-    files['index.html'] = `<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${slug}</title></head>
-<body>
-  <main><h1>${slug}</h1><p>A cogyard static site.</p></main>
-  <footer><small id="version-stamp"></small></footer>
-  <script type="module">
-    // Build wiring: \`node scripts/generate-version.mjs\` writes version.json.
-    fetch('version.json').then((r) => r.ok ? r.json() : null).then((v) => {
-      if (v) document.getElementById('version-stamp').textContent = \`v\${v.version}\${v.commit ? ' (' + v.commit + ')' : ''}\`;
-    }).catch(() => {});
-  </script>
-</body>
-</html>
-`;
-  } else if (kind === 'fullstack') {
-    files['README.md'] = readme + `\nScaffold the monorepo shape (Angular + Node/Express + SQL) with the \`bd-scaffold-fullstack\` skill — this seeds only the cogyard wiring.\n`;
-  }
-  return files;
 }
 
 function worktreeConfig(slug, kind) {
@@ -270,14 +284,13 @@ const GITIGNORE_ESSENTIALS = [
 // `scaffold` (default false) gates the per-kind app skeleton: init passes true,
 // onboard false (it adopts what's there). The shared wiring runs for both.
 export function ensureProjectWiring({
-  path: projPath, kind, store = 'shared', wiring, remote, scaffold = false, log = () => {},
+  path: projPath, kind, wiring, remote, scaffold = false, log = () => {},
 }) {
   if (!projPath) throw new Error('ensureProjectWiring: path is required');
-  if (!KINDS.includes(kind)) throw new Error(`unknown kind: ${kind} (one of ${KINDS.join(', ')})`);
-  if (store !== 'shared' && store !== 'normal') throw new Error(`unknown store model: ${store} (shared|normal)`);
+  const desc = scaffoldFor(kind); // throws with the registry's kind list on an unknown kind
   const target = resolve(projPath);
   if (!existsSync(target)) throw new Error(`path does not exist: ${target}`);
-  const wantWiring = wiring != null ? wiring : kind !== 'library';
+  const wantWiring = wiring != null ? wiring : desc.worktreePorts !== false;
 
   const steps = [];
   const warnings = [];
@@ -320,7 +333,7 @@ export function ensureProjectWiring({
   // NEVER touch an existing one (warn if it lacks a version).
   const pkgPath = join(repoRoot, 'package.json');
   if (!existsSync(pkgPath)) {
-    writeFileSync(pkgPath, pkgJson(slug, kind));
+    writeFileSync(pkgPath, JSON.stringify(desc.pkgJson(slug), null, 2) + '\n');
     created.push('package.json');
     rec('package.json', 'created', 'minimal, version 0.1.0');
   } else {
@@ -339,7 +352,7 @@ export function ensureProjectWiring({
     const missing = GITIGNORE_ESSENTIALS.filter((x) => !present.has(x) && !present.has(x.replace(/\/$/, '')));
     if (missing.length) {
       const prefix = gi === '' || gi.endsWith('\n') ? gi : gi + '\n';
-      writeFileSync(giPath, prefix + '# cogyard wiring (task 046)\n' + missing.join('\n') + '\n');
+      writeFileSync(giPath, prefix + '# cogyard wiring\n' + missing.join('\n') + '\n');
       if (!existed) created.push('.gitignore');
       rec('.gitignore', existed ? 'appended' : 'created', `+${missing.length} line(s)`);
     } else {
@@ -349,14 +362,14 @@ export function ensureProjectWiring({
 
   // 5. per-kind app skeleton (init-only).
   if (scaffold) {
-    for (const [rel, content] of Object.entries(skeletonFiles(slug, kind))) ensureFile(rel, content);
+    for (const [rel, content] of Object.entries(desc.skeletonFiles(slug))) ensureFile(rel, content);
   } else {
     rec('skeleton', 'skipped', 'onboard adopts existing files');
   }
 
-  // 6. version + commit stamping (no-op for library — it exposes version via package.json).
-  if (kind !== 'library') ensureFile('scripts/generate-version.mjs', generateVersionScript());
-  else rec('scripts/generate-version.mjs', 'skipped', 'library stamps via package.json');
+  // 6. version + commit stamping (descriptor-gated; library stamps via package.json).
+  if (desc.versionStamp !== false) ensureFile('scripts/generate-version.mjs', generateVersionScript());
+  else rec('scripts/generate-version.mjs', 'skipped', `kind=${kind} stamps via package.json`);
 
   // 7. worktree wiring — the REAL opt-in the port hook keys on. Pair it with a
   // committed .env.worktree.defaults so the hook's env_files merge has a source
@@ -400,16 +413,14 @@ export function ensureProjectWiring({
     }
   }
 
-  // 8c. task store — shared by default (the `⚠ no _tasks` fix). convert is the
-  // single source of truth; it no-ops when already a symlink (idempotent).
+  // 8c. task store — always shared (`normal` is no longer a choice). convert
+  // is the single source of truth; it no-ops when already a symlink (idempotent),
+  // and converts a pre-existing in-repo _tasks/ dir to shared (that IS the fix
+  // doctor previously only named for a legacy normal-dir project).
   let storePath = realpathSync(tasksDir);
-  if (store === 'shared') {
-    const r = convertToSharedStore({ repoRoot, remote, log });
-    if (r.converted) { storePath = r.store; rec('store', 'created', `shared → ${r.store}`); }
-    else { storePath = realpathSync(tasksDir); rec('store', 'present', `already shared → ${storePath}`); }
-  } else {
-    rec('store', 'present', `normal (in-repo _tasks/)`);
-  }
+  const r = convertToSharedStore({ repoRoot, remote, log });
+  if (r.converted) { storePath = r.store; rec('store', 'created', `shared → ${r.store}`); }
+  else { storePath = realpathSync(tasksDir); rec('store', 'present', `already shared → ${storePath}`); }
 
-  return { repoRoot, slug, kind, store, storePath, steps, warnings };
+  return { repoRoot, slug, kind, store: 'shared', storePath, steps, warnings };
 }

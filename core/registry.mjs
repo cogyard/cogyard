@@ -3,7 +3,7 @@
 // broken-symlink surfacing).
 
 import { readFileSync, writeFileSync, existsSync, realpathSync, lstatSync, readlinkSync, mkdirSync } from 'node:fs';
-import { join, dirname, relative } from 'node:path';
+import { join, dirname, relative, basename } from 'node:path';
 import { HOME, PROJECTS_ROOT, REGISTRY_PATH } from './paths.mjs';
 
 function readRegistry() {
@@ -16,7 +16,7 @@ function readRegistry() {
 function writeRegistry(projects) {
   projects.sort((a, b) => a.label.localeCompare(b.label));
   // Ensure $COGYARD_HOME exists — `cogyard init`/`onboard` may be the first thing
-  // run on a fresh setup, before anything has created the config dir (task 046).
+  // run on a fresh setup, before anything has created the config dir.
   mkdirSync(dirname(REGISTRY_PATH), { recursive: true });
   writeFileSync(REGISTRY_PATH, JSON.stringify(projects, null, 2) + '\n');
 }
@@ -24,10 +24,17 @@ function makeProjectEntry(repoRoot) {
   // Label = repo path relative to PROJECTS_ROOT (the conventional clone parent)
   // when it lives there, else relative to HOME, else the absolute path. Repos
   // outside the convention just get a longer label.
-  const label = repoRoot.startsWith(PROJECTS_ROOT + '/') ? relative(PROJECTS_ROOT, repoRoot)
+  const underRoot = repoRoot.startsWith(PROJECTS_ROOT + '/');
+  const label = underRoot ? relative(PROJECTS_ROOT, repoRoot)
     : repoRoot.startsWith(HOME + '/') ? relative(HOME, repoRoot)
     : repoRoot;
-  const slug = label.replace(/[^a-zA-Z0-9_-]/g, '__');
+  // Slug = identity + store-dir name, so it must be readable. Under the convention
+  // it's the (usually one-segment) path relative to PROJECTS_ROOT; OUTSIDE it, use
+  // the basename — never the full absolute path, which mangled into `__private__tmp__x`
+  // for an init outside the projects root. Collisions (two projects sharing a
+  // basename) are disambiguated at register time.
+  const rawSlug = underRoot ? relative(PROJECTS_ROOT, repoRoot) : basename(repoRoot);
+  const slug = rawSlug.replace(/[^a-zA-Z0-9_-]/g, '__');
   return { slug, path: repoRoot, label };
 }
 function registerProject(repoRoot) {
@@ -35,6 +42,14 @@ function registerProject(repoRoot) {
   const exists = projects.find((p) => p.path === repoRoot);
   if (exists) return exists;
   const entry = makeProjectEntry(repoRoot);
+  // A slug is the store-dir key + portal identity — it must be unique. Two repos
+  // with the same basename outside PROJECTS_ROOT would otherwise collide; suffix -2/-3.
+  const taken = new Set(projects.map((p) => p.slug));
+  if (taken.has(entry.slug)) {
+    let n = 2;
+    while (taken.has(`${entry.slug}-${n}`)) n++;
+    entry.slug = `${entry.slug}-${n}`;
+  }
   projects.push(entry);
   writeRegistry(projects);
   return entry;
@@ -58,7 +73,7 @@ function discoverProjects() {
     const td = join(p.path, '_tasks');
     if (existsSync(td)) { live.push(p); continue; }
     // A BROKEN _tasks symlink is a project with a problem, not a non-project:
-    // surface it as an error row instead of silently dropping it (task 15).
+    // surface it as an error row instead of silently dropping it.
     let l = null;
     try { l = lstatSync(td); } catch {}
     if (l && l.isSymbolicLink()) {

@@ -1,12 +1,12 @@
 import { Injectable, WritableSignal, signal } from '@angular/core';
 import { Observable } from 'rxjs';
 
-// Signal store (task 8): one cached signal per data key ('tasks|cogyard',
+// Signal store: one cached signal per data key ('tasks|cogyard',
 // 'graph|claw', 'overview', …). Views render straight from the cached signal —
 // so returning to a tab paints the last-known data instantly — and call load()
 // (on slug change / refresh tick) to quietly swap fresh data in behind it.
 // Plain signals, no NGXS/NgRx: state here is read-only server data; revisit if
-// task 12's write actions ever need optimistic client mutations.
+// the write actions ever need optimistic client mutations.
 @Injectable({ providedIn: 'root' })
 export class StoreService {
   private cache = new Map<string, WritableSignal<any>>();

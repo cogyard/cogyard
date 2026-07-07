@@ -49,7 +49,7 @@ function findOpenTarget(id) {
   return openTargets().find((t) => t.id === id) || null;
 }
 
-// Persist an edited target list (the /settings list editor, task 060). Each row
+// Persist an edited target list (the /settings list editor). Each row
 // must be a complete {id, label, exec, args[]} — this is the one place the client
 // sends exec/args (everywhere else it sends only an id), so it's strict: any
 // malformed row throws and nothing is written, rather than silently dropping rows

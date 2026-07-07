@@ -3,7 +3,7 @@ import { Component, input, computed } from '@angular/core';
 // Reusable unified-diff renderer. Takes a raw patch string (`git show`/`git diff`)
 // and renders it either side-by-side or unified, with per-line numbers and
 // word-level highlighting of the exact changed characters. Shared by the commit
-// panel (task 9) and the working-tree view (task 10).
+// panel and the working-tree view.
 
 const MAX_LINES = 4000; // safety cap on parsed patch lines
 

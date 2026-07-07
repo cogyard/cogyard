@@ -3,7 +3,7 @@ import { Injectable, signal } from '@angular/core';
 const INTERVAL_MS = 7000;
 const CLOCK_MS = 1000; // 1s so the "updated Ns ago" age counter ticks visibly
 
-// Shared auto-refresh clock (task 008). Views re-run their load() whenever
+// Shared auto-refresh clock. Views re-run their load() whenever
 // tick changes; reads are quiet (no spinner, no UI-state reset). Polling
 // pauses while the tab is hidden and bumps immediately on return/focus.
 @Injectable({ providedIn: 'root' })

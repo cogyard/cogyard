@@ -1,0 +1,131 @@
+<section class="addons-section">
+  <header class="addons-head">
+    <h3 class="addons-title">Add-ons</h3>
+    <p class="addons-sub">Capabilities that extend cogyard itself, installed at <code>~/.cogyard/addons/</code>. See <code>docs/ADDONS.md</code> to write your own.</p>
+  </header>
+
+  @if (catalog(); as c) {
+    @if (c.addons.length === 0 && c.invalid.length === 0) {
+      <div class="addon-empty">
+        <p class="card-hint">No add-ons installed. Drop a folder with an <code>addon.mjs</code> manifest into <code>~/.cogyard/addons/&lt;id&gt;/</code>, then restart the server. <code>docs/ADDONS.md</code> has the contract and a worked example.</p>
+      </div>
+    }
+
+    @if (c.addons.length) {
+      <div class="addon-list">
+        @for (a of c.addons; track a.id) {
+          <div class="addon-row" [class.inert]="!a.active || !a.supported">
+            <span class="addon-icon">{{ a.icon || '🧩' }}</span>
+            <div class="addon-titles">
+              <span class="addon-name">{{ a.label }}
+                @if (a.thirdParty) { <span class="pill third-party">3rd-party</span> }
+                @if (prereqBroken(a)) { <span class="pill warn" title="A prerequisite is missing — open Configure">prereq missing</span> }
+              </span>
+              <span class="addon-summary">{{ a.active && a.supported ? (statusFor(a.id)?.summary || a.description) : a.description }}</span>
+            </div>
+            <span class="pill" [class.on]="pillFor(a).cls === 'on'" [class.warn]="pillFor(a).cls === 'warn'" [class.off]="pillFor(a).cls === 'off'">{{ pillFor(a).text }}</span>
+            <button type="button" class="set-btn" [disabled]="!a.active || !a.supported" (click)="openDialog(a)">Configure</button>
+            <p-toggleswitch [ngModel]="a.active" (ngModelChange)="setActive(a, $event)"
+                            [disabled]="savingToggle() === a.id || !a.supported" [name]="'active-' + a.id"
+                            [title]="a.supported ? (a.active ? 'Switch off (installed but inert)' : 'Switch on') : 'Not available on this OS'" />
+          </div>
+        }
+      </div>
+    }
+
+    @if (c.invalid.length) {
+      <div class="addon-list">
+        @for (b of c.invalid; track b.id) {
+          <div class="addon-row inert broken">
+            <span class="addon-icon">⚠️</span>
+            <div class="addon-titles">
+              <span class="addon-name">{{ b.id }}</span>
+              <span class="addon-summary">broken install — {{ b.error }}</span>
+            </div>
+            <span class="pill off">broken</span>
+          </div>
+        }
+      </div>
+    }
+  } @else {
+    <p class="addons-loading">Loading add-ons…</p>
+  }
+</section>
+
+<!-- The add-on's whole interaction surface lives in this dialog, generated from
+     its manifest: prereqs, config form, tiered actions, inline results. -->
+<p-dialog [visible]="!!openAddon()" (visibleChange)="!$event && closeDialog()" [modal]="true"
+          [style]="{ width: 'min(560px, 92vw)' }" [draggable]="false" [resizable]="false"
+          [header]="openAddon()?.label || ''">
+  @if (openAddon(); as a) {
+    <div class="addon-dialog">
+      <p class="card-hint">{{ a.description }}</p>
+
+      @if (a.prereqs.length) {
+        <div class="prereqs">
+          @for (p of a.prereqs; track p.id) {
+            <div class="prereq" [class.ok]="p.ok">
+              <span class="prereq-mark">{{ p.ok ? '✓' : '✗' }}</span>
+              <span class="prereq-label">{{ p.label }}</span>
+              @if (!p.ok && p.fixHint) { <code class="prereq-fix">{{ p.fixHint }}</code> }
+            </div>
+          }
+        </div>
+      }
+
+      @if (a.configSchema.length) {
+        <div class="addon-config">
+          @for (f of a.configSchema; track f.key) {
+            <label class="set-field">
+              <span class="set-label">{{ f.label }} @if (f.required && f.type !== 'boolean') { <span class="req">*</span> }</span>
+              @switch (f.type) {
+                @case ('enum') {
+                  <p-select size="small" [options]="optionRows(f.options)" optionLabel="label" optionValue="value"
+                            [ngModel]="strValue(a.id, f.key)" (ngModelChange)="setCfg(a.id, f.key, $event)" [name]="a.id + '-' + f.key" appendTo="body" />
+                }
+                @case ('project') {
+                  <p-select size="small" [options]="projectOptions()" optionLabel="label" optionValue="value"
+                            [ngModel]="strValue(a.id, f.key)" (ngModelChange)="setCfg(a.id, f.key, $event)" [name]="a.id + '-' + f.key" appendTo="body" [placeholder]="f.placeholder || 'Pick a project'" />
+                }
+                @case ('boolean') {
+                  <p-checkbox [binary]="true" [ngModel]="boolValue(a.id, f.key)" (ngModelChange)="setCfg(a.id, f.key, $event)" [name]="a.id + '-' + f.key" />
+                }
+                @default {
+                  <input pInputText pSize="small" class="set-input" [ngModel]="strValue(a.id, f.key)"
+                         (ngModelChange)="setCfg(a.id, f.key, $event)" [name]="a.id + '-' + f.key" [placeholder]="f.placeholder || ''" />
+                }
+              }
+            </label>
+          }
+        </div>
+      }
+
+      <div class="addon-actions">
+        <button type="button" class="set-btn" (click)="refresh()">Recheck</button>
+        @for (act of a.actions; track act.id) {
+          <button type="button" class="set-btn" [class.primary]="act.tier === 'safe' && !act.destructive"
+                  [class.danger]="act.destructive" [disabled]="!canRun(a, act)"
+                  [title]="act.tier === 'manual' ? 'Shows the command to run yourself — the portal never executes it' : ''"
+                  (click)="run(a, act)">
+            {{ act.label }}@if (act.tier === 'manual') { <span class="tier-mark"> ⌘</span> }
+          </button>
+        }
+      </div>
+
+      @if (results()[a.id]; as r) {
+        @if (r.manual && r.command) {
+          <div class="manual-result">
+            <p class="card-hint">Run this yourself — the portal doesn't execute third-party/destructive commands:</p>
+            <div class="command-row">
+              <code class="command">{{ r.command }}</code>
+              <button type="button" class="set-btn" (click)="copyCommand(a.id, r.command)">{{ copiedFor() === a.id ? 'Copied' : 'Copy' }}</button>
+            </div>
+            @if (r.note) { <span class="set-hint">{{ r.note }}</span> }
+          </div>
+        } @else if (!r.manual) {
+          <p class="safe-result" [class.failed]="!r.ok">{{ r.ok ? '✓' : '✗' }} {{ r.message || (r.ok ? 'done' : 'failed') }}</p>
+        }
+      }
+    </div>
+  }
+</p-dialog>

@@ -111,7 +111,7 @@ async function projectOverview(proj) {
   // unstaged edit to a tracked file — there is no cheap proxy for that (detecting
   // it is exactly what `git status` does, statting every tracked file), so the
   // `dirty` count is eventually-consistent: it refreshes when refs or the index
-  // change, not on every keystroke-save (task 52, option (a)). For a cross-project
+  // change, not on every keystroke-save. For a cross-project
   // glance that's fine — the summary is already coarse (note the worktree
   // stale-count caveat below). The actual `git status --porcelain` now runs only
   // inside computeFn (on a miss), not on every poll.

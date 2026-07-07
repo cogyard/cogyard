@@ -57,6 +57,13 @@
 .set-btn.icon-remove { padding: 6px 9px; color: var(--app-fg-dim); border-color: var(--app-border); }
 .set-btn.icon-remove:hover:not(:disabled) { color: var(--app-page-fg-strong); background: var(--app-surface-2); }
 
+/* Tab-visibility checkboxes — one row of label+checkbox pairs. */
+.tab-checks { display: flex; flex-wrap: wrap; gap: 10px 22px; }
+.tab-check {
+  display: flex; align-items: center; gap: 7px; cursor: pointer;
+  font-size: 13px; color: var(--app-page-fg-strong);
+}
+
 /* Open-in target editor — a compact grid that mirrors the row fields. */
 .targets { display: flex; flex-direction: column; gap: 6px; }
 .target-row {

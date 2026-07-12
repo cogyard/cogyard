@@ -1,5 +1,16 @@
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
 /* table chrome (box/table/th) is shared — see styles.scss */
+
+/* The overview table has the most columns of any portal table — project, tasks,
+   worktrees, dirty, code, cost, one column per model family (up to 4), and last
+   commit. The shared chrome makes tables `width:100%; table-layout:fixed`, so on
+   a narrow (~1200px) viewport those columns compress until the leading
+   PROJECT/TASKS/COST headers overlap and project names truncate to one glyph
+   (task 082). Give the table a legible floor width and let its container scroll
+   horizontally below that, instead of crushing the columns. */
+:host ::ng-deep .p-datatable-table-container { overflow-x: auto; }
+:host ::ng-deep p-table table { min-width: 1120px; }
+
 .col-project { width: 18%; min-width: 150px; }
 .col-tasks { width: 150px; }
 .col-wt { width: 110px; }

@@ -13,7 +13,7 @@ import { ApiService } from '../services/api.service';
 import { TasksResponse, ProjectUsageResponse, TaskUsage } from '../services/models';
 import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
-import { STATUSES, CATEGORIES, CATEGORY_ICONS, buildBuckets } from '../shared/task-buckets';
+import { BUCKET_FILTERS, CATEGORIES, CATEGORY_ICONS, buildBuckets, bucketKeyOf } from '../shared/task-buckets';
 import { UsageBreakdownComponent } from '../shared/usage-breakdown/usage-breakdown.component';
 
 @Component({
@@ -37,16 +37,18 @@ export class TasksComponent {
   private cached = computed(() => this.store.sig<TasksResponse>(`tasks|${this.slug()}`)());
   all = computed(() => this.cached()?.tasks ?? []);
   loading = computed(() => this.cached() === null);
-  statusFilter = signal('');
+  // Bucket filter (task 091) — replaced the old status filter: the buckets ARE
+  // the grouping now, and status only distinguishes Done's sub-groups.
+  bucketFilter = signal('');
   categoryFilter = signal('');           // '' = all categories
   labelFilter = signal<string[]>([]);    // OR-match: task shown if it has any selected label
   search = signal('');
-  // Flat (single list, sorted by task number) vs Grouped (status buckets). Default grouped.
+  // Flat (single list, sorted by task number) vs Grouped (the four buckets). Default grouped.
   view = signal<'flat' | 'grouped'>('grouped');
   readonly viewOptions = [{ label: 'Flat', value: 'flat' }, { label: 'Grouped', value: 'grouped' }];
   expanded = signal<Set<string>>(new Set());
-  readonly statuses = STATUSES;
-  readonly statusOptions = STATUSES.map((s) => ({ label: s || 'All statuses', value: s }));
+  readonly bucketOptions = BUCKET_FILTERS.map((b) => ({
+    label: b ? b.charAt(0).toUpperCase() + b.slice(1) : 'All buckets', value: b }));
   readonly categoryIcons = CATEGORY_ICONS;
   readonly categoryOptions = [{ label: 'All categories', value: '' },
     ...CATEGORIES.map((c) => ({ label: `${CATEGORY_ICONS[c]} ${c}`, value: c }))];
@@ -55,6 +57,10 @@ export class TasksComponent {
   // same passthrough the template already uses for fm.depends_on — no API change.
   categoryIcon(t: any): string { return this.categoryIcons[t?.fm?.category] || ''; }
   labelsOf(t: any): string[] { return Array.isArray(t?.fm?.labels) ? t.fm.labels : []; }
+  // At most 3 label chips render inline; the rest collapse into a "+N" chip
+  // whose tooltip lists them — so chips never silently fall off the row edge.
+  visibleLabels(t: any): string[] { return this.labelsOf(t).slice(0, 3); }
+  hiddenLabels(t: any): string[] { return this.labelsOf(t).slice(3); }
 
   // Distinct labels present across the loaded tasks — drives the label filter's
   // option list. Empty until tasks actually carry labels.
@@ -92,12 +98,12 @@ export class TasksComponent {
   }
 
   filtered = computed(() => {
-    const sf = this.statusFilter();
+    const bf = this.bucketFilter();
     const cf = this.categoryFilter();
     const lf = this.labelFilter();
     const q = (this.search() || this.externalFilter() || '').toLowerCase();
     return this.all().filter((t) => {
-      if (sf && t.status !== sf) return false;
+      if (bf && bucketKeyOf(t) !== bf) return false;
       if (cf && t.fm?.category !== cf) return false;
       if (lf.length && !this.labelsOf(t).some((l) => lf.includes(l))) return false;
       if (q && !(String(t.id ?? '').toLowerCase().includes(q) || String(t.title ?? '').toLowerCase().includes(q))) return false;
@@ -111,11 +117,31 @@ export class TasksComponent {
   flat = computed(() => [...this.filtered()].sort(
     (a, b) => String(a.id ?? '').localeCompare(String(b.id ?? ''), undefined, { numeric: true })));
 
-  // One rendering path for both modes: grouped = the status buckets;
-  // flat = a single headerless section sorted by task number. The template
-  // renders one p-table per section, so the row/expand markup lives once.
-  sections = computed<{ title: string; list: any[] }[]>(() =>
-    this.view() === 'flat' ? [{ title: '', list: this.flat() }] : this.buckets());
+  // One rendering path for both modes: grouped = the four buckets (Done
+  // flattened into its status sub-groups, separator above the first); flat = a
+  // single headerless section sorted by task number. The template renders one
+  // p-table per section — the section `key` picks that bucket's columns.
+  sections = computed<{ key: string; title: string; list: any[]; separatorAbove: boolean }[]>(() => {
+    if (this.view() === 'flat') return [{ key: 'flat', title: '', list: this.flat(), separatorAbove: false }];
+    const out: { key: string; title: string; list: any[]; separatorAbove: boolean }[] = [];
+    for (const b of this.buckets()) {
+      if (!b.subs) out.push({ key: b.key, title: b.title, list: b.list, separatorAbove: false });
+      else b.subs.forEach((s, i) => out.push({ key: b.key, title: s.title, list: s.list, separatorAbove: i === 0 }));
+    }
+    return out;
+  });
+
+  // Relative claim age for the Who column ("since 2 days ago"); falls back to
+  // the plain date once it's old enough that day-counting stops being useful.
+  since(t: any): string {
+    if (!t.claimedAt) return '';
+    const days = Math.floor((Date.now() - new Date(t.claimedAt).getTime()) / 86_400_000);
+    if (days <= 0) return 'today';
+    if (days === 1) return 'yesterday';
+    if (days < 14) return `${days} days ago`;
+    if (days < 61) return `${Math.round(days / 7)} weeks ago`;
+    return new Date(t.claimedAt).toLocaleDateString();
+  }
 
   // p-table's expandedRowKeys shape (keyed by dataKey = file).
   expandedKeys = computed(() => Object.fromEntries([...this.expanded()].map((f) => [f, true])));

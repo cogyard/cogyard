@@ -217,17 +217,18 @@ syncs it.
 
 | status | meaning | backlog? | `done_date` |
 |---|---|---|---|
-| `OPEN` | active backlog — pickable now (or blocked by an unmet dep) | yes | null |
-| `PARKED` | deliberately shelved; not abandoned | yes (parked) | null |
-| `BLOCKED_ON` | can't proceed until something else lands | yes (blocked) | null |
+| `OPEN` | active backlog — pickable now (or waiting on an unmet dep) | yes | null |
+| `PARKED` | deliberately shelved; not abandoned | yes (waiting) | null |
 | `ENOUGH` | a version of done — shipped, leftovers recorded in the body | **no** | set |
 | `DONE` | fully complete; nothing left | no | set |
 | `OBSOLETE` | abandoned / superseded; will not be done | no | — |
 
 `ENOUGH` is treated as a done-family state everywhere `DONE` is (excluded from
 backlog, satisfies dependencies, never flagged stale), but signals "satisfied
-for now, leftovers worth harvesting later." Full notes:
-[`docs/TASK-STATUS-VOCABULARY.md`](docs/TASK-STATUS-VOCABULARY.md).
+for now, leftovers worth harvesting later." There is no "blocked" status:
+blocked on another task = `depends_on` + stay `OPEN` (the portal derives
+`waiting on #N` and self-clears it); blocked on something external = `PARKED`.
+Full notes: [`docs/TASK-STATUS-VOCABULARY.md`](docs/TASK-STATUS-VOCABULARY.md).
 
 ### Storage
 

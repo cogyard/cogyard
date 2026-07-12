@@ -7,13 +7,21 @@
   font-size: 13px; font-weight: 600; color: var(--app-page-fg); text-transform: uppercase; letter-spacing: 0.05em;
   margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
 }
+/* the line dividing closed lifecycle (Done's sub-groups) from the active buckets */
+.closed-sep { border-top: 2px solid var(--app-page-border); margin: 28px 0 24px; }
 
-/* table chrome (box/table/th) is shared — see styles.scss */
-.col-id { width: 64px; }
-.col-status { width: 96px; }
+/* table chrome (box/table/th) is shared — see styles.scss. table-layout is
+   FIXED, so the widths below are the one grid EVERY bucket table shares:
+   id 64 · title flex · sub 80 · deps 96 · context 190 (right-most slot —
+   Who on Claimed, Why on Waiting, done_date on Done, empty on Ready). Same
+   five slots, same widths, in every bucket — columns line up down the page. */
+.col-id { width: 88px; } /* fits "#NNN" + the 19px stale ❗ without ellipsizing */
 .col-sub { width: 80px; }
-.col-deps { width: 80px; }
-.col-claimed { width: 64px; }
+.col-deps { width: 96px; }
+.col-ctx { width: 220px; }
+/* headers sit over their values: numeric/short cells are centered (td.ctr),
+   so their headers center too — overrides the shared left-aligned th chrome */
+th.ctr { text-align: center; }
 .grid-row > td {
   padding: 5px 10px; border-bottom: 1px solid var(--app-border-soft); font-size: 12.5px; cursor: pointer;
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; height: 28px; background: var(--app-surface);
@@ -21,8 +29,15 @@
 }
 .grid-row > td.mono { color: var(--app-fg); }
 .grid-row:hover > td { background: var(--app-hover); }
-.title-text { vertical-align: middle; }
-.title button.xlink { vertical-align: middle; margin-left: 8px; }
+/* Title cell is a flex row so truncation is honest: only the TITLE TEXT
+   shrinks (its own ellipsis right at the text, full title on native hover);
+   chips and the worktree link keep their size and stay visible. */
+.title-flex { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.title-flex > * { flex: 0 0 auto; }
+/* the two shrinkable items; each ellipsizes itself and guards a readable
+   minimum, so neither can squeeze the other out of the row entirely */
+.title-flex .title-text { flex: 0 1 auto; min-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.title-flex button.btn-link { flex: 0 1 auto; min-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
 button.xlink {
   font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
@@ -31,23 +46,41 @@ button.xlink {
   text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
 }
 button.xlink:hover { text-decoration-color: currentColor; }
+/* Blueprint git-branch icon — inherits the link's accent via currentColor */
+.branch-ico { width: 11px; height: 11px; fill: currentColor; vertical-align: -1px; margin-right: 3px; }
 .mono { font-family: ui-monospace, 'SF Mono', monospace; color: var(--app-fg-muted); font-size: 12px; }
 .title { font-weight: 500; }
 .title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 td.ctr { text-align: center; color: var(--app-fg); font-size: 12px; }
-.warn { color: #b91c1c; }
+/* stale review — a ⚠️ beside the ID (task 091), not a pile and not a row tint.
+   The emoji font is forced: inside the monospace ID cell some browsers pick the
+   font's text-style outline glyph despite the emoji variation selector. */
+.warn { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; margin-left: 1px; font-size: 17px; line-height: 1; vertical-align: -2px; cursor: default; }
+.who .since { margin-left: 6px; font-size: 11px; }
 /* category icon — leads the title cell; emoji glyph, no icon font */
-.cat-icon { vertical-align: middle; margin-right: 7px; font-size: 20px; line-height: 1; cursor: default; }
+.cat-icon { font-size: 20px; line-height: 1; cursor: default; }
 /* label chips — trail the title text; neutral pill, theme-safe */
 .label-chip {
-  display: inline-block; vertical-align: middle; margin-left: 6px;
+  display: inline-block;
   font-size: 10.5px; line-height: 1.5; padding: 0 7px; border-radius: 10px; font-weight: 500;
   background: var(--app-border-soft); color: var(--app-fg-dim); border: 1px solid var(--app-border);
 }
 .claim-check { color: var(--app-accent); font-weight: 700; }
+/* the Who column shows a NAME, not a status: plain foreground, just bolded —
+   accent is reserved for clickables and reads as a warning on text */
+.who .claim-check { color: var(--app-fg); font-weight: 600; }
 /* claim holder name — the team-facing "who" next to the ✓ */
 .claim-name { margin-left: 5px; font-size: 11px; font-weight: 500; color: var(--app-fg-dim); }
-.body-row { padding: 14px 16px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border); white-space: normal; }
+/* expanded task stands apart: warm tint on the clicked row + its body, so the
+   open task is visually one block distinct from the rows around it */
+.grid-row.expanded > td { background: color-mix(in srgb, #eab308 14%, var(--app-surface)); }
+.grid-row.expanded:hover > td { background: color-mix(in srgb, #eab308 18%, var(--app-surface)); }
+.body-row {
+  padding: 14px 16px; white-space: normal;
+  background: color-mix(in srgb, #eab308 7%, var(--app-surface));
+  border-bottom: 1px solid var(--app-border);
+  border-left: 3px solid color-mix(in srgb, #eab308 55%, var(--app-border));
+}
 .gitbox { background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; font-size: 12.5px; }
 .gb-head { font-size: 11px; font-weight: 700; color: var(--app-fg-muted); letter-spacing: 0.06em; margin-bottom: 6px; }
 .gb-row { margin: 3px 0; }

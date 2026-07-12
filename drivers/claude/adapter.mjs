@@ -33,6 +33,7 @@ const PRICING_VERSIONS = [
       'claude-opus-4-8': { input: 5, output: 25 },
       'claude-opus-4-7': { input: 5, output: 25 },
       'claude-opus-4-6': { input: 5, output: 25 },
+      'claude-sonnet-5': { input: 3, output: 15 },
       'claude-sonnet-4-6': { input: 3, output: 15 },
       'claude-haiku-4-5': { input: 1, output: 5 },
     },
@@ -40,7 +41,7 @@ const PRICING_VERSIONS = [
 ];
 
 const ALIASES = {
-  sonnet: 'claude-sonnet-4-6',
+  sonnet: 'claude-sonnet-5',
   opus: 'claude-opus-4-8',
   haiku: 'claude-haiku-4-5',
 };

@@ -4,12 +4,25 @@ The `status` frontmatter field on every `_tasks/NNN-*.md` file is one of:
 
 | status        | meaning                                                                 | counts as backlog? | done_date |
 |---------------|-------------------------------------------------------------------------|--------------------|-----------|
-| `OPEN`        | active backlog — pickable now (or blocked by an unmet dep)              | yes                | null      |
-| `PARKED`      | deliberately shelved; not being worked, not abandoned                   | yes (parked)       | null      |
-| `BLOCKED_ON`  | can't proceed until something else lands                                | yes (blocked)      | null      |
+| `OPEN`        | active backlog — pickable now (or waiting on an unmet dep)              | yes                | null      |
+| `PARKED`      | deliberately shelved; not being worked, not abandoned                   | yes (waiting)      | null      |
 | `ENOUGH` | a version of done — see below                                           | **no**             | should be set |
 | `DONE`        | fully complete; nothing left                                            | no                 | set       |
 | `OBSOLETE`    | abandoned / superseded; will not be done                                | no                 | —         |
+
+## No "blocked" status — `BLOCKED_ON` is retired
+
+Blocked-ness was a hand-set copy of what the dependency graph already derives,
+so it could (and did) go stale. The two-way rule:
+
+- **Blocked on another task** → list it in `depends_on:` and stay `OPEN`. The
+  portal derives `waiting on #N` and self-clears it the moment task N closes —
+  no file edit.
+- **Blocked on something external** (a decision, a vendor, a launch window) →
+  `PARKED`. A deliberate hold, whatever the reason; a human un-parks it.
+
+Legacy files still carrying `status: BLOCKED_ON` parse with a validator
+warning (never an error) and show in the portal's Waiting bucket.
 
 ## `ENOUGH`
 

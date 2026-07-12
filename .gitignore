@@ -18,3 +18,7 @@ frontend/public/assets/material-icons/
 # worktree port management: written per-worktree by the SessionStart hook
 .claude/launch.json
 .env.worktree
+# MCP / browser tooling debug artifacts (Playwright MCP dumps logs/snapshots/screenshots here)
+.playwright-mcp/
+# stray root-level screenshots (tracked PNGs all live in subdirs — none at root)
+/*.png

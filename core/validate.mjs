@@ -7,7 +7,7 @@
 // it never throws on malformed input (that IS the thing it reports).
 
 import { basename } from 'node:path';
-import { STATUSES, isValidStatus, hasDoneDate, CATEGORIES, isValidCategory } from './status.mjs';
+import { STATUSES, isValidStatus, isLegacyStatus, hasDoneDate, CATEGORIES, isValidCategory } from './status.mjs';
 
 // Top-level fields expected on a v2 task. Missing → warning (soft: older files
 // predate some fields); present-but-wrong-shape → error.
@@ -51,8 +51,10 @@ export function validateTask(task, ctx = {}) {
   }
   const fm = task.frontmatter || {};
 
-  // status — the core drift check.
+  // status — the core drift check. Retired statuses warn (old files across all
+  // registered projects must not start failing validation), never error.
   if (fm.status == null) err('status: missing');
+  else if (isLegacyStatus(fm.status)) warn(`status: "${fm.status}" is retired — task blocker → depends_on + OPEN; external blocker → PARKED (file shows as Waiting meanwhile)`);
   else if (!isValidStatus(fm.status)) err(`status: "${fm.status}" not one of ${STATUSES.join(' | ')}`);
 
   // category — required, closed enum. Orthogonal to status: status is

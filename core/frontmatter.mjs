@@ -151,11 +151,15 @@ function computeDerived(task, allTasks, repoRoot, staleOverride) {
   const depsList = Array.isArray(rawDeps) ? rawDeps
                  : rawDeps == null ? []
                  : [rawDeps];
-  const depsMet = depsList.every((depId) => {
+  // Which deps are unmet (not just whether) — the Waiting bucket's derived
+  // "waiting on #N" reads this list. A dangling dep (no matching task) counts
+  // as unmet, same as before.
+  const unmetDeps = depsList.filter((depId) => {
     const dep = allTasks.find((t) => t.frontmatter && Number(t.frontmatter.id) === Number(depId));
     // ENOUGH counts as satisfied — the dep shipped; its leftovers don't block dependents.
-    return dep && satisfiesDeps(dep.frontmatter.status);
+    return !(dep && satisfiesDeps(dep.frontmatter.status));
   });
+  const depsMet = unmetDeps.length === 0;
 
   const claimedAt = fm.env?.claimed_at || null;
   const claimedBy = fm.env?.claimed_by_session || null;
@@ -183,7 +187,7 @@ function computeDerived(task, allTasks, repoRoot, staleOverride) {
   return {
     status, checkedCount, totalCount,
     progressPct: totalCount > 0 ? Math.round((checkedCount / totalCount) * 100) : null,
-    ready, stale, depsMet,
+    ready, stale, depsMet, unmetDeps,
     claimed: !!claimedAt, claimedAt, claimedBy, claimedByName,
   };
 }

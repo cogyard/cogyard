@@ -4,17 +4,17 @@ import { ApiService } from './api.service';
 const POLL_MS = 60_000;
 
 // Dock badge for Safari "Add to Dock" web apps (and any browser supporting the
-// Badging API): unmerged worktrees (commits not yet landed on main) across all
-// projects — work in flight that still needs landing.
+// Badging API): claimed tasks across all projects — the projects with work in
+// flight right now (task 85; was unmerged worktrees).
 //
 // SINGLE WRITER PER SURFACE. Inside the Electron desktop shell the NATIVE poller
 // (extras/desktop/main.mjs pollTick) owns the dock badge; this renderer service stays
 // out of its way. Two writers on one dock badge — even when they "should" agree
-// — is exactly the 14↔7 flip bug: the native side summed unmerged worktrees (14)
-// while this renderer summed claimed tasks (7), each overwriting the other on its
-// timer. Aligning the numbers only hid it; the real fix is one writer. So in the
-// shell this is a no-op; in a plain browser / "Add to Dock" PWA there is NO native
-// writer, so the renderer is the sole one.
+// — is exactly the 14↔7 flip bug: the native side and this renderer once summed
+// DIFFERENT metrics (unmerged worktrees vs claimed tasks), each overwriting the
+// other on its timer. Both now sum `claimed`, but the real fix is still one writer.
+// So in the shell this is a no-op; in a plain browser / "Add to Dock" PWA there is
+// NO native writer, so the renderer is the sole one.
 //
 // Runs on its own timer, deliberately NOT the shared RefreshService — that one
 // pauses while the tab is hidden, and hidden/backgrounded is exactly when the
@@ -38,11 +38,11 @@ export class BadgeService {
   }
 
   private refresh() {
-    // /api/projects carries each project's stat-cached unmerged count — cheap to
-    // poll (no git on a hit). Same number the desktop dock badge sums.
+    // /api/projects carries each project's claimed-task count (frontmatter read,
+    // no git) — cheap to poll. Same number the desktop dock badge sums.
     this.api.projects().subscribe({
       next: (ps) => {
-        const n = ps.reduce((sum, p) => sum + (p.unmerged || 0), 0);
+        const n = ps.reduce((sum, p) => sum + (p.claimed || 0), 0);
         if (n > 0) navigator.setAppBadge?.(n);
         else navigator.clearAppBadge?.();
       },

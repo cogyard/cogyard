@@ -22,7 +22,7 @@ export { COGYARD_HOME, REGISTRY_PATH, WORKTREE_PORTS_PATH, PROJECTS_ROOT, resolv
 export { CONFIG_PATH, STORES, readConfig, writeConfig, projectDefaults, WEEK_STARTS, PORTAL_TABS, uiPrefs } from './config.mjs';
 export { tryExec, execLoud, findRepoRoot, findTasksDir, gitP, defaultBranch, defaultBranchSync } from './exec.mjs';
 export { memoize, clearMemo } from './memo.mjs';
-export { STATUS, STATUSES, isValidStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate } from './status.mjs';
+export { STATUS, STATUSES, isValidStatus, isLegacyStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate, BUCKET_KEYS, bucketOf, waitingWhyOf } from './status.mjs';
 export { validateTask, validateTasks } from './validate.mjs';
 export { stripInlineComment, parseScalar, parseFrontmatter, readTaskFile, listTaskFiles, loadTasks, computeDerived } from './frontmatter.mjs';
 export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject } from './registry.mjs';

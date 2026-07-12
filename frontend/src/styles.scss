@@ -140,7 +140,7 @@ p-table .p-datatable-thead > tr > th {
      .btn-toggle  compact in-place mode/option control
                   (Files: changed-only / rendered / raw / diff)
                   modifier .on = engaged
-     .btn-link    inline navigate-somewhere link (#task, ⎇worktree, project)
+     .btn-link    inline navigate-somewhere link (#task, branch-icon worktree, project)
                   modifier .mono = monospace id-ish label
 
    Sanctioned one-offs (composite row/panel controls, local by design):
@@ -202,3 +202,14 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
    freshness-pie component) interpolates --pie-p, which only animates if
    registered via @property — and @property must live in global styles. */
 @property --pie-p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
+
+/* Tooltips: cap width + wrap at word boundaries. Without this, a long single-line
+   tooltip (e.g. the claim holder "name · since <date> · session <id>") pinned
+   against a viewport edge collapses to a ~1-char-wide vertical column, breaking
+   mid-word. Belt-and-suspenders with tooltipPosition on edge-column triggers. */
+.p-tooltip .p-tooltip-text {
+  max-width: min(90vw, 26rem);
+  white-space: normal;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}

@@ -38,3 +38,22 @@
   &.l4 { background: var(--app-heat-4); }
   &.empty { background: transparent; }
 }
+
+// Labeled variant (cost mode): cells widen to fit a value; rows grow to match.
+// The month gutter/labels stay aligned by widening to the same cell width.
+.hm.labeled {
+  .hm-months .hm-month { width: 34px; }
+  .hm-days { grid-template-rows: repeat(7, 19px); }
+  .hm-days span { line-height: 19px; }
+  .hm-week { grid-template-rows: repeat(7, 19px); }
+  .cell {
+    width: 34px; height: 19px; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1;
+    &.l0 { color: var(--app-fg-muted); }
+    &.l1 { color: #22400f; }
+    &.l2 { color: #123d16; }
+    &.l3 { color: #eaffef; }
+    &.l4 { color: #eaffef; }
+  }
+  .hm-legend .cell { width: 11px; height: 11px; }
+}

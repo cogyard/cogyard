@@ -66,4 +66,8 @@
   <div class="act-panel">
     <app-activity-punchcard [matrices]="punchcardAll()" [weekStart]="weekStart()" [dayStart]="dayStart()" />
   </div>
+  <div class="act-panel">
+    <app-activity-heatmap [byDay]="costAllByDay()" [breakdown]="costBreakdown()" [weekStart]="weekStart()"
+      noun="cost" [valueLabel]="fmtHeatCell" [titleFmt]="fmtHeatFull" (dayClick)="drillDay.set($event)" />
+  </div>
 }

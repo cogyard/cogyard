@@ -82,6 +82,47 @@ export class OverviewComponent {
     }
     return out;
   });
+  // Same aggregation for daily cost: each day's total is costUSD + costApproxUSD
+  // (locked-in + estimated) summed across every project; breakdown keeps the
+  // per-project split for the tooltip.
+  private dayCost = (c: { costUSD: number; costApproxUSD: number }) => (c.costUSD || 0) + (c.costApproxUSD || 0);
+  costAllByDay = computed<Record<string, number>>(() => {
+    const a = this.activity();
+    const out: Record<string, number> = {};
+    if (!a) return out;
+    for (const { days } of Object.values(a.projects)) {
+      for (const [d, cell] of Object.entries(days)) out[d] = (out[d] || 0) + this.dayCost(cell);
+    }
+    return out;
+  });
+  costBreakdown = computed<Record<string, Record<string, number>> | null>(() => {
+    const a = this.activity();
+    if (!a) return null;
+    const out: Record<string, Record<string, number>> = {};
+    for (const [slug, { days }] of Object.entries(a.projects)) {
+      for (const [d, cell] of Object.entries(days)) {
+        const v = this.dayCost(cell);
+        if (!v) continue;
+        if (!out[d]) out[d] = {};
+        out[d][slug] = (out[d][slug] || 0) + v;
+      }
+    }
+    return out;
+  });
+  // Cell text: bare number (no $ — the legend + header make the unit clear),
+  // abbreviated ≥1k to stay legible. Header/tooltip use fmtHeatFull for the
+  // exact dollar figure.
+  fmtHeatCell = (n: number): string => {
+    if (!n || n <= 0) return '';
+    if (n < 0.5) return '<1';
+    if (n >= 1000) return Math.round(n / 1000) + 'k';
+    return String(Math.round(n));
+  };
+  fmtHeatFull = (n: number): string => {
+    if (!n || n <= 0) return '$0';
+    if (n < 0.5) return '<$1';
+    return '$' + Math.round(n).toLocaleString('en-US');
+  };
   // Stable per-project lane colors, shared by the braid and the drill-down.
   laneColors = computed<Record<string, string>>(() => {
     const a = this.activity();

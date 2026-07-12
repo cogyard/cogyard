@@ -35,3 +35,14 @@ docs/PORTAL-V2-DESIGN.md export-ignore
 # replaces the old `*.local.md` gitignore rule, which was silently dropping them from
 # the backup entirely.
 *.local.md export-ignore
+
+# demo machinery (tasks 087/088) — private on main, never in the public snapshot
+extras/demo-maker/** export-ignore
+extras/demo-maker/ export-ignore
+extras/demo-shadow/** export-ignore
+extras/demo-shadow/ export-ignore
+
+# GitHub Actions workflows of the PRIVATE repo (task 089's nightly demo refresh
+# and any future automation) — repo infra, never part of the public snapshot.
+.github/** export-ignore
+.github/ export-ignore

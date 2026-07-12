@@ -5,7 +5,7 @@
       <button class="btn-pill wt-pill" [class.active]="w.name === selectedWt()" (click)="selectWt(w.name)" [pTooltip]="w.path">
         @if (w.isMain) { <span class="main-dot">●</span> }
         <span class="wt-name">{{ w.isMain ? (w.branch || w.name) : w.name }}</span>
-        <span class="wt-when">{{ relTime(w.lastActivity) }}</span>
+        <span class="wt-when">{{ w.when }}</span>
       </button>
     }
   </div>

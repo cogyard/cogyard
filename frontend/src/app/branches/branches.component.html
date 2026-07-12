@@ -21,10 +21,11 @@
         </tr>
       </ng-template>
       <ng-template #body let-b>
-        <tr class="bt-row" [class.stale]="isStale(b)" [class.is-main]="isMainRow(b)" [class.active]="isActive(b)">
+        <tr class="bt-row" [class.stale]="isStale(b)" [class.active]="isActive(b)">
           <td class="bname">
-            @if (b.isHead) { <span class="head-dot" pTooltip="current branch">●</span> }
-            <span class="nm" [class.muted]="b.merged && !isMainRow(b)">{{ b.name }}</span>
+            @if (b.isHead && !isMainRow(b)) { <span class="head-dot" pTooltip="current branch">●</span> }
+            @if (isMainRow(b)) { <p-tag styleClass="badge main-ref" [value]="b.name" /> }
+            @else { <span class="nm" [class.muted]="b.merged">{{ b.name }}</span> }
             @if (b.taskId) { <button class="btn-link mono" (click)="jumpTask.emit(b.taskId!)">#{{ b.taskId }}</button> }
           </td>
           <td class="commit-cell">
@@ -43,7 +44,7 @@
             @else { <p-tag styleClass="badge origin" value="origin" pTooltip="tracks {{ b.upstream || ('origin/' + b.name) }}" /> }
           </td>
           <td class="flags">
-            @if (b.hasWorktree) { <button class="btn-link mono" (click)="jumpWorktree.emit(b.name)">⎇ {{ b.worktreeName || 'worktree' }}</button> }
+            @if (b.hasWorktree) { <button class="btn-link mono" (click)="jumpWorktree.emit(b.name)"><svg class="branch-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M15 2c-1.66 0-3 1.34-3 3 0 1.3.84 2.4 2 2.82V9c0 1.1-.9 2-2 2H8c-.73 0-1.41.21-2 .55V5.82C7.16 5.4 8 4.3 8 3c0-1.66-1.34-3-3-3S2 1.34 2 3c0 1.3.84 2.4 2 2.82v8.37C2.84 14.6 2 15.7 2 17c0 1.66 1.34 3 3 3s3-1.34 3-3c0-1.25-.77-2.3-1.85-2.75C6.45 13.52 7.16 13 8 13h4c2.21 0 4-1.79 4-4V7.82C17.16 7.4 18 6.3 18 5c0-1.66-1.34-3-3-3M5 2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1m0 16c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1M15 6c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1"/></svg>{{ b.worktreeName || 'worktree' }}</button> }
             @if (isStale(b)) { <p-tag styleClass="badge stale" value="stale" pTooltip="last activity {{ b.relDate }}" /> }
           </td>
         </tr>

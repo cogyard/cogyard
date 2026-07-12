@@ -9,6 +9,41 @@ Only *released* versions appear here. cogyard's version counter (the root
 only the versions actually cut with `bin/publish-snapshot` — so this history
 mirrors the `v*` release tags, not every intermediate bump.
 
+## [1.27.3] — 2026-07-12
+
+### Added
+
+- **Live demo** — a clickable, read-only copy of the portal at
+  [cogyard.com/demo](https://cogyard.com/demo): five sample projects with
+  tasks, worktrees, branches, git graphs, files, and cost stats to explore
+  without installing anything.
+- **All-projects cost heatmap** — a git-style contribution grid at the bottom
+  of the overview page showing spend across every project at a glance.
+
+### Changed
+
+- **Task buckets rework** — task lists now group into Ready / Claimed /
+  Waiting / Done, each bucket showing only the columns that matter for it.
+  The hand-set "blocked" status is retired: a task waiting on another derives
+  its state from `depends_on`, and external holds are `PARKED`.
+- **Sidebar and dock badges** now count worktrees with unmerged work instead
+  of claimed tasks — the number now answers "what's in flight," not "what's
+  on paper."
+- The logo's star center is now a six-tooth cog.
+- Release tags on the Graph tab render as solid green milestone chips and
+  lead the ref-chip row.
+
+### Fixed
+
+- `claude-sonnet-5` was missing from the model price table, so sessions on it
+  showed no cost (`costUSD: null`) in every cost view.
+- Files tab threw Angular NG0100 errors — a worktree pill's relative-time
+  label read the clock during template rendering.
+- Overview table columns overlapped and garbled at ~1200 px viewports.
+- The Tasks table's Claimed column truncated claimant names.
+- The claimed-by checkmark tooltip rendered as a one-character-wide vertical
+  column.
+
 ## [1.15.0] — 2026-07-06
 
 ### Added

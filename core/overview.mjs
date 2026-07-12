@@ -71,8 +71,9 @@ async function lightWorktreeStats(repoPath) {
 // computeDerived is what makes loadProject slow). Mirrors the viewer's bucket
 // logic closely enough for at-a-glance counts.
 function taskCountsFromFrontmatter(tasks) {
-  const counts = { total: tasks.length, ready: 0, claimed: 0, open: 0, blocked: 0, parked: 0, enough: 0, done: 0 };
-  const isDone = (t) => t.frontmatter && t.frontmatter.status === 'DONE';
+  // Mirrors the four buckets (core/status.mjs bucketOf): ready / claimed /
+  // waiting, plus done-family split out for display. OBSOLETE stays uncounted.
+  const counts = { total: tasks.length, ready: 0, claimed: 0, waiting: 0, enough: 0, done: 0 };
   for (const t of tasks) {
     const fm = t.frontmatter || {};
     const status = fm.status || 'UNKNOWN';
@@ -81,13 +82,11 @@ function taskCountsFromFrontmatter(tasks) {
     if (status === 'ENOUGH') { counts.enough++; continue; }
     if (status === 'OBSOLETE') continue;
     const claimed = !!(fm.env && fm.env.claimed_at);
-    if (claimed) counts.claimed++;
+    if (claimed) { counts.claimed++; continue; }
     const deps = Array.isArray(fm.depends_on) ? fm.depends_on : fm.depends_on == null ? [] : [fm.depends_on];
     const depsMet = deps.every((d) => tasks.some((x) => x.frontmatter && Number(x.frontmatter.id) === Number(d) && satisfiesDeps(x.frontmatter.status)));
-    if (status === 'PARKED') counts.parked++;
-    else if (status === 'BLOCKED_ON' || !depsMet) counts.blocked++;
-    else if (status === 'OPEN' && depsMet && !claimed) counts.ready++;
-    else if (status === 'OPEN') counts.open++;
+    if (status === 'OPEN' && depsMet) counts.ready++;
+    else counts.waiting++; // PARKED · unmet deps · unknown/pre-frontmatter/legacy status
   }
   return counts;
 }

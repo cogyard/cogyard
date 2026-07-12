@@ -100,12 +100,13 @@ export class GraphComponent {
     }
     const out: Chip[] = [], used = new Set<string>();
     const m = (name: string, base: string) => (base === 'main' || base === 'master') ? name + ' main-ref' : name;
+    // release tags lead — a milestone outranks branch pointers on the same commit
+    for (const T of tags) out.push({ cls: 'tag', text: T });
     for (const L of locals) {
       if (remotes.has(L)) { out.push({ cls: m('synced', L), text: 'origin = ' + L }); used.add(L); }
       else out.push({ cls: m('local', L), text: L });
     }
     for (const R of remotes) if (!used.has(R)) out.push({ cls: m('remote', R), text: 'origin/' + R });
-    for (const T of tags) out.push({ cls: 'tag', text: T });
     return out;
   }
 

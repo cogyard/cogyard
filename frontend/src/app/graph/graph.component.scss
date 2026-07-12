@@ -33,7 +33,8 @@
 }
 :host ::ng-deep .p-tag.dag-ref.local { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 :host ::ng-deep .p-tag.dag-ref.remote { background: #eef4ff; color: #1e40af; border-color: #c7dbff; }
-:host ::ng-deep .p-tag.dag-ref.tag { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+/* release tag = inverse solid — same "milestone" treatment as the main-ref chip */
+:host ::ng-deep .p-tag.dag-ref.tag { background: #16a34a; color: #fff; border-color: #15803d; }
 :host ::ng-deep .p-tag.dag-ref.synced { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
 /* main ref = inverse, tied to the black trunk color */
 :host ::ng-deep .p-tag.dag-ref.main-ref { background: #111827; color: #fff; border-color: #111827; }

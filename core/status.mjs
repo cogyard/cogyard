@@ -15,7 +15,6 @@
 export const STATUS = {
   OPEN:       { open: true },
   PARKED:     { open: true },
-  BLOCKED_ON: { open: true },
   DONE:       { open: false, satisfiesDeps: true, doneDate: true },
   ENOUGH:     { open: false, satisfiesDeps: true, doneDate: true }, // shipped enough value; leftovers don't block dependents
   OBSOLETE:   { open: false },                                       // closed but abandoned — does NOT satisfy deps, no done_date
@@ -23,6 +22,14 @@ export const STATUS = {
 
 // The valid status vocabulary.
 export const STATUSES = Object.keys(STATUS);
+
+// Deprecation shim (task 091): `BLOCKED_ON` is retired — it hand-copied what the
+// dep graph already derives. Blocked on a task → `depends_on` + stay OPEN
+// (derived, self-clears when the dep closes). Blocked on something external →
+// `PARKED` (a deliberate hold, whatever the reason). Legacy files still parse:
+// the validator warns (never errors) and bucketOf lands them in `waiting`.
+export const LEGACY_STATUSES = ['BLOCKED_ON'];
+export const isLegacyStatus = (s) => LEGACY_STATUSES.includes(s);
 
 // Task category — a required, closed enum orthogonal to status. Status
 // is lifecycle ("is it finished"); category is kind ("what sort of work"). A bug
@@ -53,24 +60,38 @@ export const hasDoneDate = (s) => !!(STATUS[s] && STATUS[s].doneDate);
 // column and a list bucket with the same title can never hold different tasks
 // (boundary correctness). The canonical KEYS live here; each consumer
 // maps a key to its own display title + ordering (that part is presentation).
-export const BUCKET_KEYS = [
-  'ready', 'claimed', 'inProgress', 'blocked', 'parked', 'stale', 'enough', 'done', 'obsolete', 'unknown',
-];
+//
+// Four buckets, four questions (task 091):
+//   ready   — can I grab it?   OPEN, unclaimed, deps met. Progress (3/7) and
+//             staleness are row-level signals inside Ready, not piles.
+//   claimed — who's on it?     open + claim held (incl. finished-awaiting-merge).
+//   waiting — why not?         PARKED · unmet deps · unknown/pre-frontmatter/
+//             legacy status. The "why" is waitingWhyOf() below.
+//   done    — how did it end?  closed lifecycle (DONE | ENOUGH | OBSOLETE);
+//             consumers sub-group by the status the row carries.
+export const BUCKET_KEYS = ['ready', 'claimed', 'waiting', 'done'];
 
 // `d` is a task's computeDerived() result (status, claimed, depsMet, ready,
 // checkedCount, totalCount, stale). `hasFrontmatter` is the task-level flag.
 // Order of the checks is significant — the first match wins.
 export function bucketOf(d, hasFrontmatter) {
-  if (!hasFrontmatter) return 'unknown';
+  if (!hasFrontmatter) return 'waiting';          // pre-frontmatter — needs a human before it's grabbable
   const s = d?.status;
-  if (s === 'DONE') return 'done';
-  if (s === 'ENOUGH') return 'enough';            // closed/done-family — its own group, not active backlog
-  if (s === 'OBSOLETE') return 'obsolete';
+  if (isClosed(s)) return 'done';                 // done-family; status rides along for sub-grouping
   if (d.claimed) return 'claimed';
+  if (s === 'OPEN' && d.depsMet) return 'ready';
+  return 'waiting';                               // PARKED · unmet deps · unknown/legacy status
+}
+
+// The Waiting bucket's "why" — DERIVED, never stored, so it can't go stale:
+// `waiting on #N` self-clears the moment task N closes; `parked` and
+// `needs frontmatter` wait on a human. Null for every other bucket.
+export function waitingWhyOf(d, hasFrontmatter) {
+  if (bucketOf(d, hasFrontmatter) !== 'waiting') return null;
+  if (!hasFrontmatter) return 'needs frontmatter';
+  const s = d?.status;
   if (s === 'PARKED') return 'parked';
-  if (s === 'BLOCKED_ON' || !d.depsMet) return 'blocked';
-  if (d.ready) return 'ready';
-  if (d.checkedCount > 0 && d.totalCount > d.checkedCount) return 'inProgress';
-  if (d.stale) return 'stale';
-  return 'inProgress';
+  if (d?.unmetDeps?.length) return 'waiting on ' + d.unmetDeps.map((n) => `#${n}`).join(', ');
+  if (isLegacyStatus(s)) return 'parked';         // legacy BLOCKED_ON with no unmet dep = a deliberate hold
+  return 'needs frontmatter';                     // unknown/invalid status — a human must fix the file
 }

@@ -47,19 +47,20 @@ export class AppComponent implements OnInit {
   constructor() {
     // Publish the toolbar height so the fixed commit sidebar can sit below it.
     afterNextRender(() => this.measureHeader());
-    // Load + refresh the project list (which carries each project's unmerged-
-    // worktree count for the sidebar badges) on the shared tick. /api/projects
-    // is cheap — the unmerged count is stat-cached server-side (unmerged.mjs),
-    // computed only when a ref actually moves — so polling it costs ~nothing.
+    // Load + refresh the project list (which carries each project's claimed-task
+    // count for the sidebar badges) on the shared tick. /api/projects is cheap —
+    // the claimed count is a frontmatter file-read server-side (no git) — so
+    // polling it costs ~nothing.
     effect(() => {
       this.refresh.tick();
       this.api.projects().subscribe((ps) => { this.projects.set(ps); this.loaded.set(true); this.syncFromUrl(); });
     });
   }
 
-  // Per-project unmerged-worktree count for the sidebar badge. Same number the
-  // dock/web badge sums, so the per-project badges total the app badge.
-  unmergedFor(slug: string): number { return this.projects().find((p) => p.slug === slug)?.unmerged ?? 0; }
+  // Per-project claimed-task count for the sidebar badge — projects with work in
+  // flight. Same number the dock/web badge sums, so the per-project badges total
+  // the app badge.
+  claimedFor(slug: string): number { return this.projects().find((p) => p.slug === slug)?.claimed ?? 0; }
   measureHeader() {
     const h = document.querySelector('.topbar')?.getBoundingClientRect().height;
     if (h) document.documentElement.style.setProperty('--hdr', `${Math.round(h)}px`);

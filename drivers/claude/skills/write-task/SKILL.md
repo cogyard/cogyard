@@ -74,7 +74,7 @@ Do NOT paste contents of these docs into the task file. Reference them by path a
 Ask the user only for what's not inferable from context. Specifically, these must be answered before writing:
 
 - **Title + slug.** Short noun phrase ("Automated DB backups", "Admin UI polish").
-- **Status.** One of: `OPEN` (ready to start), `PARKED` (can start but not urgent), `BLOCKED_ON` (waits for another task — name which in `depends_on:`), `DONE` (historical record), `OBSOLETE` (superseded). NOTE: there is no `PARTIAL` status — partial completion is tracked via the body's `[x]` / `[ ]` checkbox count, not a status field.
+- **Status.** One of: `OPEN` (active backlog), `PARKED` (deliberately shelved — a hold on something external or on a human decision), `DONE` (historical record), `ENOUGH` (shipped enough; leftovers recorded in the body), `OBSOLETE` (superseded). NOTE: there is no `PARTIAL` status — partial completion is tracked via the body's `[x]` / `[ ]` checkbox count, not a status field. There is also no "blocked" status (the former `BLOCKED_ON` is retired): **blocked on another task → list it in `depends_on:` and stay `OPEN`** (the portal derives "waiting on #N" and self-clears it when the dep closes); **blocked on anything external → `PARKED`**.
 - **Category + labels.** `category` is **required** and a **closed enum** — one of `feature | maintenance | bug | docs` (feature = new user-facing capability · maintenance = internal work, no new behavior: restructures/renames/releases/deps/ops · bug = something broken · docs = non-code documentation/copy). It's the *user's* call, not the agent's, so **collect it with `AskUserQuestion`**: a single-select listing all four values with your best guess first, labelled "(Recommended)". The 4 values fit the tool's 4-option cap exactly — no "Other" overflow. `labels` is **optional + open** (free-form tags like `frontend`, `infra`); propose 0–3 you'd suggest and let the user add/remove — a separate multi-select or free-text, or just inline in the same question's notes. Skip the question only when the user already stated the category explicitly in their request. The frontmatter validator (`cogyard tasks validate`, also enforced by the plugin's PreToolUse hook) rejects a missing/invalid `category`, so this is not optional to fill.
 - **"What this is" content.** The single most important section for future readers. Decide which mode applies:
   - If an existing durable doc covers the system this task builds on/extends, **verify the doc exists and is current** (read it; if stale, either update it first or use mode-b). Then write a 2–4 sentence summary + bold pointer.
@@ -127,7 +127,7 @@ env:
 
 # NNN: <title>
 
-> **Status: <OPEN | PARKED | BLOCKED_ON | DONE | OBSOLETE>.** <One sentence explaining what the status means in this context.>
+> **Status: <OPEN | PARKED | DONE | ENOUGH | OBSOLETE>.** <One sentence explaining what the status means in this context.>
 
 ## What this is
 

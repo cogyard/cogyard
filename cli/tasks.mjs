@@ -661,80 +661,6 @@ function cmdBackfill() {
   }
 }
 
-// --- inbox: low-ceremony bug capture + triage ----------------------
-// `_tasks/INBOX.md` is an append-only sink: jot a one-line bug mid-flow in ~5s
-// without writing a full task. A line is throwaway capture, not a tracked record
-// — triage either fixes it inline (then `clear`), promotes it to a `category: bug`
-// task via the write-task skill (then `clear`), or clusters related lines.
-const INBOX_HEADER = `# INBOX — one-line bug/idea capture
-
-Zero ceremony: \`cogyard tasks inbox add "<thing>"\`. Triage with the write-task
-skill — fix inline, promote to a \`category: bug\` task, or cluster — then
-\`cogyard tasks inbox clear <n>\`. Lines here are throwaway, not tracked records.
-`;
-
-function inboxPath() {
-  const repoRoot = findRepoRoot();
-  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
-  if (!tasksDir || !existsSync(tasksDir)) fail('no _tasks/ found');
-  return join(tasksDir, 'INBOX.md');
-}
-
-// Parse INBOX.md body into its capture lines (the `- [ ] ...` / `- [x] ...`
-// bullets), preserving file order. Returns [{ lineIdx, checked, text }].
-function inboxLines(content) {
-  const out = [];
-  content.split('\n').forEach((ln, i) => {
-    const m = ln.match(/^- \[([ xX])\]\s?(.*)$/);
-    if (m) out.push({ lineIdx: i, checked: m[1].toLowerCase() === 'x', text: m[2] });
-  });
-  return out;
-}
-
-function cmdInbox(args) {
-  const sub = args[0] || 'list';
-  const path = inboxPath();
-  const read = () => (existsSync(path) ? readFileSync(path, 'utf8') : INBOX_HEADER);
-
-  if (sub === 'add') {
-    const text = args.slice(1).join(' ').trim();
-    if (!text) fail('inbox add: give the bug text, e.g. inbox add "files tab 500s on empty repo"');
-    const date = new Date().toISOString().slice(0, 10);
-    let content = read();
-    if (!content.endsWith('\n')) content += '\n';
-    content += `- [ ] ${text} (${date})\n`;
-    writeFileSync(path, content);
-    process.stdout.write(`captured → ${path}\n`);
-    return;
-  }
-
-  if (sub === 'list') {
-    const items = inboxLines(read());
-    const open = items.filter((it) => !it.checked);
-    if (!open.length) { process.stdout.write('inbox empty (nothing to triage)\n'); return; }
-    process.stdout.write(`INBOX — ${open.length} open:\n`);
-    open.forEach((it, n) => process.stdout.write(`  ${n + 1}. ${it.text}\n`));
-    process.stdout.write(`\nTriage with the write-task skill, then: cogyard tasks inbox clear <n>\n`);
-    return;
-  }
-
-  if (sub === 'clear' || sub === 'done') {
-    const n = Number(args[1]);
-    if (!Number.isInteger(n) || n < 1) fail(`inbox ${sub}: give the line number from \`inbox list\``);
-    const content = read();
-    const open = inboxLines(content).filter((it) => !it.checked);
-    const target = open[n - 1];
-    if (!target) fail(`inbox ${sub}: no open line #${n} (run \`inbox list\`)`);
-    const lines = content.split('\n');
-    lines.splice(target.lineIdx, 1);           // remove the triaged line outright
-    writeFileSync(path, lines.join('\n'));
-    process.stdout.write(`cleared #${n}: ${target.text}\n`);
-    return;
-  }
-
-  fail(`inbox: unknown action "${sub}" (use add | list | clear)`);
-}
-
 // --- cleanup: reclaim build/install dirs from MERGED, CLEAN worktrees -
 // Worktrees share the parent repo's git objects, so the only heavy per-worktree
 // thing is regenerable build/install output (DISPOSABLE_DIRS) once a build/install
@@ -899,9 +825,6 @@ Subcommands:
   validate                            Check task frontmatter against the v2 schema (drift audit)
     --all                             Validate every registered project (else: current repo only)
     --errors-only                     Suppress warnings; show only schema errors
-  inbox add "<text>"                  Append a one-line bug/idea to _tasks/INBOX.md
-  inbox [list]                        List open INBOX lines awaiting triage
-  inbox clear <n>                     Remove INBOX line <n> after triage (fix/promote/cluster)
   cleanup [slug] [--dry-run]          Reclaim build/install dirs (node_modules,
                                       dist, .angular, out-tsc, coverage, release —
                                       any depth) from worktrees that are MERGED
@@ -940,7 +863,6 @@ switch (cmd) {
   case 'staleness': cmdStaleness(); break;
   case 'drift': cmdDrift(opts.positional[1]); break;
   case 'validate': cmdValidate(opts.flags); break;
-  case 'inbox': cmdInbox(opts.positional.slice(1)); break;
   case 'cleanup': cmdCleanup(opts).catch((e) => fail(e.message)); break;
   case undefined:
     if (opts.flags.backfill) cmdBackfill();

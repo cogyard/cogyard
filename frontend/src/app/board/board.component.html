@@ -4,24 +4,28 @@
   <div class="empty">No tasks in this project.</div>
 } @else {
   <div class="board">
-    @for (col of columns(); track col.title) {
-      <section class="column">
+    @for (col of columns(); track col.key) {
+      <section class="column" [class.closed]="col.separatorAbove">
         <h3 class="col-head">{{ col.title }} <span class="count">{{ col.list.length }}</span></h3>
         <div class="cards">
-          @for (t of col.list; track t.file) {
-            <p-card styleClass="card" (click)="cardClick(t)">
-              <div class="card-top">
-                <span class="cid">{{ t.id != null ? '#' + t.id : '?' }}</span>
-                @if (t.progress?.totalCount) { <span class="sub">{{ t.progress.checkedCount }}/{{ t.progress.totalCount }}</span> }
-                @if (t.stale) { <span class="warn" pTooltip="stale review needed">⚠</span> }
-              </div>
-              <div class="card-title">{{ t.title }}</div>
-              <div class="card-foot">
-                @if (t.fm?.depends_on?.length) { <p-tag styleClass="chip dep" value="deps {{ t.fm.depends_on.join(', ') }}" /> }
-                @if (t.progress?.claimed) { <p-tag styleClass="chip lock" value="🔒 {{ t.claimedBy || '?' }}" /> }
-                @if (t.worktreeName) { <p-tag styleClass="chip wt" value="⎇ {{ t.worktreeName }}" /> }
-              </div>
-            </p-card>
+          @for (g of groupsOf(col); track g.title) {
+            @if (g.title) { <div class="sub-head">{{ g.title }} <span class="count">{{ g.list.length }}</span></div> }
+            @for (t of g.list; track t.file) {
+              <p-card styleClass="card" (click)="cardClick(t)">
+                <div class="card-top">
+                  <span class="cid">{{ t.id != null ? '#' + t.id : '?' }}</span>
+                  @if (t.progress?.totalCount) { <span class="sub">{{ t.progress.checkedCount }}/{{ t.progress.totalCount }}</span> }
+                  @if (t.stale) { <span class="warn" pTooltip="Possibly outdated! Code has changed since task written.">⚠️</span> }
+                </div>
+                <div class="card-title">{{ t.title }}</div>
+                <div class="card-foot">
+                  @if (col.key === 'waiting' && t.waitingWhy) { <p-tag styleClass="chip why" value="{{ t.waitingWhy }}" /> }
+                  @if (t.fm?.depends_on?.length) { <p-tag styleClass="chip dep" value="deps {{ t.fm.depends_on.join(', ') }}" /> }
+                  @if (t.progress?.claimed) { <p-tag styleClass="chip lock" value="🔒 {{ t.claimedByName || t.claimedBy || '?' }}" /> }
+                  @if (t.worktreeName) { <p-tag styleClass="chip wt"><svg class="branch-ico" viewBox="0 0 20 20" aria-hidden="true"><path d="M15 2c-1.66 0-3 1.34-3 3 0 1.3.84 2.4 2 2.82V9c0 1.1-.9 2-2 2H8c-.73 0-1.41.21-2 .55V5.82C7.16 5.4 8 4.3 8 3c0-1.66-1.34-3-3-3S2 1.34 2 3c0 1.3.84 2.4 2 2.82v8.37C2.84 14.6 2 15.7 2 17c0 1.66 1.34 3 3 3s3-1.34 3-3c0-1.25-.77-2.3-1.85-2.75C6.45 13.52 7.16 13 8 13h4c2.21 0 4-1.79 4-4V7.82C17.16 7.4 18 6.3 18 5c0-1.66-1.34-3-3-3M5 2c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1m0 16c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1M15 6c-.55 0-1-.45-1-1s.45-1 1-1 1 .45 1 1-.45 1-1 1"/></svg>{{ t.worktreeName }}</p-tag> }
+                </div>
+              </p-card>
+            }
           }
         </div>
       </section>

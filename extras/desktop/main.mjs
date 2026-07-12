@@ -8,8 +8,8 @@
 //      context, so dock badge + native Notification "just work" with no TLS).
 //      If :7437 is down, show a friendly placeholder and retry — never fork a
 //      server, never crash-loop.
-//   2. Dock-badge poller: every 30s GET the CHEAP stat-cached /api/projects and
-//      sum p.unmerged → app.setBadgeCount(n). ~0 git on a hit.
+//   2. Dock-badge poller: every 30s GET the CHEAP /api/projects and
+//      sum p.claimed → app.setBadgeCount(n). ~0 git on a hit.
 //   3. Notifications: per-project task-count diffing needs /api/overview (which
 //      spawns `git status --porcelain` per project). Gated behind a notify flag
 //      AND a slower cadence so it never becomes an unconditional 30s git storm.
@@ -97,13 +97,13 @@ function getJson(path) {
 // BadgeService detects Electron (UA) and stays a no-op, so the two can never
 // fight (that was the 14↔7 flip).
 async function pollTick() {
-  // Badge: sum unmerged worktrees from the CHEAP stat-cached /api/projects
-  // (~0 git on a hit). This is what makes the always-open app cheap.
+  // Badge: sum claimed tasks (work in flight) from the CHEAP /api/projects
+  // (frontmatter read, ~0 git on a hit). This is what makes the always-open app cheap.
   try {
     const projects = await getJson('/api/projects');
-    const unmerged = projects.reduce((n, p) => n + (p.unmerged || 0), 0);
-    app.setBadgeCount(unmerged);
-    console.log(`[cogyard] dock badge = ${unmerged} unmerged worktree(s)`);
+    const claimed = projects.reduce((n, p) => n + (p.claimed || 0), 0);
+    app.setBadgeCount(claimed);
+    console.log(`[cogyard] dock badge = ${claimed} claimed task(s)`);
   } catch {
     return; // server offline/transient — keep the last badge, skip notifications
   }

@@ -5,8 +5,9 @@
 // /api/health
 export interface HealthResponse { ok: boolean; commit: string | null; version: string | null; projects: number; }
 
-// /api/projects
-export interface Project { slug: string; label: string; unmerged?: number; }
+// /api/projects — `claimed` backs the sidebar + dock badges (tasks in flight);
+// `unmerged` (worktrees ahead of main) still ships for the Branches/overview views.
+export interface Project { slug: string; label: string; claimed?: number; unmerged?: number; }
 
 // /api/tasks
 export interface TasksResponse { slug: string; label: string; tasks: any[]; }

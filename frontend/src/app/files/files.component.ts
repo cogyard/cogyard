@@ -159,12 +159,20 @@ export class FilesComponent implements OnDestroy {
     this.selected()?.onDisk !== false);
 
   // main first (primary clone first), then by latest activity desc.
+  // Wall-clock "now", ticked on a timer (not read live in the template). The
+  // pill "last activity" label is derived from THIS inside a computed so a
+  // single change-detection cycle sees one stable value — reading Date.now()
+  // straight from the template interpolation caused NG0100 when an async CD
+  // pass crossed a minute boundary (task 084).
+  private now = signal(Date.now());
+  private nowTimer = setInterval(() => this.now.set(Date.now()), 30_000);
   pills = computed(() => {
+    const nowMs = this.now();
     const ws = [...this.worktrees()];
     ws.sort((a, b) =>
       (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0) ||
       (b.lastActivity ?? '').localeCompare(a.lastActivity ?? ''));
-    return ws;
+    return ws.map((w) => ({ ...w, when: this.relTime(w.lastActivity, nowMs) }));
   });
   selectedWt = computed(() => this.wt() || (this.pills().find((w) => w.isMain)?.name ?? ''));
   // Absolute checkout path of the selected worktree — what the /api action
@@ -331,6 +339,7 @@ export class FilesComponent implements OnDestroy {
   }
 
   ngOnDestroy() {
+    clearInterval(this.nowTimer);
     this.editState.dirty.set(false);
     this.editor?.destroy();
     this.editor = null;
@@ -472,9 +481,9 @@ export class FilesComponent implements OnDestroy {
     return `assets/material-icons/${name}.svg`;
   }
 
-  relTime(iso: string | null): string {
+  relTime(iso: string | null, nowMs: number = Date.now()): string {
     if (!iso) return '—';
-    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    const s = (nowMs - new Date(iso).getTime()) / 1000;
     if (s < 90) return 'just now';
     if (s < 5400) return `${Math.round(s / 60)}m ago`;
     if (s < 129600) return `${Math.round(s / 3600)}h ago`;

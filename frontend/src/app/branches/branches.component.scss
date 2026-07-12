@@ -27,10 +27,6 @@
 .bt-row:last-child > td { border-bottom: none; }
 /* no row-wide hover wash: the row is not clickable — only the commit cell and links are */
 .bt-row.stale > td { background: #fffafa; }
-/* Box the main row by bordering its cells. */
-.bt-row.is-main > td { background: var(--app-accent-tint1); border-top: 1.5px solid var(--app-accent); border-bottom: 1.5px solid var(--app-accent); }
-.bt-row.is-main > td:first-child { border-left: 1.5px solid var(--app-accent); }
-.bt-row.is-main > td:last-child { border-right: 1.5px solid var(--app-accent); }
 /* Arrived-from-Worktrees highlight (mirrors graph's .dag-row.active). */
 .bt-row.active > td { background: var(--app-accent-tint2); }
 .bt-row.active > td:first-child { box-shadow: inset 3px 0 0 var(--app-accent); }
@@ -67,7 +63,7 @@ td.ctr, th.ctr { text-align: center; }
 .ahead, .behind { color: var(--app-fg-dim); font-weight: 600; }
 
 /* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
-   .p-tag.badge outranks the Aura .p-tag defaults. (The ⎇ chip is a p-button
+   .p-tag.badge outranks the Aura .p-tag defaults. (The branch-icon chip is a p-button
    with its own button.badge.wt rules above.) */
 :host ::ng-deep .p-tag.badge {
   font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; text-transform: uppercase;
@@ -77,6 +73,14 @@ td.ctr, th.ctr { text-align: center; }
 :host ::ng-deep .p-tag.badge.unpushed { background: #fef3c7; color: #92400e; }
 :host ::ng-deep .p-tag.badge.localonly { background: var(--app-surface-2); color: var(--app-fg-dim); }
 :host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
+/* main renders like the Graph page's main ref chip (inverse, trunk-black) —
+   the chip IS the marker, so the row keeps the normal background and no dot */
+:host ::ng-deep .p-tag.badge.main-ref {
+  background: #111827; color: #fff; border-radius: 3px; text-transform: none;
+  font-family: ui-monospace, monospace;
+}
+/* Blueprint git-branch icon — inherits the link's accent via currentColor */
+.branch-ico { width: 11px; height: 11px; fill: currentColor; vertical-align: -1px; margin-right: 3px; }
 /* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
 button.task-link {
   font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600;

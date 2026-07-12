@@ -1,13 +1,13 @@
-<div class="hm">
+<div class="hm" [class.labeled]="!!valueLabel()">
   <div class="hm-head">
-    <span class="hm-total">{{ total().toLocaleString() }} {{ noun() }} in the last year</span>
+    <span class="hm-total">{{ headerText() }} in the last year</span>
     <span class="hm-legend">
       Less
       <span class="cell l0"></span><span class="cell l1"></span><span class="cell l2"></span><span class="cell l3"></span><span class="cell l4"></span>
       More
     </span>
   </div>
-  <div class="hm-scroll">
+  <div class="hm-scroll" #scroller>
     <div class="hm-months">
       @for (w of grid(); track $index) { <span class="hm-month">{{ w.month || '' }}</span> }
     </div>
@@ -17,7 +17,7 @@
         @for (w of grid(); track $index) {
           <div class="hm-week">
             @for (c of w.cells; track $index) {
-              @if (c) { <button class="cell l{{ c.level }}" [title]="c.title" (click)="dayClick.emit(c.date)"></button> }
+              @if (c) { <button class="cell l{{ c.level }}" [title]="c.title" (click)="dayClick.emit(c.date)">{{ c.label }}</button> }
               @else { <span class="cell empty"></span> }
             }
           </div>

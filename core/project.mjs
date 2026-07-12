@@ -7,7 +7,7 @@
 import { join, basename } from 'node:path';
 import { gitP } from './exec.mjs';
 import { loadTasks, computeDerived } from './frontmatter.mjs';
-import { isClosed, bucketOf } from './status.mjs';
+import { isClosed, bucketOf, waitingWhyOf } from './status.mjs';
 
 function loadProject(projectPath) {
   const tasksDir = join(projectPath, '_tasks');
@@ -87,6 +87,7 @@ function tasksToData(tasks) {
     stale: !!t.derived?.stale,
     ready: !!t.derived?.ready,
     bucket: bucketOf(t.derived || {}, t.hasFrontmatter), // server-computed group; SPA consumes, never re-derives
+    waitingWhy: waitingWhyOf(t.derived || {}, t.hasFrontmatter), // derived "why" for the Waiting bucket; null elsewhere
     bodyMd: t.body || '',
     fm: t.frontmatter || {},
     hasFrontmatter: t.hasFrontmatter,
@@ -96,8 +97,9 @@ function tasksToData(tasks) {
 function generateIndexMd(tasks, project) {
   const lines = [`# Task index for ${project}`, '', `Generated ${new Date().toISOString()}`, ''];
   // Group via the shared SSOT (core/status.mjs bucketOf) — same categorization
-  // the portal and the /api `bucket` field use, so INDEX.md never drifts from them.
-  const buckets = { ready: [], inProgress: [], blocked: [], parked: [], stale: [], claimed: [], enough: [], done: [], obsolete: [], unknown: [] };
+  // the portal and the /api `bucket` field use, so INDEX.md never drifts from
+  // them. Four buckets (task 091); the done-family sub-groups by status.
+  const buckets = { ready: [], claimed: [], waiting: [], done: [] };
   for (const t of tasks) buckets[bucketOf(t.derived || {}, t.hasFrontmatter)].push(t);
   function row(t) {
     const fm = t.frontmatter || {};
@@ -107,7 +109,8 @@ function generateIndexMd(tasks, project) {
     const progress = t.derived?.totalCount > 0 ? ` (${t.derived.checkedCount}/${t.derived.totalCount})` : '';
     const claim = t.derived?.claimed ? ` 🔒 ${t.derived.claimedByName || t.derived.claimedBy || '?'}` : '';
     const stale = t.derived?.stale ? ' ⚠️ stale' : '';
-    return `- **${id}** [${title}](${file})${progress}${claim}${stale}`;
+    const why = waitingWhyOf(t.derived || {}, t.hasFrontmatter);
+    return `- **${id}** [${title}](${file})${progress}${claim}${stale}${why ? ` — ${why}` : ''}`;
   }
   function section(title, list) {
     if (!list.length) return;
@@ -118,15 +121,12 @@ function generateIndexMd(tasks, project) {
     lines.push('');
   }
   section('Ready to pick', buckets.ready);
-  section('Claimed (in progress on another worktree)', buckets.claimed);
-  section('In progress', buckets.inProgress);
-  section('Blocked', buckets.blocked);
-  section('Parked', buckets.parked);
-  section('Stale review needed', buckets.stale);
-  section('Enough (closed; leftovers harvestable)', buckets.enough);
-  section('Done', buckets.done.slice(-10));
-  section('Obsolete', buckets.obsolete);
-  section('Unknown / pre-frontmatter (backfill candidates)', buckets.unknown);
+  section('Claimed', buckets.claimed);
+  section('Waiting', buckets.waiting);
+  const byStatus = (s) => buckets.done.filter((t) => t.frontmatter?.status === s);
+  section('Enough (closed; leftovers harvestable)', byStatus('ENOUGH'));
+  section('Done', byStatus('DONE').slice(-10));
+  section('Obsolete', byStatus('OBSOLETE'));
   return lines.join('\n') + '\n';
 }
 

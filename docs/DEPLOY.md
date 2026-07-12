@@ -60,7 +60,8 @@ and not committed (the committed `Caddyfile.example` is the documentation).
 
 The portal can run as a standalone desktop app (Safari → File → Add to Dock, or
 any browser's "install"), and it sets a **dock badge** with the count of
-in-flight tasks via the Badging API (`navigator.setAppBadge`).
+in-flight tasks — claimed tasks summed across all projects — via the Badging
+API (`navigator.setAppBadge`).
 
 That API — and the Notification API — are **only available in a secure
 context**: an `https://` origin, or `localhost` / `127.0.0.1`. A plain-HTTP

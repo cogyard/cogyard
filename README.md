@@ -4,20 +4,22 @@
 
 <h1 align="center">cogyard</h1>
 
-<p align="center"><em>task coordination for parallel AI coding agents</em></p>
+<p align="center"><em>from AI chats to shipped products</em></p>
 
 <p align="center">
-  Markdown task files, a portal, and collision-free claims —
-  for running AI agents across all your projects.
+  Keep track of multiple projects running at once —
+  every task, worktree, and merge across every project in one place.
 </p>
 
 ---
 
-**cogyard** is a task system for coordinating AI coding agents (Claude Code
-first, but any agent or human plugs into the same CLI). Each project gets a
-`_tasks/` directory of markdown task files; a Node engine parses them, tracks
-git/worktree state, and allocates ports; an Angular portal gives you one
-cross-project view of what every agent is doing.
+**cogyard** takes you from AI chats to shipped products. The LLM is the new
+compiler: you think at product level, not code level, and direct a fleet of
+agents across all your projects at once. Each project gets a `_tasks/` directory
+of markdown task files; a Node engine parses them, tracks git/worktree state,
+allocates ports, and enforces atomic claims; an Angular portal shows every task,
+worktree, and merge across every project in one place. (Claude Code first, but
+any agent or human plugs into the same CLI.)
 
 The agent is the worker; you are the reviewer. Tasks in, checkmarks out.
 

@@ -9,6 +9,27 @@ Only *released* versions appear here. cogyard's version counter (the root
 only the versions actually cut with `bin/publish-snapshot` — so this history
 mirrors the `v*` release tags, not every intermediate bump.
 
+## [1.32.0] — 2026-07-14
+
+### Changed
+
+- **Messaging** — cogyard now describes itself as *"from AI chats to shipped
+  products"*: keep track of multiple projects running at once — every task,
+  worktree, and merge across every project in one place. The README tagline and
+  npm description were reframed accordingly (previously "task coordination for
+  parallel AI coding agents").
+- CI actions bumped to v5 (`actions/checkout`, `actions/setup-node`) for the
+  Node 20 runtime deprecation.
+
+### Added
+
+- **Push-triggered CI** — the test suite and a secret/leak scan now run on every
+  push to `main` (Ubuntu), not only when cutting a release.
+- **Manifest-completeness gate on every push** — CI checks the public-publish
+  allowlist against the tree (the same Layer 1 check `bin/publish-snapshot`
+  runs), so any new file that hasn't been classified public-or-private is caught
+  on push rather than at release time.
+
 ## [1.27.3] — 2026-07-12
 
 ### Added

@@ -16,6 +16,7 @@ scripts/ab-api.sh export-ignore
 # produced BY them, it does not contain them.
 bin/publish-snapshot export-ignore
 bin/backup-check export-ignore
+scripts/manifest-check.sh export-ignore
 scripts/secret-scan.sh export-ignore
 scripts/install-git-hooks.sh export-ignore
 scripts/githooks/pre-push export-ignore

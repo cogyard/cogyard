@@ -7,47 +7,47 @@
           [modal]="true" [dismissible]="!busy()" [header]="mode() === 'init' ? 'New project' : 'Add existing project'">
   <form class="np-form" (ngSubmit)="submit()">
     <label class="np-field">
-      <span class="np-label">Mode</span>
+      <span class="np-label eyebrow">Mode</span>
       <p-selectbutton size="small" [options]="modeOptions" optionLabel="label" optionValue="value"
                       [allowEmpty]="false" [ngModel]="mode()" (ngModelChange)="mode.set($event)" name="mode" />
     </label>
 
     @if (mode() === 'init') {
       <label class="np-field">
-        <span class="np-label">Project name</span>
+        <span class="np-label eyebrow">Project name</span>
         <div class="np-compose">
-          <span class="np-prefix" [title]="projectsRoot()">{{ projectsRoot() }}/</span>
+          <span class="np-prefix" [title]="projectsRoot()"><span class="np-prefix-txt">{{ projectsRoot() }}/</span></span>
           <input pInputText pSize="small" class="np-input np-name" name="name"
                  placeholder="my-project" [ngModel]="name()" (ngModelChange)="name.set($event)" />
         </div>
-        <span class="np-hint">Created under your projects root (change the base in Settings). → <code>{{ initFullPath() }}</code></span>
+        <span class="np-hint hint sm">Created under your projects root (change the base in Settings). → <code>{{ initFullPath() }}</code></span>
       </label>
     } @else {
       <label class="np-field">
-        <span class="np-label">Existing folder path</span>
+        <span class="np-label eyebrow">Existing folder path</span>
         <input pInputText pSize="small" class="np-input" name="path"
                placeholder="/Users/you/gitroot/existing-folder"
                [ngModel]="path()" (ngModelChange)="path.set($event)" />
-        <span class="np-hint">Added in place — existing files are never overwritten.</span>
+        <span class="np-hint hint sm">Added in place — existing files are never overwritten.</span>
       </label>
     }
 
     <label class="np-field">
-      <span class="np-label">Kind</span>
+      <span class="np-label eyebrow">Kind</span>
       <p-select size="small" [options]="kindOptions()" optionLabel="label" optionValue="value"
                 [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
-      @if (kindDescription()) { <span class="np-hint">{{ kindDescription() }}</span> }
+      @if (kindDescription()) { <span class="np-hint hint sm">{{ kindDescription() }}</span> }
     </label>
 
     <label class="np-field">
-      <span class="np-label">Store remote (optional)</span>
+      <span class="np-label eyebrow">Store remote (optional)</span>
       <input pInputText pSize="small" class="np-input" name="remote" placeholder="git@github.com:you/tasks.git"
              [ngModel]="remote()" (ngModelChange)="remote.set($event)" />
     </label>
 
     <div class="np-actions">
-      <button type="button" class="np-btn np-cancel" (click)="open.set(false)" [disabled]="busy()">Cancel</button>
-      <button type="submit" class="np-btn np-submit" [disabled]="!canSubmit()">
+      <button type="button" class="btn-pill" (click)="open.set(false)" [disabled]="busy()">Cancel</button>
+      <button type="submit" class="btn-primary" [disabled]="!canSubmit()">
         {{ busy() ? 'Working…' : (mode() === 'init' ? 'Create project' : 'Add project') }}
       </button>
     </div>

@@ -340,6 +340,65 @@ function collectActivity(opts = {}) {
 
 function readActivityLedger() { return readJsonl(ACTIVITY_PATH); }
 
+// --- task attribution fallback (task 103) ------------------------------------
+
+// Dominant task id in a {id: count} map: the top-count id. `floor` is the minimum
+// count the top id must clear (1 for commit tags — an own `[#NN]` commit is a
+// definitive signal; 2 for text refs — one passing `_tasks/NNN-` mention must not
+// tag). Ties resolve to the numerically lower id for determinism.
+function dominantTaskId(counts, floor) {
+  const entries = Object.entries(counts || {})
+    .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
+  if (!entries.length) return null;
+  const [id, n] = entries[0];
+  return n >= floor ? id : null;
+}
+
+// Fallback task attribution for usage rows carrying no claim-based taskId.
+//
+// The claim window (taskForTimestamp, applied at collection time → row.taskId) is
+// the precise, per-turn signal and stays AUTHORITATIVE. But most sessions never
+// run `cogyard env claim`, so their cost lands with taskId:null. This recovers it
+// from the SAME banked signals the Stats calendar's #NN chips use
+// (core/activity.mjs sessionTaskIds), MINUS the ephemeral worktree-name rung
+// (task 103): a session's own `[#NN]` commit tags (commitTasks), else its dominant
+// `_tasks/NNN-` references (tasks). Both are mined into activity.jsonl at
+// collection time and BANKED — so attribution survives transcript culling
+// (activity.jsonl is ledger data, not a transcript). Git is deliberately NOT a
+// source here: git can't tie a commit to a session, so a git/time-window join was
+// measured at only ~52% accuracy vs this banked signal (task 103 Phase 2).
+//
+// Session-level: exactly one id per session (claims already handle anything finer;
+// a session touching several tasks without claiming attributes to its top signal).
+// Ids are NUMBERS, matching the taskId type everywhere else (claims.jsonl,
+// usage.jsonl rows, task frontmatter `id`, the SPA's `t.id`) — the mined signal
+// keys are digit strings only because JSON object keys are strings.
+// → Map sessionId → taskId number
+function sessionTaskFallback() {
+  const bySession = new Map();
+  for (const row of readActivityLedger()) {
+    if (!row.sessionId) continue;
+    let s = bySession.get(row.sessionId);
+    if (!s) { s = { commitTasks: {}, tasks: {} }; bySession.set(row.sessionId, s); }
+    for (const [id, n] of Object.entries(row.commitTasks || {})) s.commitTasks[id] = (s.commitTasks[id] || 0) + n;
+    for (const [id, n] of Object.entries(row.tasks || {})) s.tasks[id] = (s.tasks[id] || 0) + n;
+  }
+  const out = new Map();
+  for (const [sid, s] of bySession) {
+    const id = dominantTaskId(s.commitTasks, 1) ?? dominantTaskId(s.tasks, 2);
+    if (id != null) out.set(sid, Number(id));
+  }
+  return out;
+}
+
+// A row's effective task id: the claim-window id if collection stamped one (kept
+// in its ledger type — a number), else the banked session fallback. Null when
+// neither fires (the `(no task)` bucket).
+function effectiveTaskId(row, fallback) {
+  if (row.taskId != null) return row.taskId;
+  return fallback.get(row.sessionId) ?? null;
+}
+
 // --- queries (for the API + CLI report) --------------------------------------
 
 function readUsageLedger() { return readJsonl(LEDGER_PATH); }
@@ -386,6 +445,7 @@ function usageRollup() {
 // `proj__clone`).
 function projectUsage(slug) {
   const inProject = (row) => { const p = row.project || '(unknown)'; return p === slug || p.startsWith(slug + '__'); };
+  const fallback = sessionTaskFallback();
   const models = {};
   const tasks = new Map();
   const worktrees = new Map();
@@ -396,8 +456,9 @@ function projectUsage(slug) {
     total.sessions.add(row.sessionId);
     if (!models[row.model]) models[row.model] = newBucket();
     foldRow(models[row.model], row);
-    const tkey = row.taskId ?? '(no task)';
-    if (!tasks.has(tkey)) tasks.set(tkey, newBucket({ taskId: row.taskId, models: {} }));
+    const taskId = effectiveTaskId(row, fallback);
+    const tkey = taskId ?? '(no task)';
+    if (!tasks.has(tkey)) tasks.set(tkey, newBucket({ taskId, models: {} }));
     const t = tasks.get(tkey);
     foldRow(t, row);
     if (!t.models[row.model]) t.models[row.model] = newBucket();
@@ -424,11 +485,13 @@ function projectUsage(slug) {
 
 function taskUsage(slug, taskId) {
   const want = String(taskId);
+  const fallback = sessionTaskFallback();
   const models = {};
   const total = newBucket({ sessions: new Set() });
   for (const row of readUsageLedger()) {
     if ((row.project || '(unknown)') !== slug) continue;
-    if (String(row.taskId) !== want) continue;
+    const eff = effectiveTaskId(row, fallback);
+    if (eff == null || String(eff) !== want) continue;
     foldRow(total, row);
     total.sessions.add(row.sessionId);
     if (!models[row.model]) models[row.model] = newBucket();
@@ -446,4 +509,5 @@ export {
   USAGE_DIR, LEDGER_PATH, CLAIMS_PATH, ACTIVITY_PATH, transcriptsRoot, findTranscriptsForSession,
   appendClaimEvent, claimWindows, resolveProjectForPath,
   collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage,
+  sessionTaskFallback, effectiveTaskId,
 };

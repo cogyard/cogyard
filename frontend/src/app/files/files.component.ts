@@ -188,6 +188,8 @@ export class FilesComponent implements OnDestroy {
   twoRowPx = signal(0);
 
   changedCount = computed(() => this.treeFiles().filter((f) => f.status).length);
+  // Badge CSS suffix: '?' (untracked) isn't a valid class char → map to 'u'.
+  stCls = (s: string) => (s === '?' ? 'u' : s.toLowerCase());
   private statusByPath = computed(() => new Map(this.treeFiles().map((f) => [f.path, f])));
   selected = computed(() => (this.file() ? this.statusByPath().get(this.file()) ?? null : null));
 
@@ -213,11 +215,18 @@ export class FilesComponent implements OnDestroy {
     // Dirs holding ≥1 tracked file are "git" dirs; the rest (node_modules, dist…)
     // are non-git and gray out like non-git files.
     const trackedDirs = new Set<string>();
+    // Dirs holding ≥1 untracked-not-ignored ('?') file — they carry a muted '?'
+    // badge, mirroring the file badge so an all-untracked dir isn't left blank.
+    const untrackedDirs = new Set<string>();
     for (const f of files) {
       const segs = f.path.split('/');
       for (let i = 1; i < segs.length; i++) {
         const dir = segs.slice(0, i).join('/');
-        if (f.status) changedDirs.add(dir);
+        // Only REAL git changes light the amber dir dot. An untracked '?' file
+        // (OS junk, tool output) is not a change worth flagging up the tree —
+        // else a non-git dir like .playwright-mcp looks like it has commits.
+        if (f.status && f.status !== '?') changedDirs.add(dir);
+        if (f.status === '?') untrackedDirs.add(dir);
         if (f.tracked) trackedDirs.add(dir);
       }
     }
@@ -239,7 +248,7 @@ export class FilesComponent implements OnDestroy {
         out.push({
           key: dirPath, label: name, leaf: false, expanded: isOpen(dirPath),
           children: walk(child, dirPath),
-          data: { kind: 'dir', path: dirPath, hasChanges: changedDirs.has(dirPath), tracked: trackedDirs.has(dirPath) },
+          data: { kind: 'dir', path: dirPath, hasChanges: changedDirs.has(dirPath), tracked: trackedDirs.has(dirPath), untracked: untrackedDirs.has(dirPath) },
         });
       }
       for (const f of n.files.sort((a, b) => a.path.localeCompare(b.path))) {

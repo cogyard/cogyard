@@ -7,7 +7,7 @@
 // it never throws on malformed input (that IS the thing it reports).
 
 import { basename } from 'node:path';
-import { STATUSES, isValidStatus, isLegacyStatus, hasDoneDate, CATEGORIES, isValidCategory } from './status.mjs';
+import { STATUSES, isValidStatus, isLegacyStatus, hasDoneDate, TYPES, isValidType } from './status.mjs';
 
 // Top-level fields expected on a v2 task. Missing → warning (soft: older files
 // predate some fields); present-but-wrong-shape → error.
@@ -57,11 +57,13 @@ export function validateTask(task, ctx = {}) {
   else if (isLegacyStatus(fm.status)) warn(`status: "${fm.status}" is retired — task blocker → depends_on + OPEN; external blocker → PARKED (file shows as Waiting meanwhile)`);
   else if (!isValidStatus(fm.status)) err(`status: "${fm.status}" not one of ${STATUSES.join(' | ')}`);
 
-  // category — required, closed enum. Orthogonal to status: status is
-  // lifecycle, category is kind. Required (error if missing/invalid); `labels` by
-  // contrast is open and optional, so it is never required here.
-  if (fm.category == null) err(`category: missing (required — one of ${CATEGORIES.join(' | ')})`);
-  else if (!isValidCategory(fm.category)) err(`category: "${fm.category}" not one of ${CATEGORIES.join(' | ')}`);
+  // type — required, closed enum. Orthogonal to status: status is lifecycle,
+  // type is kind. Required (error if missing/invalid); `labels` by contrast is
+  // open and optional, so it is never required here. `fm.type` is populated from
+  // a legacy `category:` key at parse time (core/frontmatter.mjs), so old files
+  // that predate the task-096 rename still validate.
+  if (fm.type == null) err(`type: missing (required — one of ${TYPES.join(' | ')})`);
+  else if (!isValidType(fm.type)) err(`type: "${fm.type}" not one of ${TYPES.join(' | ')}`);
 
   // id — present, well-formed, and matching the filename prefix.
   const fnId = filenameIdToken(file);

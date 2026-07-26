@@ -12,10 +12,14 @@
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, openSync, readSync, closeSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 
 const HOME = homedir();
 const TRANSCRIPTS_ROOT = join(HOME, '.claude', 'projects');
+// Claude Desktop's chat metadata (macOS): one whole-file JSON per chat, nested
+// two dirs deep. NOT jsonl — a line-by-line parser silently yields zero rows.
+const DESKTOP_SESSIONS_ROOT = join(HOME, 'Library', 'Application Support', 'Claude', 'claude-code-sessions');
 // <repo>/.claude/worktrees/<name> — capture the repo root and the worktree name.
 const WORKTREE_RE = /^(.*)\/\.claude\/worktrees\/([^/]+)/;
 
@@ -135,7 +139,135 @@ export default {
       }
       return out;
     },
+    // The first HUMAN prompt text in a transcript — the chat's LABEL. Same
+    // human-turn predicate as parseLine (skip tool results / meta / injected
+    // `<…>` reminders), but returns the words, capped ≤100 chars. Bounded
+    // head-read only: transcripts run to many MB, and the first typed prompt is
+    // always near the top. null when unreadable or no human turn is found.
+    firstHumanLabel(file) {
+      if (!file) return null;
+      let head;
+      try {
+        const fd = openSync(file, 'r');
+        const buf = Buffer.alloc(256 * 1024);
+        const n = readSync(fd, buf, 0, buf.length, 0);
+        closeSync(fd);
+        head = buf.subarray(0, n).toString('utf8');
+      } catch { return null; }
+      for (const line of head.split('\n')) {
+        if (!line.trim()) continue;
+        let obj;
+        try { obj = JSON.parse(line); } catch { continue; }
+        if (obj.type !== 'user' || obj.toolUseResult || obj.isMeta) continue;
+        const c = obj.message && obj.message.content;
+        let text = null;
+        if (typeof c === 'string') text = c;
+        else if (Array.isArray(c)) {
+          const t = c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n');
+          if (t) text = t;
+        }
+        const trimmed = (text || '').trim();
+        // Skip injected/reminder turns (serialized content starting with '<' —
+        // command wrappers, tool results, system reminders); the owner's first
+        // *typed* prompt is the label.
+        if (!trimmed || trimmed.startsWith('<')) continue;
+        return trimmed.length > 100 ? trimmed.slice(0, 99) + '…' : trimmed;
+      }
+      return null;
+    },
+    // A transcript file → the readable conversation: an ordered list of
+    // { role: 'user'|'assistant', text, timestamp }. Human turns skip tool
+    // results / meta / injected `<…>` lines (same predicate as parseLine);
+    // assistant turns take the text blocks only (no thinking, no tool_use
+    // noise). Bounded: at most opts.maxTurns turns, each capped to
+    // opts.maxChars, with a `truncated` signal so the viewer can say so. This
+    // is the ONLY place the Claude transcript shape is read for display —
+    // core/portal stay format-agnostic (docs/DRIVERS.md).
+    readTurns(file, opts = {}) {
+      const maxTurns = opts.maxTurns || 600;
+      const maxChars = opts.maxChars || 8000;
+      const out = { turns: [], truncated: false };
+      if (!file) return out;
+      let raw;
+      try { raw = readFileSync(file, 'utf8'); } catch { return out; }
+      const cap = (s) => (s.length > maxChars ? s.slice(0, maxChars) + '\n…[turn truncated]' : s);
+      for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        if (out.turns.length >= maxTurns) { out.truncated = true; break; }
+        let obj;
+        try { obj = JSON.parse(line); } catch { continue; }
+        if (obj.type === 'user' && !obj.toolUseResult && !obj.isMeta) {
+          const c = obj.message && obj.message.content;
+          let text = typeof c === 'string' ? c
+            : Array.isArray(c) ? c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n') : '';
+          text = (text || '').trim();
+          // Skip injected/reminder turns (serialized `<…>`), keep typed prompts.
+          if (text && !text.startsWith('<')) out.turns.push({ role: 'user', text: cap(text), timestamp: obj.timestamp || null });
+        } else if (obj.type === 'assistant') {
+          const parts = obj.message && obj.message.content;
+          if (Array.isArray(parts)) {
+            const text = parts.filter((p) => p.type === 'text').map((p) => p.text || '').join('\n').trim();
+            if (text) out.turns.push({ role: 'assistant', text: cap(text), timestamp: obj.timestamp || null });
+          }
+        }
+      }
+      return out;
+    },
   },
 
   pricing: { versions: PRICING_VERSIONS, aliases: ALIASES },
+
+  sessions: {
+    supported: true,
+    // Claude Desktop chat metadata, normalized. Reads are unrestricted; the ONE
+    // sanctioned write is archive() below (task 106 trust model, owner-amended
+    // 2026-07-19). A chat tile's cliSessionId can be REBOUND to a different
+    // transcript over its lifetime (observed 2026-07-18) — callers must not
+    // assume 1:1.
+    list() {
+      if (!existsSync(DESKTOP_SESSIONS_ROOT)) return [];
+      const rows = [];
+      for (const rel of readdirSync(DESKTOP_SESSIONS_ROOT, { recursive: true })) {
+        if (!String(rel).endsWith('.json')) continue;
+        const file = join(DESKTOP_SESSIONS_ROOT, String(rel));
+        let d;
+        try { d = JSON.parse(readFileSync(file, 'utf8')); }
+        catch { continue; }
+        if (!d || typeof d !== 'object' || !('cliSessionId' in d)) continue;
+        rows.push({
+          title: d.title || null,
+          sessionId: d.cliSessionId || null,
+          cwd: d.cwd || d.originCwd || null,
+          isArchived: !!d.isArchived,
+          lastActivityAt: typeof d.lastActivityAt === 'number' ? new Date(d.lastActivityAt).toISOString() : null,
+          metaFile: file,
+        });
+      }
+      rows.sort((a, b) => String(b.lastActivityAt).localeCompare(String(a.lastActivityAt)));
+      return rows;
+    },
+    listArchived() { return this.list().filter((r) => r.isArchived); },
+    // Is the desktop app (the OWNER of the metadata store) running? While it
+    // is, archive() writes get clobbered by the app's in-memory state — proven
+    // live 2026-07-19 on "Pick up 77". Callers must refuse the archive path
+    // when this is true and point at the app's own archive tool instead.
+    appRunning() {
+      // ps, not pgrep — pgrep misses the app in some execution contexts
+      // (observed 2026-07-19) while ps -o comm reliably lists it.
+      const r = spawnSync('ps', ['ax', '-o', 'comm'], { encoding: 'utf8' });
+      return r.status === 0 && String(r.stdout).includes('Claude.app/Contents/MacOS/Claude');
+    },
+    // The single sanctioned metadata write: flip isArchived on one chat.
+    // Reversible (a UI flag, no data); the desktop app stays the owner of the
+    // file — a concurrent app write may win, which the caller accepts. Returns
+    // the re-read flag value so callers can verify the write stuck.
+    archive(sessionId) {
+      const row = this.list().find((r) => r.sessionId === sessionId);
+      if (!row) throw new Error(`no desktop chat metadata for session ${sessionId}`);
+      const d = JSON.parse(readFileSync(row.metaFile, 'utf8'));
+      d.isArchived = true;
+      writeFileSync(row.metaFile, JSON.stringify(d));
+      return !!JSON.parse(readFileSync(row.metaFile, 'utf8')).isArchived;
+    },
+  },
 };

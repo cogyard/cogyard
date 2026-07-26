@@ -1,4 +1,5 @@
 import { Component, input, output, inject, effect, signal, computed } from '@angular/core';
+import { GitRefComponent } from '../git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { FormsModule } from '@angular/forms';
 import { Tag } from 'primeng/tag';
@@ -16,7 +17,7 @@ interface FileGroup { title: string; kind: string; list: ChangeFile[]; }
 
 @Component({
   selector: 'app-commit-panel',
-  imports: [DiffViewComponent, FileActionsComponent, FormsModule, Tag, SelectButton, ToggleButton, Skeleton, Drawer],
+  imports: [DiffViewComponent, FileActionsComponent, FormsModule, Tag, SelectButton, ToggleButton, Skeleton, Drawer, GitRefComponent],
   templateUrl: './commit-panel.component.html',
   styleUrl: './commit-panel.component.scss',
   host: { '(document:keydown.escape)': 'onEsc()' },
@@ -28,6 +29,8 @@ export class CommitPanelComponent {
   // A commit hash, or 'wt:<abs path>' for a checkout's uncommitted-changes view.
   hash = input<string | null>(null);
   close = output<void>();
+  jumpBranch = output<string>();
+  jumpWorktree = output<string>();
 
   isWorktree = computed(() => (this.hash() ?? '').startsWith('wt:'));
   // Which checkout: the path carried in the hash; null = main checkout.

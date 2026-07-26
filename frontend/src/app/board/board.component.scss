@@ -1,7 +1,7 @@
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
 
 .board {
-  display: flex; gap: 14px; align-items: flex-start;
+  display: flex; gap: var(--app-space-5); align-items: flex-start;
   overflow-x: auto; padding-bottom: 12px;
 }
 .column {
@@ -9,18 +9,16 @@
   background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 8px; padding: 10px;
 }
 .col-head {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
-  font-size: 12px; font-weight: 600; color: var(--app-fg-dim); text-transform: uppercase; letter-spacing: 0.05em;
+  display: flex; align-items: center; gap: var(--app-space-3); margin: 0 0 10px;
 }
 .col-head .count {
   margin-left: auto; background: var(--app-border); color: var(--app-fg-dim); border-radius: 10px;
   padding: 1px 8px; font-size: 11px; font-weight: 600;
 }
-.cards { display: flex; flex-direction: column; gap: 8px; }
+.cards { display: flex; flex-direction: column; gap: var(--app-space-3); }
 /* Done column's status sub-groups — the sub-header IS the status (task 091) */
 .sub-head {
-  display: flex; align-items: center; gap: 8px; margin: 6px 0 0;
-  font-size: 11px; font-weight: 600; color: var(--app-fg-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  display: flex; align-items: center; gap: var(--app-space-3); margin: 6px 0 0;
   border-bottom: 1px solid var(--app-border); padding-bottom: 4px;
 }
 .sub-head .count { margin-left: auto; font-weight: 600; }
@@ -34,25 +32,24 @@
 }
 :host ::ng-deep .p-card.card:hover { border-color: var(--app-accent); box-shadow: 0 1px 4px color-mix(in srgb, var(--app-accent) 12%, transparent); }
 :host ::ng-deep .p-card.card .p-card-body { padding: 9px 11px; }
-.card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.cid { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; color: var(--app-fg-muted); }
-.sub { margin-left: auto; font-size: 11px; color: var(--app-fg-dim); }
+.card-top { display: flex; align-items: center; gap: var(--app-space-3); margin-bottom: var(--app-space-2); }
+.cid { color: var(--app-fg-muted); }
+.sub { margin-left: auto; }
 /* forced emoji font — same reason as the tasks list: keep the solid ⚠️, not the text-style outline */
 .warn { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; cursor: default; }
-.card-title { font-size: 13px; font-weight: 500; color: var(--app-fg); line-height: 1.35; }
-.card-foot { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
-/* p-tag chips — ng-deep because styleClass lands on PrimeNG's element; rules
-   override the Aura tag defaults back to the original chip look. */
-:host ::ng-deep .p-tag.chip {
-  font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px;
-  font-family: ui-monospace, monospace; white-space: nowrap;
-}
-:host ::ng-deep .p-tag.chip.dep { background: #fef3c7; color: #92400e; }
-:host ::ng-deep .p-tag.chip.why { background: var(--app-surface-2); color: var(--app-fg-dim); font-family: inherit; }
-:host ::ng-deep .p-tag.chip.lock { background: #fee2e2; color: #b91c1c; }
-:host ::ng-deep .p-tag.chip.wt { background: var(--app-surface-2); color: var(--app-fg-dim); }
+/* task-title: the kanban card's task name. Renamed from .card-title so it stops
+   shadowing the GLOBAL .card-title recipe (14/700 panel title) — this is the
+   lighter 13/500 card-body title, a distinct local role. */
+.task-title { font-size: 13px; font-weight: 500; color: var(--app-fg); line-height: 1.35; }
+.card-foot { display: flex; flex-wrap: wrap; gap: var(--app-space-2); margin-top: var(--app-space-3); }
+/* chip SHAPE comes from the global .badge/.badge.mono recipe — colors only here
+   (ng-deep because styleClass lands on PrimeNG's element) */
+:host ::ng-deep .p-tag.badge.dep { background: #fef3c7; color: #92400e; }
+:host ::ng-deep .p-tag.badge.why { background: var(--app-surface-2); color: var(--app-fg-dim); }
+:host ::ng-deep .p-tag.badge.lock { background: #fee2e2; color: #b91c1c; }
+:host ::ng-deep .p-tag.badge.wt { background: var(--app-surface-2); color: var(--app-fg-dim); }
 /* Blueprint git-branch icon inside the wt chip — inherits the chip color */
 .branch-ico { width: 10px; height: 10px; fill: currentColor; vertical-align: -1px; margin-right: 3px; }
 
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

@@ -109,6 +109,11 @@ function readTaskFile(path) {
   let fm;
   try { fm = parseFrontmatter(fmText); }
   catch (e) { return { path, frontmatter: null, body, hasFrontmatter: false, parseError: e.message }; }
+  // Legacy alias (task 096): the task-kind enum was `category`, now `type`. Old
+  // files still carry `category:`; canonicalize to `type` here — the single place
+  // that reads `category` — so every downstream consumer (validator, wire `fm`,
+  // portal, INDEX) sees one field and no mass task-file rewrite is forced.
+  if (fm && typeof fm === 'object' && !Array.isArray(fm) && fm.type == null && fm.category != null) fm.type = fm.category;
   return { path, frontmatter: fm, body, hasFrontmatter: true };
 }
 

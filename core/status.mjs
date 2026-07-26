@@ -31,9 +31,12 @@ export const STATUSES = Object.keys(STATUS);
 export const LEGACY_STATUSES = ['BLOCKED_ON'];
 export const isLegacyStatus = (s) => LEGACY_STATUSES.includes(s);
 
-// Task category — a required, closed enum orthogonal to status. Status
-// is lifecycle ("is it finished"); category is kind ("what sort of work"). A bug
-// is `category: bug` regardless of size — size is not the axis, kind is.
+// Task type — a required, closed enum orthogonal to status. Status
+// is lifecycle ("is it finished"); type is kind ("what sort of work"). A bug
+// is `type: bug` regardless of size — size is not the axis, kind is.
+// (Was `category` until task 096 — renamed to free `category` up as the word for
+// the axis-grouping story; the legacy `category:` key still parses, aliased to
+// `type` at the frontmatter parse boundary in core/frontmatter.mjs.)
 //   feature     — new capability / view / user-facing behavior
 //   maintenance — internal work, no new user-facing behavior: restructures, renames,
 //                 releases, dependency bumps, ops/infra housekeeping (the former
@@ -43,9 +46,9 @@ export const isLegacyStatus = (s) => LEGACY_STATUSES.includes(s);
 //   docs        — documentation, marketing, launch copy — non-code work
 // Deliberately tight (4 values — also fits the write-task AskUserQuestion 4-option
 // cap exactly). Do NOT add values without owner sign-off; finer grain (e.g. perf,
-// deps, a specific refactor) is a `label`, the open axis — not a new category.
-export const CATEGORIES = ['feature', 'maintenance', 'bug', 'docs'];
-export const isValidCategory = (c) => CATEGORIES.includes(c);
+// deps, a specific refactor) is a `label`, the open axis — not a new type.
+export const TYPES = ['feature', 'maintenance', 'bug', 'docs'];
+export const isValidType = (t) => TYPES.includes(t);
 
 export const isValidStatus = (s) => Object.prototype.hasOwnProperty.call(STATUS, s);
 export const isClosed = (s) => !!(STATUS[s] && !STATUS[s].open);

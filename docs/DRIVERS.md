@@ -81,6 +81,11 @@ export default {
     //     always return null: the attention views then show nothing for this
     //     agent instead of counting machine noise as human attention.
     parseLine(line) { return { sessionId, cwd, usage, prompt } /* | null */ },
+    // The first HUMAN prompt text in a transcript file — a chat's LABEL, for the
+    // task→chats lookup (core/task-chats.mjs). Same human-turn predicate as
+    // parseLine (skip tool results / meta / injected lines), but returns the
+    // words, capped short. Bounded head-read only. null when unreadable or none.
+    firstHumanLabel(file) { return '<≤100-char label>' /* | null */ },
   },
 
   // --- seam 3: pricing ------------------------------------------------------
@@ -90,6 +95,24 @@ export default {
     // Newest first. `models` keys are the exact model strings parseLine emits.
     versions: [{ version, effective, source, models: { '<model-id>': { input, output } } }],
     aliases: { /* shorthand → full model id */ },   // rates are $ per MILLION tokens
+  },
+
+  // --- seam 4: sessions ------------------------------------------------------
+  // The agent app's own chat metadata, for `cogyard sessions audit`/`retire`.
+  // Reads are unrestricted. The ONE sanctioned write is archive(): flip a
+  // single chat's archived flag (reversible UI state, no data) — used only by
+  // the retire flow's interactively-confirmed path. Nothing else in the
+  // engine may write through this seam, and transcripts are never touched.
+  sessions: {
+    supported: true,                 // false → sessions audit/retire report nothing
+    // Every chat, newest first:
+    //   { title, sessionId, cwd, isArchived, lastActivityAt /* ISO | null */ }
+    list() { return [/* rows */] },
+    listArchived() { return [/* archived subset */] },
+    // Mark one chat archived; return the flag re-read from the store so the
+    // caller can verify the write stuck (the agent app owns the store and a
+    // concurrent app write may win).
+    archive(sessionId) { return true },
   },
 };
 ```
@@ -101,8 +124,10 @@ export default {
   name: 'none',
   worktree:    { detect() { return null }, branchPrefix: null },
   transcripts: { supported: false, root() { return null }, list() { return [] },
-                 findBySession() { return [] }, parseLine() { return null } },
+                 findBySession() { return [] }, parseLine() { return null },
+                 firstHumanLabel() { return null } },
   pricing:     { versions: [], aliases: {} },
+  sessions:    { supported: false, listArchived() { return [] } },
 }
 ```
 

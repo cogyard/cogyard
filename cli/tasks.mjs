@@ -23,6 +23,7 @@ import {
   inferStatus,
   validateTasks,
   convertToSharedStore, joinSharedStore,
+  resolveAxes, axisLookup, registeredLabels,
 } from '../core/index.mjs';
 
 const HOME = homedir();
@@ -127,6 +128,54 @@ function cmdGenerate(opts) {
   writeFileSync(join(tasksDir, 'INDEX.md'), indexMd);
   if (!opts.quiet) process.stdout.write(`Wrote ${join(tasksDir, 'INDEX.md')}\n`);
   return { tasks, project, tasksDir };
+}
+
+// `labels` — the anti-duplicate reference the write-task skill checks BEFORE
+// proposing labels for a new task (task 096). Prints the curated registry (the
+// resolved shared + per-project axes) grouped by axis, with how many current
+// tasks use each label, then the in-use-but-unregistered labels (the Ungrouped
+// candidates that risk spawning synonyms). Read-only — never edits anything; it
+// is emphatically NOT a merge/rename "broom" (that stays out of scope).
+function cmdLabels(flags) {
+  const repoRoot = findRepoRoot();
+  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
+  const axes = resolveAxes(repoRoot);
+  const registered = registeredLabels(axes);
+
+  // In-use labels across this project's tasks, with counts.
+  const inUse = new Map();
+  if (tasksDir && existsSync(tasksDir)) {
+    for (const t of loadTasks(tasksDir)) {
+      const ls = Array.isArray(t.frontmatter?.labels) ? t.frontmatter.labels : [];
+      for (const l of ls) inUse.set(l, (inUse.get(l) || 0) + 1);
+    }
+  }
+  const unregisteredInUse = [...inUse.keys()].filter((l) => !registered.has(l)).sort();
+
+  if (flags.json) {
+    process.stdout.write(JSON.stringify({
+      axes: axes.map((a) => ({ name: a.name, color: a.color, labels: a.labels })),
+      registered: [...registered].sort(),
+      inUse: [...inUse.keys()].sort(),
+      unregisteredInUse,
+    }, null, 2) + '\n');
+    return;
+  }
+
+  if (!axes.length) {
+    process.stdout.write('No axis map ($COGYARD_HOME/axes.json or <repo>/_tasks/axes.json). All labels are Ungrouped.\n');
+  }
+  for (const ax of axes) {
+    process.stdout.write(`\n${ax.name}\n`);
+    for (const l of ax.labels) {
+      const n = inUse.get(l) || 0;
+      process.stdout.write(`  ${l}${n ? ` (${n})` : ''}\n`);
+    }
+  }
+  if (unregisteredInUse.length) {
+    process.stdout.write('\nUngrouped (in use, not in any axis — reuse one of the above instead of minting a synonym):\n');
+    for (const l of unregisteredInUse) process.stdout.write(`  ${l} (${inUse.get(l)})\n`);
+  }
 }
 
 function cmdProjects(args) {
@@ -825,6 +874,11 @@ Subcommands:
   validate                            Check task frontmatter against the v2 schema (drift audit)
     --all                             Validate every registered project (else: current repo only)
     --errors-only                     Suppress warnings; show only schema errors
+  labels                              List the curated label registry (resolved shared +
+                                      per-project axes) grouped by axis, with in-use counts,
+                                      then in-use-but-unregistered labels. Read-only reference
+                                      the write-task skill checks before minting new labels.
+    --json                            Machine-readable (axes, registered, inUse, unregisteredInUse)
   cleanup [slug] [--dry-run]          Reclaim build/install dirs (node_modules,
                                       dist, .angular, out-tsc, coverage, release —
                                       any depth) from worktrees that are MERGED
@@ -863,6 +917,7 @@ switch (cmd) {
   case 'staleness': cmdStaleness(); break;
   case 'drift': cmdDrift(opts.positional[1]); break;
   case 'validate': cmdValidate(opts.flags); break;
+  case 'labels': cmdLabels(opts.flags); break;
   case 'cleanup': cmdCleanup(opts).catch((e) => fail(e.message)); break;
   case undefined:
     if (opts.flags.backfill) cmdBackfill();

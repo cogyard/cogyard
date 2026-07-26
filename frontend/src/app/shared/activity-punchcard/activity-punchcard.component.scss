@@ -1,11 +1,12 @@
+/* Gaps in this file size a DATA VISUALISATION (chart cells), not UI spacing.
+   They are deliberate exceptions to the --app-space-* scale in styles.scss —
+   snapping them to the ramp would resize the chart. Task 104. */
 // Layout only; intensity reuses the heatmap ramp tokens so "more" reads the
 // same green everywhere.
 .pc { display: block; }
 
 .pc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-.pc-toggle { display: inline-flex; gap: 4px; }
-.pc-title { font-size: 13px; font-weight: 600; color: var(--app-fg); }
-.pc-sub { font-size: 11px; font-weight: 400; color: var(--app-fg-muted); }
+.pc-toggle { display: inline-flex; gap: var(--app-space-2); }
 
 .pc-row, .pc-axis-row { display: flex; align-items: center; margin-bottom: 3px; }
 .pc-day {

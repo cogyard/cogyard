@@ -1,4 +1,5 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
+import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { Tag } from 'primeng/tag';
@@ -16,7 +17,7 @@ import { buildBuckets, Bucket, BucketSub } from '../shared/task-buckets';
 // drag-to-change-status in v1).
 @Component({
   selector: 'app-board',
-  imports: [Tag, Card, TooltipModule, Skeleton],
+  imports: [Tag, Card, TooltipModule, Skeleton, GitRefComponent],
   templateUrl: './board.component.html',
   styleUrl: './board.component.scss',
 })
@@ -26,6 +27,7 @@ export class BoardComponent {
   private store = inject(StoreService);
   slug = input.required<string>();
   jumpTask = output<string>();
+  jumpWorktree = output<string>();
 
   // Shares the 'tasks|<slug>' cache entry with the Tasks list — one fetch feeds both.
   private cached = computed(() => this.store.sig<TasksResponse>(`tasks|${this.slug()}`)());

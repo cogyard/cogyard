@@ -1,4 +1,5 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
+import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { Tag } from 'primeng/tag';
 import { OriginLinkComponent } from '../shared/origin-link/origin-link.component';
@@ -25,7 +26,7 @@ interface Row {
 
 @Component({
   selector: 'app-graph',
-  imports: [Tag, Skeleton, OriginLinkComponent],
+  imports: [Tag, Skeleton, OriginLinkComponent, GitRefComponent],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss',
 })
@@ -36,6 +37,8 @@ export class GraphComponent {
   slug = input.required<string>();
   activeHash = input<string | null>(null);
   openCommit = output<string>();
+  jumpBranch = output<string>();
+  jumpWorktree = output<string>();
   jumpTask = output<string>();
 
   // The row currently open in the diff panel (commit hash or 'wt:<path>') — highlight it.

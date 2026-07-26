@@ -1,15 +1,15 @@
 @if (date()) {
   <div class="ad">
     <div class="ad-head">
-      <span class="ad-title">{{ title() }}</span>
-      <span class="ad-summary">{{ summary() }}</span>
+      <span class="widget-title">{{ title() }}</span>
+      <span class="ad-summary hint">{{ summary() }}</span>
       <button class="ad-close" (click)="closed.emit()" title="Close">✕</button>
     </div>
 
     @if (loading()) {
-      <div class="ad-loading">Loading…</div>
+      <div class="ad-loading hint">Loading…</div>
     } @else if (!rows().length) {
-      <div class="ad-loading">No mined activity on this day.</div>
+      <div class="ad-loading hint">No mined activity on this day.</div>
     } @else {
       <div class="ad-strip-row">
         <span class="ad-label" title="Hours where two or more agent sessions were active at once — delegated work running in parallel while your attention was elsewhere">parallel</span>

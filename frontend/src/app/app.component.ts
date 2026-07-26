@@ -174,7 +174,11 @@ export class AppComponent implements OnInit {
   openNewProject() { this.newProject()?.start('init'); }
   setTab(t: Tab) { this.guardedNav(['/p', this.slug(), t]); }
   jumpToTask(id: string) { this.guardedNav(['/p', this.slug(), 'tasks'], { queryParams: { task: id } }); }
-  jumpToWorktree(_name: string) { this.guardedNav(['/p', this.slug(), 'worktrees']); }
+  // Worktrees honors ?wt=<name> the way Branches honors ?branch= — switching tab
+  // without selecting the row you clicked was the old behaviour (task 104).
+  jumpToWorktree(name: string) {
+    this.guardedNav(['/p', this.slug(), 'worktrees'], { queryParams: { wt: name || null } });
+  }
   selectProject(slug: string) { this.guardedNav(['/p', slug, 'tasks']); }
   openCommit(hash: string) {
     this.router.navigate(['/p', this.slug(), this.tab()], { queryParams: { commit: hash }, queryParamsHandling: 'merge' });

@@ -9,6 +9,54 @@ Only *released* versions appear here. cogyard's version counter (the root
 only the versions actually cut with `bin/publish-snapshot` — so this history
 mirrors the `v*` release tags, not every intermediate bump.
 
+## [1.47.2] — 2026-07-24
+
+### Added
+
+- **Find the chats behind a task** — every task now links to the Claude chats
+  that created, implemented, and mentioned it, and you can read a chat's
+  transcript in a popup right from the portal (or from the CLI with
+  `cogyard sessions chats <id>`, or the `/task-chats` command). The lookup is
+  durable: it survives archiving a chat and removing its worktree.
+- **Archived-chat cleanup** — `cogyard sessions audit` / `archivable` / `retire`
+  (and a `/retire-chat` command) find finished chats and, once a chat's branch is
+  merged and its worktree clean, archive the chat and remove the leftover
+  worktree — gated, one typed confirmation at a time, never touching transcripts.
+- **Label axes** — group and color tasks by label in the portal. A category
+  grouping renders two-level lanes, a Settings axis manager curates the axes, and
+  each project's axis map lives in its task store.
+- **Per-task cost** — token cost is attributed to a task from its banked activity
+  (its own commits and references), not only from formal claims, and the Tasks
+  view gains a sortable Cost column.
+- **Worktrees Links column** — quick links surfaced per worktree.
+
+### Changed
+
+- **Tasks view redesign** — status, type, and label-category are now three
+  independent axes: flat or grouped, a group-by control, and a type filter, so
+  each answers exactly one question.
+- **Task `category` field renamed to `type`** (one of feature / maintenance /
+  bug / docs). Older files that still carry `category:` are read transparently.
+- **Portal design-system pass** — the SPA moved onto shared typography, spacing,
+  badge, and button recipes with a single type ramp, spacing scale, and table
+  density. A large visual-consistency cleanup with no behaviour change.
+- **Pre-push safety** — pushing to `main` now runs the CI gates (tests,
+  leak-scan, manifest-check) locally first and blocks a push that would break CI.
+- **Worktree port pool** relocated to 30000–30999 / 31000–31999.
+
+### Fixed
+
+- The chats list no longer over-attributes a task from an incidental mention in a
+  transcript (a `git log` dump, a directory listing): only a chat's dominant
+  signal counts, so a task's chats are the chats that actually worked it.
+- The Files tab distinguishes untracked files and directories from real
+  additions.
+- Per-task cost stays numeric on the wire — a stringified id had silently emptied
+  the per-task usage box.
+- Table layout fixes across Branches, Worktrees, and the git graph: narrow-width
+  column collapse, cell truncation, ref chips showing the branch name, and the
+  worktrees table filling the available width.
+
 ## [1.32.0] — 2026-07-14
 
 ### Changed

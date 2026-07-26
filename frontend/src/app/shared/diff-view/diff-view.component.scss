@@ -1,6 +1,6 @@
 :host { display: block; }
-.diff-empty { color: var(--app-fg-muted); font-style: italic; font-size: 12px; padding: 8px; }
-.diff-binary { font-size: 11.5px; color: var(--app-fg-muted); font-style: italic; padding: 6px 8px; }
+.diff-empty { font-style: italic; padding: 8px; }
+.diff-binary { font-style: italic; padding: 6px 8px; }
 
 .diff {
   font-family: ui-monospace, 'SF Mono', monospace; font-size: 12px; line-height: 1.55;

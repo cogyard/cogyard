@@ -2,7 +2,7 @@
   <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
 } @else {
   <div class="toolbar">
-    <span class="ov-note">Cost columns = API-equivalent spend by model family, locked in when each task ran. Per-token-type detail on a project's Tasks tab.</span>
+    <span class="hint sm">Cost columns = API-equivalent spend by model family, locked in when each task ran. Per-token-type detail on a project's Tasks tab.</span>
     <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
   </div>
   <p-table styleClass="ov" [value]="rows()" dataKey="slug" size="small">
@@ -41,7 +41,7 @@
         </td>
         <td class="wt">
           {{ p.worktrees?.count || 0 }}
-          @if (p.worktrees?.stale) { <p-tag styleClass="badge stale" value="{{ p.worktrees.stale }} stale" /> }
+          @if (p.worktrees?.stale) { <p-tag styleClass="badge caps stale" value="{{ p.worktrees.stale }} stale" /> }
         </td>
         <td>
           @if (p.dirty) { <span class="dirty">● {{ p.dirty }}</span> } @else { <span class="dim">clean</span> }

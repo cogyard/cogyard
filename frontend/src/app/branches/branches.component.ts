@@ -1,4 +1,5 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
+import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { Tag } from 'primeng/tag';
@@ -13,7 +14,7 @@ const STALE_DAYS = 30; // highlight branches untouched longer than this
 
 @Component({
   selector: 'app-branches',
-  imports: [Tag, TableModule, TooltipModule, Skeleton, OriginLinkComponent],
+  imports: [Tag, TableModule, TooltipModule, Skeleton, OriginLinkComponent, GitRefComponent],
   templateUrl: './branches.component.html',
   styleUrl: './branches.component.scss',
 })

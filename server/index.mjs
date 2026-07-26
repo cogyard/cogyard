@@ -27,6 +27,7 @@ import * as actions from './routes/actions.mjs';
 import * as projectActions from './routes/projects.mjs';
 import * as config from './routes/config.mjs';
 import * as addons from './routes/addons.mjs';
+import * as axes from './routes/axes.mjs';
 
 const PORT = Number(process.env.PORT) || 7440;
 const log = pino();
@@ -46,9 +47,10 @@ const server = createServer(async (req, res) => {
     // Read-mostly API. Writes go ONLY through the http.mjs seam (requireSameOrigin
     // + readBody): POST /api/usage/collect (the refresh button), the
     // working-tree actions, POST /api/projects/{init,onboard} (the New/Adopt
-    // button), POST /api/{config,open-targets} (the settings view), and
+    // button), POST /api/{config,open-targets} (the settings view),
     // POST /api/addons/:id/:action (safe-tier add-on actions only),
-    // and POST /api/file (the Files-tab save). Everything else non-GET
+    // POST /api/axes (the settings axis manager — task 096), and
+    // POST /api/file (the Files-tab save). Everything else non-GET
     // is rejected outright.
     if (req.method === 'POST') {
       if (await usage.handlePost(path, req, res) !== false) return;
@@ -56,6 +58,7 @@ const server = createServer(async (req, res) => {
       if (await projectActions.handlePost(path, req, res) !== false) return;
       if (await config.handlePost(path, req, res) !== false) return;
       if (await addons.handlePost(path, req, res) !== false) return;
+      if (await axes.handlePost(path, req, res) !== false) return;
       if (await files.handlePost(path, req, res, core.discoverProjects()) !== false) return;
       return errJson(res, 405, 'method not allowed');
     }
@@ -67,6 +70,7 @@ const server = createServer(async (req, res) => {
     if (await activity.handle(path, u, projects, res) !== false) return;
     if (await config.handle(path, u, projects, res) !== false) return;
     if (await addons.handle(path, u, projects, res) !== false) return;
+    if (await axes.handle(path, u, projects, res) !== false) return;
 
     // Per-project endpoints below need a resolved project.
     const slug = u.searchParams.get('p');
@@ -83,6 +87,12 @@ const server = createServer(async (req, res) => {
     errJson(res, 500, String((e && e.message) || e));
   }
 });
+
+// Ship the default Surface label axis (task 096): idempotent, never clobbers an
+// existing $COGYARD_HOME/axes.json, so a fresh install gets grouping out of the
+// box while a customized map is left untouched. Best-effort — a write failure
+// just means resolveAxes degrades to flat, which is a safe state.
+core.seedSharedAxes();
 
 server.listen(PORT, () => log.info({ port: PORT }, 'cogyard API listening'));
 

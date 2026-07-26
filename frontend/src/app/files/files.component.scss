@@ -1,12 +1,16 @@
 :host { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
-.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 .empty { color: var(--app-fg-muted); font-style: italic; padding: 24px; text-align: center; }
-.empty .hint { font-size: 11.5px; margin-top: 6px; }
+.empty .hint { margin-top: var(--app-space-3); }
 
 /* --- worktree pills — native buttons (custom look, zero theme dynamics) ------- */
-.wt-pills-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding-bottom: 10px; }
-.wt-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+/* row, not column: the "… more" toggle sits at the end of the clamped block
+   instead of stranded on a third row of its own (which cost ~31px of vertical
+   space above every Files view for a single button). Task 104. */
+.wt-pills-wrap { display: flex; flex-direction: row; align-items: flex-start; gap: var(--app-space-3); padding-bottom: 10px; }
+.wt-pills-wrap .wt-pills { flex: 1 1 auto; }
+.wt-pills-wrap .pills-more { flex: 0 0 auto; }
+.wt-pills { display: flex; flex-wrap: wrap; gap: var(--app-space-3); }
 .wt-pills.clamped { overflow: hidden; }
 /* "… more" / "less" expander = global .btn-pill, just quieter */
 .pills-more { font-size: 11px; color: var(--app-fg-muted); padding-block: 2px; }
@@ -14,7 +18,6 @@
 button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-mix(in srgb, var(--app-accent-contrast) 75%, transparent); }
 .main-dot { color: var(--app-accent); font-size: 9px; }
 .wt-name { font-weight: 500; }
-.wt-when { color: var(--app-fg-muted); font-size: 11px; }
 
 /* --- two-pane layout ---------------------------------------------------------- */
 .layout {
@@ -24,10 +27,10 @@ button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-m
 
 .tree { border-right: 1px solid var(--app-border); display: flex; flex-direction: column; min-height: 0; }
 .tree-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3);
   padding: 6px 10px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
 }
-.tree-toggles { display: flex; align-items: center; gap: 6px; flex: none; }
+.tree-toggles { display: flex; align-items: center; gap: var(--app-space-3); flex: none; }
 /* mode/option controls = global .btn-toggle; only the count chip lives here */
 button.btn-toggle .cnt { font-weight: 700; }
 /* lazy gitignored-listing wait indicator */
@@ -38,13 +41,13 @@ button.btn-toggle .cnt { font-weight: 700; }
 /* Compact p-tree density to match the old 22px rows (PrimeNG internals → ng-deep). */
 :host ::ng-deep .ftree {
   padding: 0; font-size: 12.5px; border: none;
-  .p-tree-node-content { padding: 1px 6px; gap: 2px; border-radius: 0; color: inherit; }
+  .p-tree-node-content { padding: 1px 6px; gap: var(--app-space-1); border-radius: 0; color: inherit; }
   .p-tree-node-content.p-tree-node-selected { background: var(--app-accent-tint2); color: inherit; }
   .p-tree-node-content:not(.p-tree-node-selected):hover { background: var(--app-hover); }
   .p-tree-node-toggle-button { width: 16px; height: 16px; flex: none; }
   .p-tree-node-children { padding-left: 14px; }
 }
-.trow { display: inline-flex; align-items: center; gap: 6px; min-height: 20px; overflow: hidden; }
+.trow { display: inline-flex; align-items: center; gap: var(--app-space-3); min-height: 20px; overflow: hidden; }
 .trow.gone .fname { text-decoration: line-through; color: var(--app-fg-muted); }
 .ficon { width: 16px; height: 16px; flex: none; }
 .dirname { font-weight: 600; color: #3a3f47; }
@@ -56,11 +59,15 @@ button.btn-toggle .cnt { font-weight: 700; }
 .fname.full { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 
 /* p-tag status badges — ng-deep; .p-tag.st outranks the Aura .p-tag defaults */
+/* shape from the global .badge.mono recipe; a file-tree status chip is a SINGLE
+   letter inside a 20px tree row, so it keeps the tighter padding/leading only */
 :host ::ng-deep .p-tag.st {
-  font-family: ui-monospace, monospace; font-size: 10px; font-weight: 700; flex: none;
-  padding: 0 5px; border-radius: 8px; line-height: 16px;
+  flex: none; padding: 0 5px; line-height: 16px;
 }
 :host ::ng-deep .p-tag.st-a { background: #d1fae5; color: #047857; }
+/* '?' — untracked, not gitignored (OS junk, tool output). Muted so it reads as
+   "on disk, not in git", distinct from st-a (a real staged/committed addition). */
+:host ::ng-deep .p-tag.st-u { background: #eef0f2; color: #8b949e; }
 :host ::ng-deep .p-tag.st-m { background: #fef3c7; color: #b45309; }
 :host ::ng-deep .p-tag.st-d { background: #fde8e8; color: #b91c1c; }
 :host ::ng-deep :is(.p-tag.st-r, .p-tag.st-c, .p-tag.st-t) { background: var(--app-accent-tint2); color: var(--app-accent-tint-fg); }
@@ -68,16 +75,16 @@ button.btn-toggle .cnt { font-weight: 700; }
 /* --- content pane -------------------------------------------------------------- */
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .pane-bar {
-  display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+  display: flex; align-items: center; gap: var(--app-space-3); padding: 6px 12px;
   background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
 }
 .fpath { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meta { font-size: 11px; color: var(--app-fg-muted); white-space: nowrap; }
+.meta { white-space: nowrap; }
 .meta.warn { color: #b45309; font-weight: 600; }
 .spacer { flex: 1; }
 
 /* dark/light switch — top-right of the file panel's toolbar */
-.mode-switch { display: inline-flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.mode-switch { display: inline-flex; align-items: center; gap: var(--app-space-3); flex: 0 0 auto; }
 .mode-switch .ms-ico { font-size: 13px; color: var(--app-fg-muted); width: 14px; text-align: center; }
 
 .body { overflow: auto; flex: 1; min-height: 0; }
@@ -87,6 +94,9 @@ button.btn-toggle .cnt { font-weight: 700; }
 pre.code {
   margin: 0; padding: 12px 16px; font-family: ui-monospace, 'SF Mono', monospace;
   font-size: 12px; line-height: 1.55; tab-size: 4; min-width: 0;
+  /* No overflow-x here on purpose: the inner `code.hljs` already carries
+     overflow-x:auto from the highlight.js theme and scrolls its own long lines.
+     Adding it to the pre as well just nests two scroll regions. Task 104. */
 }
 
 /* --- edit mode ------------------------------------------------------ */
@@ -96,7 +106,7 @@ pre.code {
 :host ::ng-deep .cm-host .cm-editor { height: 100%; }
 :host ::ng-deep .cm-host .cm-editor.cm-focused { outline: none; }
 .edit-banner {
-  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  display: flex; align-items: center; gap: var(--app-space-4); flex-wrap: wrap;
   padding: 6px 12px; font-size: 12px; border-bottom: 1px solid var(--app-border);
 }
 .edit-banner.conflict { background: #fef3c7; color: #b45309; }
@@ -141,7 +151,7 @@ button.save-btn.on { font-weight: 700; }
    injected elements carry no _ngcontent attribute, so reach them via ng-deep. */
 .md { padding: 16px 22px; max-width: 860px; font-size: 13.5px; }
 :host ::ng-deep .md {
-  :is(h1, h2, h3) { margin: 18px 0 8px; }
+  :is(h1, h2, h3) { margin: var(--app-space-5) 0 var(--app-space-3); }
   h1 { font-size: 20px; } h2 { font-size: 16px; } h3 { font-size: 14px; }
   :is(p, ul, ol) { margin: 8px 0; }
   code { background: var(--app-surface-2); padding: 1px 4px; border-radius: 3px; font-size: 12px; font-family: ui-monospace, 'SF Mono', monospace; }
@@ -153,4 +163,4 @@ button.save-btn.on { font-weight: 700; }
 }
 
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

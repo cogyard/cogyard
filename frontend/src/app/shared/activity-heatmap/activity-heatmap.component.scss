@@ -1,3 +1,6 @@
+/* Gaps in this file size a DATA VISUALISATION (chart cells), not UI spacing.
+   They are deliberate exceptions to the --app-space-* scale in styles.scss —
+   snapping them to the ramp would resize the chart. Task 104. */
 // Sizing is local layout; every color is a token (--app-heat-* ramp).
 .hm { display: block; }
 
@@ -5,7 +8,6 @@
   display: flex; justify-content: space-between; align-items: baseline;
   margin-bottom: 8px;
 }
-.hm-total { font-size: 13px; font-weight: 600; color: var(--app-fg); }
 .hm-legend {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 11px; color: var(--app-fg-muted);

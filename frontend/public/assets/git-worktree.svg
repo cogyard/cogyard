@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" width="20" height="20">
+  <!-- Two independent git lines, a node mid-each, no connection — parallel
+       checkouts of one repo, unlike a branch (a split from a shared point).
+       Sized to fill the box like git-branch.svg (~80% wide, full height) with a
+       2.4 stroke so its visual weight matches that glyph's solid fill. -->
+  <g fill="none" stroke="#1f2328" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 1.5V7.6"/><circle cx="4" cy="10" r="2.2"/><path d="M4 12.4V18.5"/>
+    <path d="M16 1.5V7.6"/><circle cx="16" cy="10" r="2.2"/><path d="M16 12.4V18.5"/>
+  </g>
+</svg>

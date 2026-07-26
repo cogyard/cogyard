@@ -11,6 +11,7 @@ import { ProjectKind, OpenTargetFull, WeekStart } from '../services/models';
 import { fmtHour } from '../shared/activity-punchcard/activity-punchcard.component';
 import { PORTAL_TABS } from '../shared/portal-tabs';
 import { AddonsComponent } from './addons/addons.component';
+import { AxesComponent } from './axes/axes.component';
 
 // The /settings view AND the first-run setup wizard — the same form,
 // `wizard` just swaps the framing + shows the "add your first project" CTA. Every
@@ -21,7 +22,7 @@ import { AddonsComponent } from './addons/addons.component';
 // — rendered as a plain label until a 2nd adapter exists).
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, Select, SelectButton, InputText, Checkbox, AddonsComponent],
+  imports: [FormsModule, Select, SelectButton, InputText, Checkbox, AddonsComponent, AxesComponent],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.scss',
 })

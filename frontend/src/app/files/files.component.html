@@ -5,7 +5,7 @@
       <button class="btn-pill wt-pill" [class.active]="w.name === selectedWt()" (click)="selectWt(w.name)" [pTooltip]="w.path">
         @if (w.isMain) { <span class="main-dot">●</span> }
         <span class="wt-name">{{ w.isMain ? (w.branch || w.name) : w.name }}</span>
-        <span class="wt-when">{{ w.when }}</span>
+        <span class="wt-when hint sm">{{ w.when }}</span>
       </button>
     }
   </div>
@@ -51,9 +51,10 @@
               @if (n.data.kind === 'dir') {
                 <span class="dirname" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
                 @if (n.data.hasChanges) { <span class="chdot" pTooltip="contains changes">●</span> }
+                @if (n.data.untracked) { <p-tag styleClass="badge mono st st-u" value="?" pTooltip="untracked, not gitignored" /> }
               } @else {
                 <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
-                @if (n.data.status) { <p-tag styleClass="st st-{{ n.data.status.toLowerCase() }}" [value]="n.data.status" /> }
+                @if (n.data.status) { <p-tag styleClass="badge mono st st-{{ stCls(n.data.status) }}" [value]="n.data.status" /> }
               }
             </span>
           </ng-template>
@@ -66,9 +67,9 @@
     <div class="pane-bar">
       @if (file()) {
         <span class="fpath mono">{{ file() }}</span>
-        @if (selected()?.status) { <p-tag styleClass="st st-{{ selected()!.status!.toLowerCase() }}" [value]="selected()!.status!" /> }
-        @if (size()) { <span class="meta">{{ fmtSize(size()) }}</span> }
-        @if (truncated()) { <span class="meta warn">truncated at 1 MB</span> }
+        @if (selected()?.status) { <p-tag styleClass="badge mono st st-{{ stCls(selected()!.status!) }}" [value]="selected()!.status!" /> }
+        @if (size()) { <span class="meta hint sm">{{ fmtSize(size()) }}</span> }
+        @if (truncated()) { <span class="meta warn hint sm">truncated at 1 MB</span> }
       }
       <span class="spacer"></span>
       @if (file()) {
@@ -130,7 +131,7 @@
         } @else if (missing()) {
           <div class="empty">
             Not on disk in this worktree{{ selected() && !selected()!.onDisk ? ' — deleted vs ' + (vsRef() || 'main') : '' }}.
-            @if (selected()?.status) { <div class="hint">Use the diff toggle to see what was removed.</div> }
+            @if (selected()?.status) { <div class="hint sm">Use the diff toggle to see what was removed.</div> }
           </div>
         } @else if (binary()) {
           <div class="empty">Binary file ({{ fmtSize(size()) }}) — no text view.</div>

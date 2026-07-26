@@ -1,3 +1,6 @@
+/* Gaps in this file size a DATA VISUALISATION (chart cells), not UI spacing.
+   They are deliberate exceptions to the --app-space-* scale in styles.scss —
+   snapping them to the ramp would resize the chart. Task 104. */
 // Layout only + lane-color opacity steps; colors come through --app-cat-* via
 // the per-cell --lane custom property. The hatch (approx cost) is a repeating
 // gradient over the same lane color so estimates read as "same data, less sure".
@@ -7,9 +10,7 @@
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 8px;
 }
-.braid-title { font-size: 13px; font-weight: 600; color: var(--app-fg); }
-.braid-sort { font-size: 11px; font-weight: 400; color: var(--app-fg-muted); }
-.braid-toggle { display: inline-flex; gap: 4px; }
+.braid-toggle { display: inline-flex; gap: var(--app-space-2); }
 
 .braid-scroll { overflow-x: auto; }
 .braid-lanes { display: inline-block; min-width: 100%; }
@@ -57,6 +58,6 @@
 
 .braid-foot {
   display: flex; justify-content: space-between; align-items: center;
-  margin-top: 6px; font-size: 11px; color: var(--app-fg-muted);
-  .approx-key { display: inline-flex; align-items: center; gap: 4px; }
+  margin-top: 6px;
+  .approx-key { display: inline-flex; align-items: center; gap: var(--app-space-2); }
 }

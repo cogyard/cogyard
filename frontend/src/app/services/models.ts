@@ -10,7 +10,17 @@ export interface HealthResponse { ok: boolean; commit: string | null; version: s
 export interface Project { slug: string; label: string; claimed?: number; unmerged?: number; }
 
 // /api/tasks
-export interface TasksResponse { slug: string; label: string; tasks: any[]; }
+// A resolved label axis (task 096): a named, colored bundle of sibling labels.
+// `axes` is the shared+project map resolved server-side (core/axes.mjs); [] when
+// no map exists, which the portal renders as today's flat label list.
+export interface AxisRow { name: string; color: string; labels: string[]; }
+export interface TasksResponse { slug: string; label: string; tasks: any[]; axes?: AxisRow[]; }
+
+// GET/POST /api/axes — the /settings axis manager (task 096, Phase 4). Edits each
+// LAYER raw: scope 'shared' = machine-global ~/.cogyard/axes.json; 'project' = a
+// selected project's committed <repo>/.cogyard/axes.json. Both through the write seam.
+export interface AxesResponse { scope: 'shared' | 'project'; slug?: string; axes: AxisRow[]; ok?: boolean; }
+export interface SaveAxesRequest { scope: 'shared' | 'project'; slug?: string; axes: AxisRow[]; }
 
 // /api/worktrees
 export interface WorktreesResponse { slug: string; label: string; worktrees: any[]; }
@@ -75,6 +85,33 @@ export interface ProjectUsageResponse extends UsageBucket {
   models: Record<string, UsageBucket>;
   tasks: TaskUsage[];
   worktrees: WorktreeUsage[];
+}
+
+// Task → chats (task 30): which chats created/implemented/mentioned a task.
+export interface TaskChat {
+  sessionId: string;
+  role: 'created' | 'claimed' | 'committed' | 'mentioned';
+  label: string | null;
+  startedAt: string | null;
+  lastActiveAt: string | null;
+  transcriptPath: string | null;
+  archived: boolean;
+  inferred: boolean;
+}
+export interface TaskChatsResponse {
+  taskId: number;
+  project: string | null;
+  created: TaskChat | null;
+  implemented: TaskChat[];
+  mentioned: TaskChat[];
+}
+export interface TranscriptTurn { role: 'user' | 'assistant'; text: string; timestamp: string | null; }
+export interface TaskTranscriptResponse {
+  sessionId: string;
+  found: boolean;
+  transcriptPath: string | null;
+  turns: TranscriptTurn[];
+  truncated: boolean;
 }
 // POST /api/usage/collect
 export interface CollectResult { rows: number; files: number; skippedModels: string[]; }

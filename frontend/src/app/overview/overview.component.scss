@@ -8,7 +8,8 @@
    PROJECT/TASKS/COST headers overlap and project names truncate to one glyph
    (task 082). Give the table a legible floor width and let its container scroll
    horizontally below that, instead of crushing the columns. */
-:host ::ng-deep .p-datatable-table-container { overflow-x: auto; }
+/* overflow-x is now in the shared chrome (styles.scss) — this table was the
+   pattern the other two were brought onto. */
 :host ::ng-deep p-table table { min-width: 1120px; }
 
 .col-project { width: 18%; min-width: 150px; }
@@ -18,12 +19,12 @@
 .col-num { width: 78px; text-align: right; }
 .col-code { width: 86px; text-align: right; }
 .col-date { width: 92px; }
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
-.ov-note { color: var(--app-fg-muted); font-size: 11px; }
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-4); margin-bottom: var(--app-space-3); }
 
+/* height/padding/font-size come from the shared table chrome in styles.scss */
 .ov-row > td {
-  padding: 6px 10px; border-bottom: 1px solid var(--app-border);
-  height: 30px; font-size: 12px; overflow: hidden; white-space: nowrap;
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden; white-space: nowrap;
 }
 /* no display:flex on td — consecutive non-table-cell tds merge into one
    anonymous cell and shift every column after them */
@@ -37,9 +38,13 @@ td.num.strong { font-weight: 600; }
 td.ctr { text-align: center; }
 
 /* totals strip: a second header row, pinned above the data, sorting-immune */
+/* This row is <td>s inside <thead>, so it matches NEITHER the shared tbody rule
+   NOR the theme's th rule — it has to state the shared density itself. Keep these
+   two values in step with `p-table .p-datatable-tbody > tr > td` in styles.scss. */
 .totals-row > td {
-  padding: 5px 10px; background: var(--app-accent-tint1);
-  border-bottom: 2px solid var(--app-border); font-size: 12px; font-weight: 600;
+  padding: 5px 10px; font-size: 12.5px;
+  background: var(--app-accent-tint1);
+  border-bottom: 2px solid var(--app-border); font-weight: 600;
   color: var(--app-fg); white-space: nowrap;
 }
 .totals-row td.num { font-variant-numeric: tabular-nums; }
@@ -50,9 +55,10 @@ td.ctr { text-align: center; }
 .dirty { color: #b45309; font-weight: 600; }
 
 /* p-tag badge — ng-deep; .p-tag.badge outranks the Aura .p-tag defaults */
-:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; }
+/* shape comes from the global .badge recipe — color only here */
+:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
 
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }
 
 .act-gap { height: 14px; }

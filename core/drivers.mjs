@@ -32,8 +32,11 @@ const NOOP = {
     list() { return []; },
     findBySession() { return []; },
     parseLine() { return null; },
+    firstHumanLabel() { return null; },
+    readTurns() { return { turns: [], truncated: false }; },
   },
   pricing: { versions: [], aliases: {} },
+  sessions: { supported: false, list() { return []; }, listArchived() { return []; }, archive() { throw new Error('no agent driver active'); }, appRunning() { return false; } },
 };
 
 function listDriverNames() {

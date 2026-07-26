@@ -1,8 +1,6 @@
-<section class="addons-section">
-  <header class="addons-head">
-    <h3 class="addons-title">Add-ons</h3>
-    <p class="addons-sub">Capabilities that extend cogyard itself, installed at <code>~/.cogyard/addons/</code>. See <code>docs/ADDONS.md</code> to write your own.</p>
-  </header>
+<section class="settings-card addons-section">
+  <h3 class="card-title">Add-ons</h3>
+  <p class="card-hint">Capabilities that extend cogyard itself, installed at <code>~/.cogyard/addons/</code>. See <code>docs/ADDONS.md</code> to write your own.</p>
 
   @if (catalog(); as c) {
     @if (c.addons.length === 0 && c.invalid.length === 0) {
@@ -18,13 +16,13 @@
             <span class="addon-icon">{{ a.icon || '🧩' }}</span>
             <div class="addon-titles">
               <span class="addon-name">{{ a.label }}
-                @if (a.thirdParty) { <span class="pill third-party">3rd-party</span> }
-                @if (prereqBroken(a)) { <span class="pill warn" title="A prerequisite is missing — open Configure">prereq missing</span> }
+                @if (a.thirdParty) { <span class="badge third-party">3rd-party</span> }
+                @if (prereqBroken(a)) { <span class="badge caps warn" title="A prerequisite is missing — open Configure">prereq missing</span> }
               </span>
               <span class="addon-summary">{{ a.active && a.supported ? (statusFor(a.id)?.summary || a.description) : a.description }}</span>
             </div>
-            <span class="pill" [class.on]="pillFor(a).cls === 'on'" [class.warn]="pillFor(a).cls === 'warn'" [class.off]="pillFor(a).cls === 'off'">{{ pillFor(a).text }}</span>
-            <button type="button" class="set-btn" [disabled]="!a.active || !a.supported" (click)="openDialog(a)">Configure</button>
+            <span class="badge caps" [class.on]="pillFor(a).cls === 'on'" [class.warn]="pillFor(a).cls === 'warn'" [class.off]="pillFor(a).cls === 'off'">{{ pillFor(a).text }}</span>
+            <button type="button" class="btn-pill" [disabled]="!a.active || !a.supported" (click)="openDialog(a)">Configure</button>
             <p-toggleswitch [ngModel]="a.active" (ngModelChange)="setActive(a, $event)"
                             [disabled]="savingToggle() === a.id || !a.supported" [name]="'active-' + a.id"
                             [title]="a.supported ? (a.active ? 'Switch off (installed but inert)' : 'Switch on') : 'Not available on this OS'" />
@@ -42,13 +40,13 @@
               <span class="addon-name">{{ b.id }}</span>
               <span class="addon-summary">broken install — {{ b.error }}</span>
             </div>
-            <span class="pill off">broken</span>
+            <span class="badge caps off">broken</span>
           </div>
         }
       </div>
     }
   } @else {
-    <p class="addons-loading">Loading add-ons…</p>
+    <p class="hint">Loading add-ons…</p>
   }
 </section>
 
@@ -76,8 +74,8 @@
       @if (a.configSchema.length) {
         <div class="addon-config">
           @for (f of a.configSchema; track f.key) {
-            <label class="set-field">
-              <span class="set-label">{{ f.label }} @if (f.required && f.type !== 'boolean') { <span class="req">*</span> }</span>
+            <label class="field">
+              <span class="eyebrow">{{ f.label }} @if (f.required && f.type !== 'boolean') { <span class="req">*</span> }</span>
               @switch (f.type) {
                 @case ('enum') {
                   <p-select size="small" [options]="optionRows(f.options)" optionLabel="label" optionValue="value"
@@ -101,10 +99,10 @@
       }
 
       <div class="addon-actions">
-        <button type="button" class="set-btn" (click)="refresh()">Recheck</button>
+        <button type="button" class="btn-pill" (click)="refresh()">Recheck</button>
         @for (act of a.actions; track act.id) {
-          <button type="button" class="set-btn" [class.primary]="act.tier === 'safe' && !act.destructive"
-                  [class.danger]="act.destructive" [disabled]="!canRun(a, act)"
+          <button type="button" class="btn-pill"
+                  [disabled]="!canRun(a, act)"
                   [title]="act.tier === 'manual' ? 'Shows the command to run yourself — the portal never executes it' : ''"
                   (click)="run(a, act)">
             {{ act.label }}@if (act.tier === 'manual') { <span class="tier-mark"> ⌘</span> }
@@ -118,9 +116,9 @@
             <p class="card-hint">Run this yourself — the portal doesn't execute third-party/destructive commands:</p>
             <div class="command-row">
               <code class="command">{{ r.command }}</code>
-              <button type="button" class="set-btn" (click)="copyCommand(a.id, r.command)">{{ copiedFor() === a.id ? 'Copied' : 'Copy' }}</button>
+              <button type="button" class="btn-pill" (click)="copyCommand(a.id, r.command)">{{ copiedFor() === a.id ? 'Copied' : 'Copy' }}</button>
             </div>
-            @if (r.note) { <span class="set-hint">{{ r.note }}</span> }
+            @if (r.note) { <span class="hint sm">{{ r.note }}</span> }
           </div>
         } @else if (!r.manual) {
           <p class="safe-result" [class.failed]="!r.ok">{{ r.ok ? '✓' : '✗' }} {{ r.message || (r.ok ? 'done' : 'failed') }}</p>

@@ -1,6 +1,6 @@
 .live {
-  display: inline-flex; align-items: center; gap: 5px; cursor: default;
-  color: var(--text-subtle); font-size: 12px; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: var(--app-space-2); cursor: default;
+  color: var(--app-fg-muted); font-size: 12px; white-space: nowrap;
   font-family: ui-monospace, "SF Mono", monospace; font-variant-numeric: tabular-nums;
 }
 .live-pie {

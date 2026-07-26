@@ -3,37 +3,41 @@
 } @else if (!worktrees().length) {
   <div class="empty">No worktrees for this project.</div>
 } @else {
-  <div class="summary">
-    <strong>{{ worktrees().length }}</strong> worktrees · <strong>{{ staleCount() }}</strong> flagged stale (candidates for pruning)
-    @if (projectCost(); as pc) { · <strong>{{ pc }}</strong> total project cost (all worktrees, incl. deleted) }
-  </div>
-
   @for (sec of sections(); track sec.key) {
-    <div class="section-head" [class.stale]="sec.key === 'stale'">{{ sec.label }} ({{ sec.count }})</div>
+    <div class="section-head card-title" [class.stale]="sec.key === 'stale'">{{ sec.label }} ({{ sec.count }})</div>
     @for (g of sec.groups; track g.clone) {
-    @if (g.clone) { <div class="clone-head">{{ g.clone }} ({{ g.list.length }})</div> }
+    @if (g.clone) { <div class="clone-head section-label">{{ g.clone }} ({{ g.list.length }})</div> }
     <p-table styleClass="wt" [value]="g.list" dataKey="path" size="small">
       <ng-template #header>
         <tr>
           <th class="col-name" pSortableColumn="name">Worktree <p-sortIcon field="name" /></th>
-          <th class="col-branch">Branch</th>
+          <th class="col-links">Links</th>
           <th class="col-head">Head</th>
           <th class="ctr col-n" pSortableColumn="ahead">Ahead <p-sortIcon field="ahead" /></th>
           <th class="ctr col-n" pSortableColumn="behind">Behind <p-sortIcon field="behind" /></th>
           <th class="ctr col-n2">Dirty</th>
-          <th class="ctr col-cost" pSortableColumn="costUSD">Cost <p-sortIcon field="costUSD" /></th>
           <th class="ctr col-n2">Backend</th>
           <th class="ctr col-n2">Frontend</th>
-          <th>Flags</th>
+          <th class="col-flags">Flags</th>
         </tr>
       </ng-template>
       <ng-template #body let-w>
-        <tr class="wt-row" [class.stale]="w.stale">
+        <tr class="wt-row" [class.stale]="w.stale" [class.active]="isActive(w)">
           <td class="name">
-            <button class="celllink" (click)="jumpFiles.emit({ wt: w.isMain ? '' : w.name, file: null })">{{ w.name }}</button>
+            <!-- this IS the Worktrees tab, so the name goes nowhere (linked=false) -->
+            <app-git-ref kind="worktree" [name]="w.name" [linked]="false" />
           </td>
-          <td class="mono dim">
-            @if (w.branch) { <button class="celllink" (click)="jumpBranch.emit(w.branch)">{{ w.branch }}</button> } @else { — }
+          <td class="links">
+            @if (w.branch) {
+              <button class="btn-link lnk" (click)="jumpBranch.emit(w.branch)"
+                      [pTooltip]="w.branch" tooltipPosition="top">
+                <img class="lnk-ico" src="assets/git-branch.svg" alt="" aria-hidden="true" />branch
+              </button>
+            }
+            <button class="btn-link lnk" (click)="jumpFiles.emit({ wt: w.isMain ? '' : w.name, file: null })"
+                    [pTooltip]="'Browse ' + w.name + ' on the Files tab'" tooltipPosition="top">
+              <img class="lnk-ico" src="assets/files.svg" alt="" aria-hidden="true" />files
+            </button>
           </td>
           <td class="mono dim">
             @if (w.head) { <button class="headlink" (click)="openCommit.emit(w.head)">{{ w.head }}</button> } @else { — }
@@ -43,7 +47,6 @@
           <td class="ctr">
             @if (w.dirty == null) { — } @else if (w.dirty) { <span class="dirty">● {{ w.dirtyCount }}</span> } @else { <span class="dim">clean</span> }
           </td>
-          <td class="cost">{{ cost(w.name) }}</td>
           <td class="ctr mono">
             @if (w.ports?.backend) { <a class="portlink" href="http://localhost:{{ w.ports.backend }}" target="_blank" rel="noopener">{{ w.ports.backend }}</a> } @else { — }
           </td>
@@ -51,10 +54,11 @@
             @if (w.ports?.frontend) { <a class="portlink" href="http://localhost:{{ w.ports.frontend }}" target="_blank" rel="noopener">{{ w.ports.frontend }}</a> } @else { — }
           </td>
           <td class="flags">
-            @if (w.isMain) { <p-tag styleClass="badge main" value="main" /> }
-            @if (w.locked) { <p-tag styleClass="badge locked" value="locked" /> }
-            @if (w.stale) { <p-tag styleClass="badge stale" value="stale" [pTooltip]="w.staleReasons?.join('; ')" /> }
+            <!-- order is fixed: task number, then stale, then locked (task 104) -->
             @if (w.claimedByTaskId != null) { <button class="btn-link mono" (click)="jumpTask.emit('' + w.claimedByTaskId)">#{{ w.claimedByTaskId }}</button> }
+            @if (w.stale) { <p-tag styleClass="badge caps stale" value="stale" [pTooltip]="w.staleReasons?.join('; ')" /> }
+            @if (w.locked) { <p-tag styleClass="badge caps locked" value="locked" /> }
+            @if (w.isMain) { <p-tag styleClass="badge caps main" value="main" /> }
           </td>
         </tr>
       </ng-template>

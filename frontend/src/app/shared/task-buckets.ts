@@ -41,12 +41,14 @@ const DONE_SUBGROUPS: { status: string; title: string }[] = [
 // split Done's sub-groups once the buckets became the grouping).
 export const BUCKET_FILTERS = ['', ...BUCKET_KEY_ORDER];
 
-// Task categories — mirrors core/status.mjs CATEGORIES (the wire
-// contract: feature | maintenance | bug | docs). The icons are pure presentation
-// — there is no icon font in this portal, so each category shows a glyph.
-export const CATEGORIES = ['feature', 'maintenance', 'bug', 'docs'];
-export const CATEGORY_ICONS: Record<string, string> = {
-  feature: '✨', maintenance: '🔧', bug: '🐞', docs: '📖',
+// Task types — mirrors core/status.mjs TYPES (the wire contract:
+// feature | maintenance | bug | docs). The icons are pure presentation — there
+// is no icon font in this portal, so each type shows a glyph. (Was `category`
+// until task 096; the wire `fm.type` is aliased from a legacy `category:` key
+// server-side, so the SPA only ever reads `type`.)
+export const TYPES = ['feature', 'maintenance', 'bug', 'docs'];
+export const TYPE_ICONS: Record<string, string> = {
+  feature: '⭐', maintenance: '🔧', bug: '🐞', docs: '📖',
 };
 
 export interface BucketSub { title: string; list: any[]; }

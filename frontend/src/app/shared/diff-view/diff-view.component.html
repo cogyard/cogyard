@@ -1,7 +1,7 @@
 @if (binary()) {
-  <div class="diff-binary">binary file — no text diff</div>
+  <div class="diff-binary hint sm">binary file — no text diff</div>
 } @else if (empty()) {
-  <div class="diff-empty">no diff</div>
+  <div class="diff-empty hint">no diff</div>
 } @else {
   @if (mode() === 'split') {
     <div class="diff split">

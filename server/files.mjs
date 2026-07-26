@@ -92,8 +92,10 @@ export function worktreeActivity(proj) {
 // whether gitignored like node_modules or just not yet added). The client uses
 // it to gray non-git rows. Each entry also carries its status vs the main
 // branch (committed AND uncommitted differences): A/M/D/R…, with
-// untracked-but-not-ignored files reported as 'A' (additions relative to main,
-// though `git diff` itself doesn't list them). Files deleted vs main aren't on
+// untracked-but-not-ignored files reported as '?' (git's own porcelain code for
+// untracked — NOT 'A', which is a real staged/committed addition; the client
+// paints '?' with a muted badge so OS junk / tool output can't masquerade as an
+// intentional add). Files deleted vs main aren't on
 // disk but are included with status 'D' and onDisk:false so the tree can still
 // show them.
 export async function fileTree(wtPath, { ignored = false } = {}) {
@@ -133,7 +135,8 @@ export async function fileTree(wtPath, { ignored = false } = {}) {
     const isTracked = tracked.has(p);
     // Ignored files (node_modules, dist, .env…) aren't "changes vs main" — they
     // carry no status so they don't inflate the changed-only view or its count.
-    const status = deleted ? 'D' : (st.get(p) || (!isTracked && !ignoredSet.has(p) ? 'A' : null));
+    // Untracked-but-not-ignored → '?' (git porcelain), distinct from a real 'A'.
+    const status = deleted ? 'D' : (st.get(p) || (!isTracked && !ignoredSet.has(p) ? '?' : null));
     files.push({ path: p, status, oldPath: oldPaths.get(p), onDisk: !deleted, tracked: isTracked });
   }
   for (const [p, s] of st) {

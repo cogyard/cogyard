@@ -1,39 +1,61 @@
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
-.summary { font-size: 12px; color: var(--app-page-fg); margin-bottom: 16px; }
-.summary strong { color: var(--app-page-fg-strong); }
+/* .section-head = layout for the global .card-title recipe (14/700 strong) */
 .section-head {
-  font-size: 14px; font-weight: 700; color: var(--app-page-fg-strong);
-  margin: 24px 0 10px;
+  margin: var(--app-space-6) 0 var(--app-space-4);
 }
-.section-head:first-of-type { margin-top: 4px; }
+.section-head:first-of-type { margin-top: var(--app-space-2); }
 .section-head.stale { color: #b91c1c; }
+/* .clone-head = layout for the global .section-label recipe (13/600 uppercase) */
 .clone-head {
-  font-size: 13px; font-weight: 600; color: var(--app-page-fg); text-transform: uppercase; letter-spacing: 0.05em;
-  margin: 20px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
+  margin: var(--app-space-5) 0 var(--app-space-3); padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
 }
 /* table chrome (box/table/th) is shared — see styles.scss */
-:host ::ng-deep .wt .p-datatable-table-container { margin-bottom: 8px; }
-.col-name { width: 17%; }
-.col-branch { width: 19%; }
+:host ::ng-deep .wt .p-datatable-table-container { margin-bottom: var(--app-space-3); }
+/* name + branch are the elastic columns — they absorb slack instead of
+   letting Flags balloon (which left the names truncated on wide monitors) */
+/* Below this the container scrolls instead of crushing columns (shared chrome
+   owns the overflow-x). Sum of the column minimums below — ten columns, so this
+   table reaches its floor sooner than the others. */
+:host ::ng-deep p-table table { min-width: 1010px; }
+.col-name { width: 30%; min-width: 250px; }
+/* two short action links (branch · files), not a name — 140px is plenty */
+.col-links { width: 140px; }
 .col-head { width: 84px; }
 .col-n { width: 88px; }
 .col-n2 { width: 72px; }
-.col-cost { width: 78px; }
-td.cost { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+/* worst case is two chips + a task link (LOCKED + STALE + #103) — at 112px that
+   trio overflowed and the link got clipped on the rows that carry both chips */
+.col-flags { width: 175px; }
+/* height/padding/font-size come from the shared table chrome in styles.scss */
 .wt-row > td {
-  padding: 5px 10px; border-bottom: 1px solid var(--app-border); background: var(--app-surface);
-  height: 28px; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  border-bottom: 1px solid var(--app-border); background: var(--app-surface);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 .wt-row:last-child > td { border-bottom: none; }
 /* no row hover wash — rows are not clickable */
 .wt-row.stale > td { background: #fffafa; }
+/* arrived-from-elsewhere highlight — mirrors branches .bt-row.active */
+.wt-row.active > td { background: var(--app-accent-tint2); }
+.wt-row.active > td:first-child { box-shadow: inset 3px 0 0 var(--app-accent); }
 
 /* no display:flex on td — consecutive non-table-cell tds merge into one
    anonymous cell and shift every column after them */
 .flags > * + * { margin-left: 6px; }
 .flags > * { vertical-align: middle; }
+/* the cell's text-overflow can't ellipsis an inline-block child — see the same
+   rule in branches.component.scss. 20px = branch icon + the 6px gap above. */
+.flags button.btn-link {
+  max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* Links cell: two labelled action links side by side. The label carries the
+   meaning; the icon is recognition, not the affordance (a bare glyph is not
+   readable as a control). Task 104. */
+.links { white-space: nowrap; }
+.links .lnk + .lnk { margin-left: var(--app-space-4); }
+button.btn-link.lnk { font-size: 11.5px; }
+.lnk-ico { width: 11px; height: 11px; vertical-align: -1px; margin-right: 3px; }
+
 .name { font-weight: 500; }
-.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 .dim { color: var(--app-fg-dim); }
 /* mono number styling is for DATA cells only — header cells stay uniform sans */
 td.ctr { font-family: ui-monospace, monospace; font-size: 11.5px; }
@@ -43,18 +65,10 @@ td.ctr, th.ctr { text-align: center; }
 .dirty { color: #b45309; font-weight: 600; }
 /* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
    .p-tag.badge outranks the Aura .p-tag defaults. */
-:host ::ng-deep .p-tag.badge { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; text-transform: uppercase; }
+/* shape comes from the global .badge/.badge.caps recipe — colors only here */
 :host ::ng-deep .p-tag.badge.main { background: var(--app-surface-2); color: var(--app-fg-dim); }
 :host ::ng-deep .p-tag.badge.locked { background: var(--app-surface-2); color: var(--app-fg-dim); }
 :host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
-/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
-button.task-link {
-  font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
-  padding: 0 2px; background: none; border: none; cursor: pointer; color: var(--app-accent);
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-}
-button.task-link:hover { text-decoration-color: currentColor; }
 /* Head cell = the Branches tab's commit-id chip: neutral at rest (surface chip +
    dim underline), accent only on hover. The app accent (#ea580c) at rest read as
    an error color, so these row links do NOT use btn-link's resting accent. */
@@ -66,17 +80,9 @@ button.headlink {
   text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
 }
 button.headlink:hover { color: var(--app-accent); text-decoration-color: currentColor; }
-/* Branch + worktree-name cells = neutral underlined links (inherit the cell's
-   resting color), accent on hover. */
-button.celllink {
-  font: inherit; background: none; border: none; cursor: pointer; padding: 0; color: inherit;
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-}
-button.celllink:hover { color: var(--app-accent); text-decoration-color: currentColor; }
 /* port links are utility, not highlights — neutral but underlined (clickable signal), accent on hover */
 .portlink { color: var(--app-fg-dim); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
 .portlink:hover { color: var(--app-accent); text-decoration-color: currentColor; }
 
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

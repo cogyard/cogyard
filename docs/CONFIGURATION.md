@@ -106,13 +106,13 @@ LaunchAgent reload in the deploy step.
 | Portal server (prod, behind a reverse proxy) | `7437` | `PORT` env / `cogyard serve --port` |
 | Portal server (dev) | `7440` | `PORT` env / `--port` |
 | Angular dev server (`npm start` in `frontend/`) | `4200` | Angular CLI |
-| Per-worktree backend | first free in **4900–4999** | edit `ranges` in `~/.cogyard/ports.json` |
-| Per-worktree frontend | first free in **9300–9399** | edit `ranges` in `~/.cogyard/ports.json` |
+| Per-worktree backend | first free in **30000–30999** | edit `ranges` in `~/.cogyard/ports.json` |
+| Per-worktree frontend | first free in **31000–31999** | edit `ranges` in `~/.cogyard/ports.json` |
 
 To change the worktree ranges, edit the `ranges` object in `~/.cogyard/ports.json`:
 
 ```json
-{ "ranges": { "backend": [4900, 4999], "frontend": [9300, 9399] }, "allocations": {} }
+{ "ranges": { "backend": [30000, 30999], "frontend": [31000, 31999] }, "allocations": {} }
 ```
 
 ## Tools & platform

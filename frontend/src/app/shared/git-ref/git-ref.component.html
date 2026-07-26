@@ -1,0 +1,27 @@
+@if (name()) {
+  <span class="gref">
+    @if (linked()) {
+      <button
+        class="btn-link mono gref-name"
+        (click)="$event.stopPropagation(); open.emit(name()!)"
+        [pTooltip]="(kind() === 'worktree' ? 'Open on Worktrees: ' : 'Open on Branches: ') + name()"
+        tooltipPosition="top">
+        <ng-container *ngTemplateOutlet="kindIcon" />{{ name() }}
+      </button>
+    } @else {
+      <span class="mono gref-name gref-plain">
+        <ng-container *ngTemplateOutlet="kindIcon" />{{ name() }}
+      </span>
+    }
+  </span>
+}
+
+<ng-template #kindIcon>
+  @if (kind() === 'branch') {
+    <img class="gref-ico branch-ico" src="assets/git-branch.svg" alt="" aria-hidden="true" />
+  } @else {
+    <!-- Drawn on the same grid as git-branch.svg: 20x20, 2-unit stroke, rings
+         r=2. All three glyphs share one weight. -->
+    <img class="gref-ico wt-ico" src="assets/git-worktree.svg" alt="" aria-hidden="true" />
+  }
+</ng-template>

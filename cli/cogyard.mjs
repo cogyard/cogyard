@@ -24,6 +24,7 @@ const ROUTES = {
   env: join(HERE, 'env.mjs'),
   tunnel: join(HERE, 'tunnel.mjs'),
   usage: join(HERE, 'usage.mjs'),
+  sessions: join(HERE, 'sessions.mjs'),
   claude: join(HERE, 'claude-install.mjs'),
   doctor: join(HERE, 'doctor.mjs'),
 };
@@ -75,6 +76,7 @@ Usage: cogyard <command> [...]
   env    <…>        environment + claims: detect, port-owner, claim, release
   tunnel <…>        expose a worktree's dev server at a stable hostname
   usage  <…>        token/cost ledger: collect, report, backfill
+  sessions audit    archived-chat × worktree report (read-only; manual-only)
   serve  [--port N] run the portal (API + SPA) on one origin (default PORT 7440)
   doctor            install preflight — is this machine wired to run cogyard?
   claude <install|uninstall>  install the Claude driver (skills/commands) into ~/.claude

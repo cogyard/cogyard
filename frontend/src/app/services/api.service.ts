@@ -4,11 +4,12 @@ import { Observable } from 'rxjs';
 import {
   Project, TasksResponse, WorktreesResponse, GraphResponse, OverviewResponse,
   CommitDetail, DiffResponse, StatusResponse, BranchesResponse,
-  WtActivityResponse, TreeResponse, FileContent, SaveFileResult, UsageResponse, ProjectUsageResponse, CollectResult,
+  WtActivityResponse, TreeResponse, FileContent, SaveFileResult, UsageResponse, ProjectUsageResponse, TaskChatsResponse, TaskTranscriptResponse, CollectResult,
   ActivityResponse, ActivityDayResponse,
   HealthResponse, ActionResult, OpenTarget, ScaffoldRequest, ScaffoldResult,
   ConfigResponse, SaveConfigRequest, SaveConfigResult, OpenTargetFull, SaveOpenTargetsResult,
   AddonsCatalog, AddonStatusesResponse, AddonActionResult,
+  AxesResponse, SaveAxesRequest,
 } from './models';
 
 // Thin client over the cogyard API (proxied to :7440 in dev). No business
@@ -60,6 +61,15 @@ export class ApiService {
   projectUsage(slug: string): Observable<ProjectUsageResponse> {
     return this.http.get<ProjectUsageResponse>(`/api/usage/project/${this.p(slug)}`);
   }
+  // Task → chats (task 30). Lazy: loaded when a task row expands (the created-
+  // side spawns git), not folded into the project usage bulk load.
+  taskChats(slug: string, id: number): Observable<TaskChatsResponse> {
+    return this.http.get<TaskChatsResponse>(`/api/usage/task/${this.p(slug)}/${id}/chats`);
+  }
+  // One chat's readable transcript, for the in-portal viewer (task 30 follow-up).
+  taskTranscript(sessionId: string): Observable<TaskTranscriptResponse> {
+    return this.http.get<TaskTranscriptResponse>(`/api/usage/chat/${this.p(sessionId)}/transcript`);
+  }
   // Ad-hoc transcript harvest (the refresh button). Idempotent server-side.
   collectUsage(): Observable<CollectResult> { return this.http.post<CollectResult>('/api/usage/collect', {}); }
   wtdiff(slug: string, wt: string, path: string, ignoreWs = false): Observable<DiffResponse> {
@@ -88,6 +98,15 @@ export class ApiService {
   config(): Observable<ConfigResponse> { return this.http.get<ConfigResponse>('/api/config'); }
   saveConfig(body: SaveConfigRequest): Observable<SaveConfigResult> { return this.http.post<SaveConfigResult>('/api/config', body); }
   saveOpenTargets(targets: OpenTargetFull[]): Observable<SaveOpenTargetsResult> { return this.http.post<SaveOpenTargetsResult>('/api/open-targets', targets); }
+
+  // Label axes (task 096) — the /settings axis manager. Per-layer raw reads +
+  // writes, through the same write seam. scope 'shared' = machine-global;
+  // 'project' = a chosen project's committed .cogyard/axes.json.
+  axesFor(scope: 'shared' | 'project', slug?: string): Observable<AxesResponse> {
+    const q = scope === 'project' ? `?scope=project&p=${this.p(slug ?? '')}` : '?scope=shared';
+    return this.http.get<AxesResponse>(`/api/axes${q}`);
+  }
+  saveAxes(body: SaveAxesRequest): Observable<AxesResponse> { return this.http.post<AxesResponse>('/api/axes', body); }
 
   // Add-ons — machine-level, rendered on the global /settings page.
   // POST goes through the same write seam; 'manual'-tier actions only ever

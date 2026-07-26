@@ -1,0 +1,50 @@
+<section class="settings-card">
+  <h3 class="card-title">Label axes</h3>
+  <p class="card-hint">
+    Group free-form task labels into named, colored axes so the portal can show them as bundles.
+    Edit the <strong>shared</strong> map (applies to every project) or a single project's own map.
+    Labels stay free — this only groups and colors them; unmapped labels show as <em>Ungrouped</em>.
+  </p>
+
+  <div class="axes-scope">
+    <label class="eyebrow">Editing</label>
+    <p-select size="small" [options]="scopeOptions()" optionLabel="label" optionValue="value"
+      [ngModel]="scope()" (ngModelChange)="scope.set($event)" />
+  </div>
+
+  @if (loading()) {
+    <p class="ax-loading hint">Loading axes…</p>
+  } @else {
+    @if (!axes().length) {
+      <p class="ax-empty hint">No axes in this layer yet. Add one to start grouping labels.</p>
+    }
+
+    @for (ax of axes(); track $index) {
+      <div class="axis-row">
+        <input type="color" class="ax-color" [value]="ax.color"
+          (input)="setColor($index, $any($event.target).value)" [title]="ax.color" />
+        <input pInputText pSize="small" class="ax-name" placeholder="axis name (e.g. Surface)"
+          [ngModel]="ax.name" (ngModelChange)="setName($index, $event)" />
+        <div class="ax-labels">
+          @for (l of ax.labels; track l) {
+            <span class="ax-chip badge" [style.--chip]="ax.color">
+              {{ l }}
+              <button type="button" class="ax-chip-x" (click)="removeLabel($index, l)" title="remove">×</button>
+            </span>
+          }
+          <input pInputText pSize="small" class="ax-add" placeholder="+ label"
+            #lab (keydown.enter)="addLabel($index, lab.value); lab.value = ''" />
+        </div>
+        <button type="button" class="ax-del" (click)="removeAxis($index)" title="delete axis">🗑</button>
+      </div>
+    }
+
+    <div class="set-actions">
+      <button type="button" class="btn-pill" (click)="addAxis()">+ Add axis</button>
+      <button type="button" class="btn-primary" [disabled]="!canSave()" (click)="save()">
+        {{ saving() ? 'Saving…' : 'Save axes' }}
+      </button>
+      @if (invalid()) { <span class="hint ax-warn">every axis needs a name</span> }
+    </div>
+  }
+</section>

@@ -126,3 +126,16 @@ export function assertInProject(baseDir, rel) {
   if (resolved !== baseReal && !resolved.startsWith(baseReal + sep)) return null;
   return resolved;
 }
+
+// The ONE write that legitimately lives outside the project repo: the project's
+// label-axis map (task 096), which moved into the task store at <repo>/_tasks/
+// axes.json. For shared-store projects `_tasks` is a symlink pointing OUTSIDE the
+// repo, so assertInProject deliberately rejects it — this is its store-scoped
+// sibling. The written filename is fixed (`axes.json`, no user input), so the only
+// job here is to confirm the project actually has a resolvable task store and to
+// return the realpath'd target under it. Returns null if there's no store.
+export function assertInStore(projectPath) {
+  let storeReal;
+  try { storeReal = realpathSync(join(projectPath, '_tasks')); } catch { return null; }
+  return join(storeReal, 'axes.json');
+}

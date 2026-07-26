@@ -21,7 +21,9 @@ import { adapter } from '../core/drivers.mjs';
 const COGYARD_HOME = process.env.COGYARD_HOME || join(homedir(), '.cogyard');
 const REGISTRY = join(COGYARD_HOME, 'ports.json');
 const LOCKFILE = REGISTRY + '.lock';
-const DEFAULT_RANGES = { backend: [4900, 4999], frontend: [9300, 9399] };
+// Deliberately below 49152: macOS hands out 49152-65535 as ephemeral ports for
+// outbound sockets, so a fixed listener up there collides intermittently.
+const DEFAULT_RANGES = { backend: [30000, 30999], frontend: [31000, 31999] };
 
 // Track whether we currently hold the lock so fail() can release it on exit.
 let _holdingLock = false;

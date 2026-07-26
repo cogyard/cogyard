@@ -75,7 +75,11 @@ Ask the user only for what's not inferable from context. Specifically, these mus
 
 - **Title + slug.** Short noun phrase ("Automated DB backups", "Admin UI polish").
 - **Status.** One of: `OPEN` (active backlog), `PARKED` (deliberately shelved — a hold on something external or on a human decision), `DONE` (historical record), `ENOUGH` (shipped enough; leftovers recorded in the body), `OBSOLETE` (superseded). NOTE: there is no `PARTIAL` status — partial completion is tracked via the body's `[x]` / `[ ]` checkbox count, not a status field. There is also no "blocked" status (the former `BLOCKED_ON` is retired): **blocked on another task → list it in `depends_on:` and stay `OPEN`** (the portal derives "waiting on #N" and self-clears it when the dep closes); **blocked on anything external → `PARKED`**.
-- **Category + labels.** `category` is **required** and a **closed enum** — one of `feature | maintenance | bug | docs` (feature = new user-facing capability · maintenance = internal work, no new behavior: restructures/renames/releases/deps/ops · bug = something broken · docs = non-code documentation/copy). It's the *user's* call, not the agent's, so **collect it with `AskUserQuestion`**: a single-select listing all four values with your best guess first, labelled "(Recommended)". The 4 values fit the tool's 4-option cap exactly — no "Other" overflow. `labels` is **optional + open** (free-form tags like `frontend`, `infra`); propose 0–3 you'd suggest and let the user add/remove — a separate multi-select or free-text, or just inline in the same question's notes. Skip the question only when the user already stated the category explicitly in their request. The frontmatter validator (`cogyard tasks validate`, also enforced by the plugin's PreToolUse hook) rejects a missing/invalid `category`, so this is not optional to fill.
+- **Type + labels.** `type` is **required** and a **closed enum** — one of `feature | maintenance | bug | docs` (feature = new user-facing capability · maintenance = internal work, no new behavior: restructures/renames/releases/deps/ops · bug = something broken · docs = non-code documentation/copy). It's the *user's* call, not the agent's, so **collect it with `AskUserQuestion`**: a single-select listing all four values with your best guess first, labelled "(Recommended)". The 4 values fit the tool's 4-option cap exactly — no "Other" overflow. (Was `category` in older files, which still carry `category:`, aliased to `type` on read — but author new files with `type:`.) `labels` are **optional and reuse-or-none** — pick them from the registry (below) as a multi-select of *existing* labels, never a free-text field. Bias low: a label exists only to group this task with others, so **one accurate registered label beats three, and no label beats a freshly-minted one** — a label used once groups nothing, and that lone tag IS the proliferation this step prevents. Skip the type question only when the user already stated the type explicitly in their request. The frontmatter validator (`cogyard tasks validate`, also enforced by the plugin's PreToolUse hook) rejects a missing/invalid `type`, so this is not optional to fill.
+
+  **Labels are picked from the registry, not written — the registry is a closed menu until you deliberately extend it.** First run **`cogyard tasks labels`** (add `--json` for machine-readable) in the project — it prints the resolved label axes (shared `$COGYARD_HOME/axes.json` + `<repo>/_tasks/axes.json`) with a per-label task count, then the in-use-but-unregistered labels. Propose labels **only** from that output, using the exact registered spelling (the registry holds `frontend`, so UI/portal/angular/responsive work all take `frontend` — never coin `ui`, `portal`, or `ux`).
+
+  Minting a **new** label is a separate, deliberate act, and all three gates must hold: **(1)** no registered label fits the concept, not even loosely; **(2)** the concept will **recur** across future tasks — if it's a one-off, take the closest registered label or *none*, because a singleton label is the exact thing we're preventing; **(3)** the user **explicitly approves that specific new label in the confirm step** — "new label `foo`, not in the registry — not a synonym of `bar` because …; ok?". A new label the user didn't sign off on is a bug, not a convenience. New labels do **not** auto-join `axes.json`: they land in Ungrouped until the owner curates them into an axis, and that friction is the point — it's what keeps the axis vocabulary closed and the board legible. If no registry exists yet (`cogyard tasks labels` shows "No axis map"), fall back to the union of labels already used across the project's tasks.
 - **"What this is" content.** The single most important section for future readers. Decide which mode applies:
   - If an existing durable doc covers the system this task builds on/extends, **verify the doc exists and is current** (read it; if stale, either update it first or use mode-b). Then write a 2–4 sentence summary + bold pointer.
   - If no durable doc exists, the task file IS the doc. Gather enough up front to write the inline architecture: problem statement, file layout (which files, what they do), config schemas, runtime flow, onboarding, debugging. If the task will *create* a new system worth documenting beyond this task's lifetime, consider also producing a durable doc at the end and having the task file point at it.
@@ -89,15 +93,24 @@ Ask the user only for what's not inferable from context. Specifically, these mus
 
 The frontmatter block is **required** and machine-parsed by `cogyard`. Keep field order and casing exactly. Populate `created_at_commit`, `last_reviewed_at_commit`, and `last_touched_commit` with the current short SHA from `git rev-parse --short HEAD` *in the project worktree* (not the tasks-branch worktree).
 
+**Stamp `created_by_session`** with THIS session's id, so `cogyard sessions chats <id>` can later point back to the chat that authored the task. Source it from the newest transcript in the current dir's flattened transcript folder — the session actively being written is this one:
+
+```bash
+ls -t ~/.claude/projects/"$(pwd | sed 's/[/.]/-/g')"/*.jsonl 2>/dev/null | head -1 | xargs -n1 basename 2>/dev/null | sed 's/\.jsonl$//'
+```
+
+If that yields nothing (unusual layout, no transcript), set `created_by_session: null` and move on — the lookup falls back to a best-effort git-time inference for un-stamped tasks; it never blocks task creation.
+
 ```markdown
 ---
 id: NNN
 slug: <slug>
 title: <title>
 status: OPEN
-category: <feature|maintenance|bug|docs>   # required; collected via AskUserQuestion — see step 3
-labels: []              # optional, open tags (e.g. [frontend, infra]); omit or [] if none
+type: <feature|maintenance|bug|docs>       # required; collected via AskUserQuestion — see step 3
+labels: []              # optional; reuse-or-none — pick from `cogyard tasks labels`, omit if nothing fits
 created: YYYY-MM-DD
+created_by_session: <session id | null>    # the authoring session — for `cogyard sessions chats`; source it per the note below
 created_at_commit: <short SHA>
 last_reviewed_at_commit: <short SHA>
 last_touched_commit: <short SHA>

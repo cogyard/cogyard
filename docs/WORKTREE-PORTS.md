@@ -33,7 +33,7 @@ Code provides no built-in way to assign per-worktree ports.
 | `~/gitroot/cogyard/hooks/worktree-session-start.sh` | 5-line bash shim (the path `settings.json` registers). Execs `worktree-session.mjs`; always exits 0 so a failing hook never blocks session start. |
 | `~/gitroot/cogyard/hooks/worktree-session.mjs` | THE hook — single node entry point: gates, `_tasks` automount, universal port reservation, per-project env wiring, notification, session briefing. |
 | `~/gitroot/cogyard/hooks/worktree-ports.mjs` | Port allocator: `allocate <path>`, `release <path>`, `list`, `gc`. Atomic writes via tmp+rename, exclusive lock via `O_EXCL` sentinel with 30-second stale-lock recovery. Liveness-checks ports via `lsof` before assigning. Also exports `findParentMarker` — the single project-discovery walk used by the whole pipeline. |
-| `~/.cogyard/ports.json` | The registry. Per-machine state, NOT synced. Backend range `4900–4999`, frontend range `9300–9399` — disjoint from any other project's dev-server ports. |
+| `~/.cogyard/ports.json` | The registry. Per-machine state, NOT synced. Backend range `30000–30999`, frontend range `31000–31999` — disjoint from any other project's dev-server ports. |
 | `~/.cogyard/logs/worktree-hook.log` | Append-only log of hook runs (one line per success or failure). |
 
 ### Per-project (in each opted-in repo, committed to main)
@@ -141,16 +141,16 @@ Worktree path : ~/projects/myproject/.claude/worktrees/keen-mayer-c3ead5
 Project root  : ~/projects/myproject
 
 Allocated ports:
-  backend  port = 4900
-  frontend port = 9300
+  backend  port = 30000
+  frontend port = 31000
 
 # Dev server
   Start it for this session via the Claude_Preview MCP: preview_start name="dev".
   Nothing keeps a server running across sessions — start it when you need it.
 
 # Direct URLs
-  Frontend : http://localhost:9300
-  Backend  : http://localhost:4900
+  Frontend : http://localhost:31000
+  Backend  : http://localhost:30000
 ...
 ```
 

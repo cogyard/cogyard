@@ -7,7 +7,11 @@ import { originHttpUrl } from '../git.mjs';
 export async function handle(path, u, proj, res) {
   if (path === '/api/tasks') {
     const { tasks } = await core.loadProjectAsync(proj.path);
-    return json(res, 200, { slug: proj.slug, label: proj.label, tasks: core.annotateWorktree(core.tasksToData(tasks), proj) });
+    return json(res, 200, {
+      slug: proj.slug, label: proj.label,
+      tasks: core.annotateWorktree(core.tasksToData(tasks), proj),
+      axes: core.resolveAxes(proj.path), // task 096: resolved shared+project label axes
+    });
   }
   if (path === '/api/worktrees') {
     const worktrees = await core.worktreesForProject(proj);

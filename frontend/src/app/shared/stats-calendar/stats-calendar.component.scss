@@ -1,10 +1,14 @@
+/* Gaps in this file size a DATA VISUALISATION (chart cells), not UI spacing.
+   They are deliberate exceptions to the --app-space-* scale in styles.scss —
+   snapping them to the ramp would resize the chart. Task 104. */
 .cal { width: 100%; }
 
 .cal-head {
-  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: var(--app-space-3); margin-bottom: var(--app-space-3);
 }
+/* .cal-title wears the global .widget-title recipe (13/600); layout only here */
 .cal-title {
-  font-size: 13px; font-weight: 700; color: var(--app-fg); min-width: 150px;
+  min-width: 150px;
 }
 .cal-head .nav {
   width: 24px; height: 24px; border: 1px solid var(--app-border); border-radius: 4px;
@@ -30,7 +34,7 @@
 .cell {
   min-height: 74px; border: 1px solid var(--app-border); border-radius: 5px;
   background: var(--app-surface); padding: 4px 5px; overflow: hidden;
-  display: flex; flex-direction: column; gap: 2px; cursor: pointer;
+  display: flex; flex-direction: column; gap: var(--app-space-1); cursor: pointer;
 }
 .cell:hover:not(.pad) { border-color: var(--app-accent); }
 .cell.pad { background: transparent; border-color: transparent; cursor: default; }
@@ -40,18 +44,17 @@
 .dom { font-size: 11px; font-weight: 600; color: var(--app-fg-muted); line-height: 1.1; }
 .cell.today .dom { color: var(--app-accent); font-weight: 800; }
 
-.metrics { display: flex; align-items: baseline; gap: 4px; }
+.metrics { display: flex; align-items: baseline; gap: var(--app-space-2); }
 // Cost hugs the right edge (float-right feel via margin-left:auto in the flex row).
-.cost-wrap { margin-left: auto; display: inline-flex; align-items: baseline; gap: 4px; text-align: right; white-space: nowrap; }
+.cost-wrap { margin-left: auto; display: inline-flex; align-items: baseline; gap: var(--app-space-2); text-align: right; white-space: nowrap; }
 .cost { font-size: 15px; font-weight: 700; color: var(--app-fg); }
 .cost.approx { font-size: 12px; font-weight: 500; font-style: italic; color: var(--app-fg-muted); }
-.commits { font-size: 11px; color: var(--app-fg-dim); flex: none; }
+.commits { flex: none; }
 
-.badges { display: flex; flex-wrap: wrap; gap: 3px; margin-top: auto; }
+.badges { display: flex; flex-wrap: wrap; gap: var(--app-space-2); margin-top: auto; }
+/* type from the global .badge.mono recipe — this one is a clickable accent chip */
 .badge {
-  font-size: 10px; font-weight: 700; font-family: var(--app-mono, monospace);
-  padding: 1px 5px; border-radius: 9px; cursor: pointer;
+  cursor: pointer;
   border: 1px solid var(--app-accent); background: var(--app-accent-tint1); color: var(--app-accent-tint-fg);
-  line-height: 1.4;
 }
 .badge:hover { background: var(--app-accent); color: var(--app-accent-contrast); }

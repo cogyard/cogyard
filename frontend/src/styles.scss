@@ -20,6 +20,29 @@
      dock (which must stop at the rail's right edge) both read this. */
   --app-sidebar-w: 210px;
 
+  /* ---- Spacing scale (task 104) --------------------------------------------
+     The ONE ramp for gaps, stack margins, and box padding. Component SCSS picks
+     a step; it does not invent a value. Before this existed the app used 14
+     distinct gap values (1,2,3,4,5,6,7,8,9,10,12,14,16,20px) with no rationale.
+
+     -1  2px   hairline stacks (tight label-over-value pairs)
+     -2  4px   inside a control
+     -3  8px   between related inline items — the workhorse
+     -4  12px  between controls in a row / toolbar
+     -5  16px  between blocks in a panel
+     -6  24px  between major sections
+
+     LEGITIMATE EXCEPTIONS, which stay hardcoded and carry a comment where they
+     sit: data-grid cell gaps in the activity widgets (heatmap / braid /
+     punchcard). Those 1–3px values size a data visualisation — they are not UI
+     spacing and snapping them to this ramp would resize the charts. */
+  --app-space-1: 2px;
+  --app-space-2: 4px;
+  --app-space-3: 8px;
+  --app-space-4: 12px;
+  --app-space-5: 16px;
+  --app-space-6: 24px;
+
   /* The topbar (title + pills + tabs). */
   --app-topbar-bg: #2f3338;        /* dark gray header */
   --app-topbar-fg: #e8eaee;        /* text on the topbar */
@@ -30,7 +53,7 @@
 
   /* The page — the area OUTSIDE cards/tables/panels. */
   --app-page-bg: #e9ebee;          /* light gray content background */
-  --app-page-fg: #5b626c;          /* muted text sitting on the page bg (section heads, summaries) */
+  --app-page-fg: #000000;          /* muted text sitting on the page bg (section heads, summaries) */
   --app-page-fg-strong: #1f2328;   /* emphasized text on the page bg */
   --app-page-border: rgba(0, 0, 0, 0.14); /* hairlines on the page bg */
 
@@ -39,7 +62,7 @@
      gray surfaces, #d8dde3 borders.) */
   --app-fg: #1f2328;             /* primary text on surfaces */
   --app-fg-dim: #49505a;         /* secondary text */
-  --app-fg-muted: #687078;       /* tertiary text (timestamps, column heads) */
+  --app-fg-muted: #50565e;       /* tertiary text (timestamps, column heads) */
   --app-surface: #ffffff;        /* cards, tables, panels */
   --app-surface-2: #fafafa;      /* toolbars, table headers, code chips */
   --app-hover: #f4f5f6;          /* row/button hover wash */
@@ -82,6 +105,26 @@
   --app-cat-7: #008300;
   --app-cat-8: #eb6834;
   --app-parallel: #f59e0b;   /* the drill-down's "≥2 agent sessions at once" strip */
+
+  /* Task status colors (task 096). ONE place to recolor every status: the Tasks
+     Status-column badges AND the grouped-by-status section-header dots both read
+     these. Edit here — nothing hardcodes a status color anymore. */
+  --app-status-ready:   #22c55e;   /* Ready — grabbable */
+  --app-status-claimed: #4f8cff;   /* Claimed — someone's on it */
+  --app-status-waiting: #eab308;   /* Waiting — parked / blocked on a dep */
+  --app-status-done:    #8a8f98;   /* Done · Enough · Obsolete — closed (neutral) */
+
+  /* Segmented toggles (Flat/Grouped · group-by · Type) — every color surfaced
+     here and bound to PrimeNG's tokens below, so nothing is hardcoded. */
+  --app-toggle-track: #f1f5f9;                     /* track + unselected segment bg + dividers */
+  --app-toggle-text: #000000;                      /* unselected segment text (--p-togglebutton-color) */
+  --app-toggle-selected-bg: #ffffff;               /* the selected segment's chip fill */
+  --app-toggle-selected-text: var(--app-accent);   /* selected segment text (accent = obvious, no ring) */
+
+  /* Text inputs (the search box, etc.) — PrimeNG tokens surfaced here too. */
+  --app-input-bg: #ffffff;
+  --app-input-text: #334155;
+  --app-input-border: #cbd5e1;
 }
 /* PrimeNG primary follows the accent (double :root outranks the theme's own
    :root declarations, which are injected later in <head>). */
@@ -92,6 +135,23 @@
   --p-primary-contrast-color: var(--app-accent-contrast);
   --p-primary-600: var(--app-accent);
   --p-primary-700: var(--app-accent-hover);
+
+  /* Segmented toggles — bind PrimeNG's own tokens to the --app-toggle-* vars so
+     the whole app's toggles recolor from one place (styles.scss). The selected
+     segment = white chip (content-checked-background) + accent text; the outer
+     checked box stays the track color, so there's NO peach ring. */
+  --p-togglebutton-background: var(--app-toggle-track);
+  --p-togglebutton-border-color: var(--app-toggle-track);
+  --p-togglebutton-color: var(--app-toggle-text);
+  --p-togglebutton-checked-background: var(--app-toggle-track);
+  --p-togglebutton-checked-border-color: var(--app-toggle-track);
+  --p-togglebutton-content-checked-background: var(--app-toggle-selected-bg);
+  --p-togglebutton-checked-color: var(--app-toggle-selected-text);
+
+  /* Text inputs — bind to the --app-input-* vars. */
+  --p-inputtext-background: var(--app-input-bg);
+  --p-inputtext-color: var(--app-input-text);
+  --p-inputtext-border-color: var(--app-input-border);
 }
 
 html, body {
@@ -110,11 +170,37 @@ body { overflow: hidden; }
    Column widths and per-table quirks stay in component SCSS; the box, the
    table layout, and the header style live here ONLY.
    ============================================================================ */
-p-table .p-datatable-table-container { border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-surface); }
+/* overflow-x here + a `min-width` on each table (in its component SCSS) is what
+   stops `table-layout: fixed` from crushing percentage columns to zero width at
+   narrow viewports. Without a min-width the table always computes to exactly the
+   container width, so this overflow-x can never fire and columns collapse
+   instead — that's how BRANCH/LAST COMMIT ended up painted on top of each other
+   at 740px. Every portal table sets its own min-width. Task 104. */
+p-table .p-datatable-table-container {
+  border: 1px solid var(--app-border); border-radius: 6px; background: var(--app-surface);
+  overflow-x: auto;
+}
 p-table table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-/* out-specifies the theme's `.p-datatable-thead > tr > th` (injected later) */
+
+/* CELL PADDING IS SET VIA THE THEME'S OWN TOKENS, NOT BY OUR OWN `padding:`.
+   Every table here is size="small", so PrimeNG emits
+   `.p-datatable.p-datatable-sm .p-datatable-tbody > tr > td { padding: var(--p-datatable-body-cell-sm-padding) }`
+   at specificity (0,3,2). Anything we can reasonably write either loses to that
+   or ties and loses on source order (the theme is injected later) — which is
+   exactly how four components ended up shipping a `padding: 5px 10px` that never
+   reached the screen. Setting the token makes the theme's own rule produce our
+   value, so there is no cascade to fight. Task 104. */
+p-table {
+  --p-datatable-body-cell-sm-padding: 5px 10px;
+  --p-datatable-header-cell-sm-padding: 5px 10px;
+}
+/* The ONE row density for every portal table: height + font-size here, padding
+   via the tokens above. Components own state colours and truncation, never these. */
+p-table .p-datatable-tbody > tr > td { height: 30px; font-size: 12.5px; }
+
+/* font-size/colour here DO win (the theme's sm rule sets padding only) */
 p-table .p-datatable-thead > tr > th {
-  padding: 6px 10px; background: var(--app-surface-2); font-size: 11px; color: var(--app-fg-muted);
+  background: var(--app-surface-2); font-size: 11px; color: var(--app-fg-muted);
   text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
   border-bottom: 1px solid var(--app-border); white-space: nowrap; text-align: left;
 }
@@ -147,7 +233,7 @@ p-table .p-datatable-thead > tr > th {
    button.commit (Branches), button.frow + button.close (commit panel).
    ============================================================================ */
 button.btn-pill {
-  display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; gap: var(--app-space-3); flex: 0 0 auto;
   background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 14px;
   padding: 4px 12px; font: inherit; font-size: 12.5px; font-weight: 500; color: var(--app-fg-dim);
   cursor: pointer; white-space: nowrap;
@@ -161,8 +247,32 @@ button.btn-toggle {
   background: var(--app-surface); color: var(--app-fg-dim); white-space: nowrap; cursor: pointer;
 }
 button.btn-toggle:hover:not(:disabled) { background: var(--app-hover); }
-button.btn-toggle.on, button.btn-toggle.on:hover { background: var(--app-accent-tint2); border-color: var(--app-accent); color: var(--app-accent); font-weight: 600; }
+/* ENGAGED reads the same here as on a p-selectbutton segment — white chip,
+   accent text, accent edge — because they do the same job (turn a mode on).
+   Both read the --app-toggle-selected-* tokens, so it stays one definition.
+   Solid accent FILL is reserved for .btn-pill.active, which is a different job:
+   picking an item out of a set, not engaging a mode. Task 104. */
+button.btn-toggle.on, button.btn-toggle.on:hover {
+  background: var(--app-toggle-selected-bg); border-color: var(--app-accent);
+  color: var(--app-toggle-selected-text); font-weight: 600;
+}
 button.btn-toggle:disabled { opacity: 0.5; cursor: default; }
+
+/* .btn-primary — the PRIMARY SUBMIT of a form (Create project, Save …). Brand
+   indigo via --app-primary, deliberately NOT the orange accent: the accent means
+   "link / selected / engaged", and a submit button is none of those. Before this
+   recipe existed the only indigo submit in the app was a bespoke `.np-submit` in
+   the New-project drawer, while every Settings Save was a plain .btn-pill — so
+   "primary action" looked like two different things. Task 104. */
+button.btn-primary {
+  display: inline-flex; align-items: center; gap: var(--app-space-3); flex: 0 0 auto;
+  background: var(--app-primary); color: var(--app-primary-contrast);
+  border: 1px solid var(--app-primary); border-radius: 6px;
+  padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+button.btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+button.btn-primary:disabled { opacity: 0.5; cursor: default; }
 
 button.btn-link {
   font: inherit; font-weight: 600; padding: 0 2px; background: none; border: none; cursor: pointer; color: var(--app-accent);
@@ -183,7 +293,7 @@ button.btn-link.dim:hover { color: var(--app-accent); }
    active. Lives on the dark sidebar, so colors derive from --app-topbar-fg
    (resting text) + --app-accent (active). Components add layout only. */
 button.sidebar-item {
-  display: flex; align-items: center; gap: 8px; width: 100%;
+  display: flex; align-items: center; gap: var(--app-space-3); width: 100%;
   background: transparent; border: none; border-radius: 6px;
   padding: 7px 10px; font: inherit; font-size: 13px; font-weight: 500;
   color: color-mix(in srgb, var(--app-topbar-fg) 80%, transparent);
@@ -197,6 +307,93 @@ button.sidebar-item.active, button.sidebar-item.active:hover {
   background: var(--app-accent); color: var(--app-accent-contrast);
 }
 button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
+
+/* ============================================================================
+   Settings panel card. GLOBAL, not scoped to settings.component — child panels
+   rendered inside the Settings page (e.g. <app-settings-axes>, task 096) also
+   wear .settings-card, and Angular's emulated encapsulation would leave the
+   class inert across the component boundary. Keeping the recipe global is what
+   lets those child panels sit in a card like every other Settings section.
+   ============================================================================ */
+.settings-card {
+  display: flex; flex-direction: column; gap: var(--app-space-5);
+  border: 1px solid var(--app-border); border-radius: 10px;
+  background: var(--app-surface); padding: 18px 20px;
+}
+.card-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--app-page-fg-strong); }
+.card-hint { margin: -8px 0 0; font-size: 12px; color: var(--app-fg-dim); }
+.card-hint code { font-size: 11.5px; }
+
+/* ----------------------------------------------------------------------------
+   Text + form-field recipes (task 099). Shared so component SCSS stays
+   layout-only — never re-declare these font-size/weight/color per component.
+     .page-title  page header (Settings, drawers)
+     .eyebrow     uppercase muted micro-label (field labels, table heads)
+     .hint        muted sub/hint text; .hint.sm one notch smaller
+     .field       label-over-control stack; its control fills the width
+   (.card-title / .card-hint above are the in-card title/hint; keep using those.)
+
+   THE TYPE RAMP (task 104). Each tier is one clear step from its neighbours:
+
+     .page-title     20 / 700          page header
+     .card-title     16 / 700          card + section header
+     .widget-title   14 / 600          activity/stats widget header
+     .section-label  12 / 600 caps     full-width section divider
+     .eyebrow        11 / 600 caps     micro-label (field labels, table heads)
+
+   Task 100 preserved these tiers as-found, which left .card-title at 14 and
+   BOTH .widget-title and .section-label at 13 — two recipes rendering at the
+   same size, and a 6px hole between 14 and 20 with nothing in it. A reader
+   could not tell a card title from a widget title by eye. The ramp above is
+   11/12/14/16/20: no two tiers share a size, and every step is visible.
+   -------------------------------------------------------------------------- */
+.page-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--app-page-fg-strong); }
+.eyebrow {
+  font-size: 11px; font-weight: 600; color: var(--app-fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.hint { font-size: 12px; color: var(--app-fg-dim); }
+.hint.sm { font-size: 11.5px; }
+.hint em { font-style: italic; opacity: 0.85; }
+/* .section-label (task 100) — the full-width uppercase SECTION/GROUP divider
+   (task-status buckets, worktree clone groups): one tier up from .eyebrow's
+   micro-label. Component SCSS keeps only the divider layout (margin, border,
+   padding). The 15px colored axis super-header stays a local one-off. */
+.section-label {
+  font-size: 12px; font-weight: 600; color: var(--app-page-fg);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.field { display: flex; flex-direction: column; gap: var(--app-space-3); }
+.field > input, .field > .p-select, .field > .p-inputtext, .field > .p-selectbutton { width: 100%; box-sizing: border-box; }
+
+/* ----------------------------------------------------------------------------
+   Widget + mono recipes (task 100). The portal-wide convergence pass: the
+   activity/stats widgets all headline at 13/600, and inline id/hash/count
+   labels are all monospace 11.5px. ONE definition each — component SCSS keeps
+   only layout + semantic color.
+     .widget-title  activity/stats widget header (braid, day, punchcard, heatmap)
+     .mono          inline monospace id / hash / count label (color stays local)
+   -------------------------------------------------------------------------- */
+.widget-title { font-size: 14px; font-weight: 600; color: var(--app-fg); }
+.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
+
+/* ----------------------------------------------------------------------------
+   .badge (task 100) — the small status/label pill, ONE definition. Before this
+   there were 11 of them across the portal at 10/10.5px and weight 500/600/700.
+   The pill's SHAPE lives here; its COLOR is semantic and stays in the component
+   (status green, stale red, axis tint, …). Also matches `.p-tag.badge` so a
+   PrimeNG p-tag wearing styleClass="badge" outranks the Aura tag defaults
+   without needing ::ng-deep in every component.
+     .badge        base pill
+     .badge.caps   uppercase variant (status words: STALE, LOCKED, ORIGIN)
+     .badge.mono   monospace variant (ref chips, ids, counts)
+   -------------------------------------------------------------------------- */
+.badge, .p-tag.badge {
+  display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1.5;
+  padding: 1px 7px; border-radius: 10px; white-space: nowrap; border: none;
+}
+.badge.caps, .p-tag.badge.caps { text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.mono, .p-tag.badge.mono { font-family: ui-monospace, monospace; }
 
 /* Topbar data-freshness pie: the Web Animations API (in the
    freshness-pie component) interpolates --pie-p, which only animates if
@@ -213,3 +410,21 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
   word-break: normal;
   overflow-wrap: anywhere;
 }
+
+/* chat role chips + flags (task 30) — shared by the Tasks-tab CHATS box rows
+   and the transcript modal header, so they live here (one source of truth). */
+.chat-role {
+  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  padding: 1px 6px; border-radius: 3px; border: 1px solid var(--role, var(--app-status-done));
+  background: color-mix(in srgb, var(--role, var(--app-status-done)) 15%, transparent);
+  color: color-mix(in srgb, var(--role, var(--app-status-done)) 65%, var(--app-fg));
+}
+.chat-role.role-created   { --role: var(--app-accent); }
+.chat-role.role-claimed   { --role: var(--app-status-claimed); }
+.chat-role.role-committed { --role: var(--app-status-ready); }
+.chat-role.role-mentioned { --role: var(--app-status-done); }
+.chat-flag {
+  flex-shrink: 0; font-size: 10px; font-style: italic; color: var(--app-fg-muted);
+  padding: 0 5px; border-radius: 3px; background: var(--app-surface-2);
+}
+.chat-flag.arch { color: var(--app-status-waiting); }

@@ -1,29 +1,53 @@
 /* Mirrors the Worktrees tab conventions (summary line, grid table, .badge chips,
    muted mono text, ctr columns, subtle stale row) so the tabs read the same. */
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
-.summary { font-size: 12px; color: var(--app-page-fg); margin-bottom: 16px; }
+.summary { margin-bottom: var(--app-space-5); }
 .summary strong { color: var(--app-page-fg-strong); }
+/* .section-head = layout for the global .card-title recipe (14/700 strong) */
 .section-head {
-  font-size: 14px; font-weight: 700; color: var(--app-page-fg-strong);
-  margin: 24px 0 10px;
+  margin: var(--app-space-6) 0 var(--app-space-4);
 }
-.section-head:first-of-type { margin-top: 4px; }
+.section-head:first-of-type { margin-top: var(--app-space-2); }
 .section-head.merged { color: var(--app-fg-dim); }
 
 /* table chrome (box/table/th) is shared — see styles.scss */
-:host ::ng-deep .bt .p-datatable-table-container { margin-bottom: 8px; }
-.col-branch { width: 24%; }
+:host ::ng-deep .bt .p-datatable-table-container { margin-bottom: var(--app-space-3); }
+/* Below this the container scrolls instead of crushing columns (shared chrome
+   owns the overflow-x). Sum of the column minimums below. */
+/* sum of the column minimums: 290 + 260 + 88 + 88 + 96 + 260 */
+:host ::ng-deep p-table table { min-width: 1082px; }
+/* the two name columns get the lion's share: a p50 branch name measures 251px
+   and needs +20px cell padding. LAST COMMIT absorbs the remainder — its
+   subject is the one cell that reads fine truncated. */
+.col-branch { width: 26%; min-width: 290px; }
+/* the commit cell needs room for hash + subject + relative date; with no
+   width rule at all it absorbed every squeeze and collapsed to one glyph */
+.col-commit { width: 24%; min-width: 260px; }
 .col-ahead, .col-behind { width: 88px; }
 .col-tracking { width: 96px; }
-.col-flags { width: 18%; }
+/* renamed from Flags: it holds only the worktree ref now */
+.col-worktree { width: 22%; min-width: 260px; }
+/* height/padding/font-size come from the shared table chrome in styles.scss */
 .bt-row > td {
-  padding: 5px 10px; border-bottom: 1px solid var(--app-border); background: var(--app-surface);
-  height: 28px; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  border-bottom: 1px solid var(--app-border); background: var(--app-surface);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
 }
 /* no display:flex on td — consecutive non-table-cell tds merge into one
    anonymous cell and shift every column after them */
-:is(.bname, .flags) > * + * { margin-left: 7px; }
-:is(.bname, .flags) > * { vertical-align: middle; }
+:is(.bname, .worktree) > * + * { margin-left: 7px; }
+:is(.bname, .worktree) > * { vertical-align: middle; }
+/* The cell's own text-overflow can't ellipsis an inline-block child — it just
+   clips the box, so long worktree names were chopped mid-word with no "there's
+   more" affordance. The link has to truncate itself. The 22px reserves the
+   branch icon (11px + 3px margin) plus the 7px inter-child gap above. */
+:is(.bname, .worktree) button.btn-link {
+  max-width: calc(100% - 22px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* …and when a STALE chip shares the cell, the link has to yield its width too
+   (chip renders at a fixed 50px + the 7px gap). Inline-blocks can't share
+   remaining space the way flex children would, and the td can't become a flex
+   container without losing its table-cell role — hence the explicit reserve. */
+:is(.bname, .worktree):has(.badge) button.btn-link { max-width: calc(100% - 79px); }
 .bt-row:last-child > td { border-bottom: none; }
 /* no row-wide hover wash: the row is not clickable — only the commit cell and links are */
 .bt-row.stale > td { background: #fffafa; }
@@ -39,7 +63,7 @@
 
 /* The commit cell is THE link to the Graph — native button, zero theme dynamics. */
 button.commit {
-  display: flex; align-items: center; gap: 7px; width: 100%; overflow: hidden; cursor: pointer;
+  display: flex; align-items: center; gap: var(--app-space-3); width: 100%; overflow: hidden; cursor: pointer;
   font: inherit; color: inherit; border: none; background: none; padding: 0; text-align: left;
 }
 button.commit.link:hover .subj { text-decoration: underline; color: var(--app-accent); }
@@ -54,7 +78,6 @@ button.commit.link:hover code { color: var(--app-accent); text-decoration-color:
 button.commit .subj { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--app-fg); }
 button.commit .rel { flex: 0 0 auto; font-size: 11.5px; }
 
-.mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 .dim { color: var(--app-fg-dim); }
 /* mono number styling is for DATA cells only — header cells stay uniform sans */
 td.ctr { font-family: ui-monospace, monospace; font-size: 11.5px; }
@@ -65,10 +88,7 @@ td.ctr, th.ctr { text-align: center; }
 /* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
    .p-tag.badge outranks the Aura .p-tag defaults. (The branch-icon chip is a p-button
    with its own button.badge.wt rules above.) */
-:host ::ng-deep .p-tag.badge {
-  font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 10px; text-transform: uppercase;
-  white-space: nowrap; border: none;
-}
+/* shape comes from the global .badge/.badge.caps recipe — colors only here */
 :host ::ng-deep .p-tag.badge.origin { background: #dcfce7; color: #166534; }
 :host ::ng-deep .p-tag.badge.unpushed { background: #fef3c7; color: #92400e; }
 :host ::ng-deep .p-tag.badge.localonly { background: var(--app-surface-2); color: var(--app-fg-dim); }
@@ -81,22 +101,5 @@ td.ctr, th.ctr { text-align: center; }
 }
 /* Blueprint git-branch icon — inherits the link's accent via currentColor */
 .branch-ico { width: 11px; height: 11px; fill: currentColor; vertical-align: -1px; margin-right: 3px; }
-/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
-button.task-link {
-  font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
-  padding: 0 2px; background: none; border: none; cursor: pointer; color: var(--app-accent);
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-}
-button.task-link:hover { text-decoration-color: currentColor; }
-/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
-button.wt-link {
-  font-family: ui-monospace, monospace; font-size: 11px; font-weight: 600;
-  padding: 0 2px; white-space: nowrap; background: none; border: none; cursor: pointer; color: var(--app-accent);
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-}
-button.wt-link:hover { text-decoration-color: currentColor; }
-
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

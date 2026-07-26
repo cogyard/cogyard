@@ -1,7 +1,7 @@
 <div class="cal">
   <div class="cal-head">
     <button class="nav" (click)="prevMonth()" aria-label="Previous month">‹</button>
-    <span class="cal-title">{{ monthLabel() }}</span>
+    <span class="cal-title widget-title">{{ monthLabel() }}</span>
     <button class="nav" (click)="nextMonth()" [disabled]="atCurrentMonth()" aria-label="Next month">›</button>
     @if (!atCurrentMonth()) { <button class="today-btn" (click)="goToday()">Today</button> }
   </div>
@@ -19,7 +19,7 @@
             <div class="dom">{{ cell.dom }}</div>
             <div class="metrics">
               @if (cell.commits) {
-                <span class="commits">{{ cell.commits }} commits</span>
+                <span class="commits hint sm">{{ cell.commits }} commits</span>
               }
               <span class="cost-wrap">
                 @if (cell.costUSD > 0) { <span class="cost">{{ fmtCost(cell.costUSD) }}</span> }
@@ -29,7 +29,7 @@
             @if (cell.taskIds.length) {
               <div class="badges">
                 @for (id of cell.taskIds; track id) {
-                  <button class="badge" (click)="$event.stopPropagation(); taskClick.emit(id)" [title]="'task ' + id + ' merged this day — open on Tasks'">#{{ id }}</button>
+                  <button class="badge mono" (click)="$event.stopPropagation(); taskClick.emit(id)" [title]="'task ' + id + ' merged this day — open on Tasks'">#{{ id }}</button>
                 }
               </div>
             }

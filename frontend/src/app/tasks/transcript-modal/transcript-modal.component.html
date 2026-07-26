@@ -1,0 +1,33 @@
+<div class="tr-modal-backdrop" (click)="close.emit()">
+  <div class="tr-modal" (click)="$event.stopPropagation()">
+    <div class="tr-modal-head">
+      <div class="tr-modal-title">
+        <span class="chat-role" [class]="'role-' + chat().role">{{ chat().role }}</span>
+        <span class="tr-modal-label">{{ chat().label || shortId() }}</span>
+        <code class="dim">{{ shortId() }}</code>
+        @if (chat().archived) { <span class="chat-flag arch">archived</span> }
+      </div>
+      <button type="button" class="tr-modal-close" (click)="close.emit()" aria-label="Close">✕</button>
+    </div>
+    <div class="tr-modal-body">
+      @if (transcript(); as tr) {
+        @if (!tr.found) {
+          <div class="dim tr-note">Transcript file not found — it was culled after the chat was archived (only the record of the chat survives).</div>
+        } @else if (!tr.turns.length) {
+          <div class="dim tr-note">No readable turns in this transcript.</div>
+        } @else {
+          @for (turn of tr.turns; track $index) {
+            <div class="tr-msg" [class.tr-user]="turn.role === 'user'" [class.tr-assistant]="turn.role === 'assistant'">
+              <div class="tr-time dim">{{ turn.role === 'user' ? 'You' : 'Claude' }}@if (turnTime(turn.timestamp)) { <span> · {{ turnTime(turn.timestamp) }}</span> }</div>
+              <div class="tr-bubble" [innerHTML]="turnHtml(turn.text)"></div>
+            </div>
+          }
+          @if (tr.truncated) { <div class="dim tr-note">…transcript truncated (very long chat) — <code>bencc show {{ shortId() }}</code> for the full file.</div> }
+        }
+      } @else {
+        <div class="dim tr-note">loading transcript…</div>
+      }
+    </div>
+    <div class="tr-modal-foot dim">Esc or click outside to close</div>
+  </div>
+</div>

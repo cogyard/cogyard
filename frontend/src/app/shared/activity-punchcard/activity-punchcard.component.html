@@ -1,6 +1,6 @@
 <div class="pc">
   <div class="pc-head">
-    <span class="pc-title" title="Your prompts by local weekday and hour — attention, not agent labor. Quartile-scaled like the heatmap.">When you're active <span class="pc-sub">· {{ windowSub() }} · {{ total().toLocaleString() }} prompts@if (peak()) { · {{ peak() }} }</span></span>
+    <span class="widget-title" title="Your prompts by local weekday and hour — attention, not agent labor. Quartile-scaled like the heatmap.">When you're active <span class="hint sm">· {{ windowSub() }} · {{ total().toLocaleString() }} prompts@if (peak()) { · {{ peak() }} }</span></span>
     <span class="pc-toggle">
       @for (w of windows; track w.key) {
         <button class="btn-toggle" [class.on]="window() === w.key" (click)="window.set(w.key)">{{ w.label }}</button>

@@ -10,7 +10,6 @@
 .dag-row.active:hover { background: var(--app-accent-tint3); }
 .wt-row { background: var(--app-surface-2); }
 .wt-row .dag-hash { color: #16a34a; text-align: center; }
-.wt-label { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; }
 .wt-count { font-size: 11.5px; margin-left: 8px; white-space: nowrap; }
 .wt-count.dirty { color: #d97706; font-weight: 600; }
 /* collapsed stash pseudo-rows — dotted/hollow node + 📦 + message */
@@ -24,12 +23,13 @@
 .dag-graph { height: 28px; }
 .dag-graph svg { display: block; overflow: visible; }
 .dag-hash { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; color: var(--app-fg-muted); padding-right: 8px; }
-.dag-msg { display: flex; align-items: center; gap: 6px; overflow: hidden; white-space: nowrap; padding-right: 10px; }
+.dag-msg { display: flex; align-items: center; gap: var(--app-space-3); overflow: hidden; white-space: nowrap; padding-right: 10px; }
 .dag-subj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-fg); font-size: 12.5px; }
 /* p-tag ref chips — ng-deep; .p-tag.dag-ref outranks the Aura .p-tag defaults */
+/* size/weight/padding come from the global .badge.mono recipe; a ref chip is
+   deliberately SQUARED (3px) with a border, so only that stays local */
 :host ::ng-deep .p-tag.dag-ref {
-  flex: 0 0 auto; font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 3px;
-  font-family: ui-monospace, monospace; border: 1px solid;
+  flex: 0 0 auto; border-radius: 3px; border: 1px solid;
 }
 :host ::ng-deep .p-tag.dag-ref.local { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
 :host ::ng-deep .p-tag.dag-ref.remote { background: #eef4ff; color: #1e40af; border-color: #c7dbff; }
@@ -38,16 +38,8 @@
 :host ::ng-deep .p-tag.dag-ref.synced { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
 /* main ref = inverse, tied to the black trunk color */
 :host ::ng-deep .p-tag.dag-ref.main-ref { background: #111827; color: #fff; border-color: #111827; }
-/* clickable = accent link (app-wide rule); native buttons, zero theme dynamics */
-button.task-link {
-  font-family: ui-monospace, monospace; font-size: 11.5px; font-weight: 600;
-  padding: 0 2px; flex: 0 0 auto; background: none; border: none; cursor: pointer; color: var(--app-accent);
-  text-decoration: underline; text-underline-offset: 2px;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
-}
-button.task-link:hover { text-decoration-color: currentColor; }
 .dag-author { font-size: 11.5px; color: var(--app-fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
 .dag-date { font-size: 11.5px; color: var(--app-fg-muted); font-family: ui-monospace, monospace; white-space: nowrap; }
 
 /* skeleton loading rows (layout only) */
-.skel { display: flex; flex-direction: column; gap: 8px; }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

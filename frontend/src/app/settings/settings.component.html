@@ -1,13 +1,13 @@
 <div class="settings-wrap">
   @if (wizard()) {
     <header class="settings-head">
-      <h2 class="settings-title">Welcome to cogyard</h2>
-      <p class="settings-sub">Set your defaults below, then add your first project. You can change any of this later under Settings.</p>
+      <h2 class="page-title">Welcome to cogyard</h2>
+      <p class="hint">Set your defaults below, then add your first project. You can change any of this later under Settings.</p>
     </header>
   } @else {
     <header class="settings-head">
-      <h2 class="settings-title">Settings</h2>
-      <p class="settings-sub">Every setting is pre-filled with its resolved value. Saved to <code>~/.cogyard/config.json</code>.</p>
+      <h2 class="page-title">Settings</h2>
+      <p class="hint">Every setting is pre-filled with its resolved value. Saved to <code>~/.cogyard/config.json</code>.</p>
     </header>
   }
 
@@ -28,7 +28,7 @@
       </div>
 
       <div class="set-actions">
-        <button type="button" class="set-btn primary" [disabled]="savingTabs()" (click)="saveTabs()">
+        <button type="button" class="btn-primary" [disabled]="savingTabs()" (click)="saveTabs()">
           {{ savingTabs() ? 'Saving…' : 'Save tabs' }}
         </button>
       </div>
@@ -39,32 +39,32 @@
       <h3 class="card-title">Project creation defaults</h3>
       <p class="card-hint">Prefilled into the New / Add-existing drawer.</p>
 
-      <label class="set-field">
-        <span class="set-label">Default project kind</span>
+      <label class="field">
+        <span class="eyebrow">Default project kind</span>
         <p-select size="small" [options]="kindOptions()" optionLabel="label" optionValue="value"
                   [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
-        @if (kindDescription()) { <span class="set-hint">{{ kindDescription() }}</span> }
+        @if (kindDescription()) { <span class="hint sm">{{ kindDescription() }}</span> }
       </label>
 
-      <label class="set-field">
-        <span class="set-label">Activity week starts on</span>
+      <label class="field">
+        <span class="eyebrow">Activity week starts on</span>
         <p-selectbutton size="small" [options]="weekStartOptions" optionLabel="label" optionValue="value"
                         [allowEmpty]="false" [ngModel]="weekStart()" (ngModelChange)="weekStart.set($event)" name="weekStart" />
-        <span class="set-hint">First row of the activity heatmaps. Sunday matches GitHub's contribution graph.</span>
+        <span class="hint sm">First row of the activity heatmaps. Sunday matches GitHub's contribution graph.</span>
       </label>
 
-      <label class="set-field">
-        <span class="set-label">Activity day starts at</span>
+      <label class="field">
+        <span class="eyebrow">Activity day starts at</span>
         <p-select size="small" styleClass="set-input" [options]="dayStartOptions" optionLabel="label" optionValue="value"
                   [ngModel]="dayStart()" (ngModelChange)="dayStart.set($event)" name="dayStart" />
-        <span class="set-hint">First hour on the "When you're active" axis — early-morning work reads as the previous evening's tail.</span>
+        <span class="hint sm">First hour on the "When you're active" axis — early-morning work reads as the previous evening's tail.</span>
       </label>
 
-      <label class="set-field">
-        <span class="set-label">Projects root <span class="req">*</span></span>
+      <label class="field">
+        <span class="eyebrow">Projects root <span class="req">*</span></span>
         <input pInputText pSize="small" class="set-input" name="projectsRoot"
                [ngModel]="projectsRoot()" (ngModelChange)="projectsRoot.set($event)" placeholder="/Users/you/gitroot" />
-        <span class="set-hint">
+        <span class="hint sm">
           Parent of your clones + shared task stores.
           Source: <strong>{{ c.projectsRootSource }}</strong>.
           @if (c.projectsRootSource === 'env') { <em>(COGYARD_PROJECTS_ROOT is set — it overrides this until unset.)</em> }
@@ -73,7 +73,7 @@
       </label>
 
       <div class="set-actions">
-        <button type="button" class="set-btn primary" [disabled]="!canSaveConfig()" (click)="saveConfig()">
+        <button type="button" class="btn-primary" [disabled]="!canSaveConfig()" (click)="saveConfig()">
           {{ savingConfig() ? 'Saving…' : 'Save defaults' }}
         </button>
       </div>
@@ -85,7 +85,7 @@
       <p class="card-hint">The apps in the file "Open in" menu. Tokens: <code>{{ '{file}' }}</code>, <code>{{ '{line}' }}</code>; exec <code>{{ '{default-browser}' }}</code> follows your system default browser.</p>
 
       <div class="targets">
-        <div class="target-row target-head">
+        <div class="target-row eyebrow">
           <span>id</span><span>label</span><span>exec</span><span>args</span><span></span>
         </div>
         @for (t of targets(); track $index) {
@@ -94,14 +94,14 @@
             <input pInputText pSize="small" [ngModel]="t.label" (ngModelChange)="setTargetField($index, 'label', $event)" [name]="'tlabel' + $index" placeholder="VS Code" />
             <input pInputText pSize="small" [ngModel]="t.exec" (ngModelChange)="setTargetField($index, 'exec', $event)" [name]="'texec' + $index" placeholder="code" />
             <input pInputText pSize="small" [ngModel]="argsText(t)" (ngModelChange)="setTargetArgs($index, $event)" [name]="'targs' + $index" placeholder="-g {file}:{line}" />
-            <button type="button" class="set-btn icon-remove" title="Remove" (click)="removeTarget($index)">✕</button>
+            <button type="button" class="btn-pill" title="Remove" (click)="removeTarget($index)">✕</button>
           </div>
         }
       </div>
 
       <div class="set-actions">
-        <button type="button" class="set-btn" (click)="addTarget()">+ Add target</button>
-        <button type="button" class="set-btn primary" [disabled]="savingTargets()" (click)="saveTargets()">
+        <button type="button" class="btn-pill" (click)="addTarget()">+ Add target</button>
+        <button type="button" class="btn-pill" [disabled]="savingTargets()" (click)="saveTargets()">
           {{ savingTargets() ? 'Saving…' : 'Save targets' }}
         </button>
       </div>
@@ -111,28 +111,28 @@
     <section class="settings-card">
       <h3 class="card-title">Machine</h3>
 
-      <label class="set-field">
-        <span class="set-label">COGYARD_HOME</span>
+      <label class="field">
+        <span class="eyebrow">COGYARD_HOME</span>
         <div class="set-readonly">
           <code class="ro-value">{{ c.home }}</code>
-          <span class="ro-source">{{ c.homeFromEnv ? 'from env' : 'default' }}</span>
-          <button type="button" class="set-btn" (click)="copyHome()">{{ copied() ? 'Copied' : 'Copy command' }}</button>
+          <span class="eyebrow">{{ c.homeFromEnv ? 'from env' : 'default' }}</span>
+          <button type="button" class="btn-pill" (click)="copyHome()">{{ copied() ? 'Copied' : 'Copy command' }}</button>
         </div>
-        <span class="set-hint">Read-only — it's where config.json itself lives. To move it, run the copied command before starting cogyard.</span>
+        <span class="hint sm">Read-only — it's where config.json itself lives. To move it, run the copied command before starting cogyard.</span>
       </label>
 
-      <label class="set-field">
-        <span class="set-label">Driver (agent)</span>
+      <label class="field">
+        <span class="eyebrow">Driver (agent)</span>
         @if (c.driver.available.length > 1) {
           <!-- seam: multiple adapters available → render a selector here. -->
           <p-select size="small" [options]="c.driver.available" [ngModel]="c.driver.active" name="driver" appendTo="body" [disabled]="true" />
         } @else {
           <div class="set-readonly">
             <code class="ro-value">{{ c.driver.active }}</code>
-            <span class="ro-source">auto-detected</span>
+            <span class="eyebrow">auto-detected</span>
           </div>
         }
-        <span class="set-hint">cogyard v{{ c.version }} @if (c.commit) { ({{ c.commit }}) }</span>
+        <span class="hint sm">cogyard v{{ c.version }} @if (c.commit) { ({{ c.commit }}) }</span>
       </label>
     </section>
 
@@ -142,16 +142,21 @@
       <app-settings-addons />
     }
 
+    <!-- Label axes — group/color task labels (task 096). Hidden in wizard mode. -->
+    @if (!wizard()) {
+      <app-settings-axes />
+    }
+
     @if (wizard()) {
       <section class="settings-card cta-card">
         <h3 class="card-title">Add your first project</h3>
         <p class="card-hint">Create a new project or adopt an existing folder — the drawer prefills with the defaults above.</p>
         <div class="set-actions">
-          <button type="button" class="set-btn primary" (click)="addProject.emit()">Add a project →</button>
+          <button type="button" class="btn-pill" (click)="addProject.emit()">Add a project →</button>
         </div>
       </section>
     }
   } @else {
-    <p class="settings-loading">Loading config…</p>
+    <p class="hint">Loading config…</p>
   }
 </div>

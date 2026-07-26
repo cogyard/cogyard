@@ -1,6 +1,6 @@
 <div class="braid">
   <div class="braid-head">
-    <span class="braid-title" title="Lane order = total attention (descending), cost as tiebreak — fixed across the metric toggle so the two metrics stay comparable. Colors follow the ranking, so a project keeps its color everywhere.">Where your time went <span class="braid-sort">· sorted by total attention</span></span>
+    <span class="widget-title" title="Lane order = total attention (descending), cost as tiebreak — fixed across the metric toggle so the two metrics stay comparable. Colors follow the ranking, so a project keeps its color everywhere.">Where your time went <span class="hint sm">· sorted by total attention</span></span>
     <span class="braid-toggle">
       <button class="btn-toggle" [class.on]="metric() === 'attention'" (click)="setMetric('attention')" title="Where your attention went — your own prompts, gap-coalesced into engaged minutes (a floor: reading without prompting leaves no signal)">Attention</button>
       <button class="btn-toggle" [class.on]="metric() === 'cost'" (click)="setMetric('cost')" title="Machine effort — each session's locked-in cost, spread across days by mined per-hour activity; hatched = estimated (transcript pruned before mining)">Cost</button>
@@ -39,7 +39,7 @@
       </div>
     </div>
   </div>
-  <div class="braid-foot">
+  <div class="braid-foot hint sm">
     <span>Cell shade = {{ metric() === 'attention' ? 'engaged minutes that day (from your prompts — a floor estimate)' : 'spend that day' }}. Click a day to drill in.@if (days().length) { Session data begins {{ days()[0] }}. }</span>
     @if (metric() === 'cost') { <span class="approx-key"><span class="bcell l2 approx demo"></span> ≈ estimated era</span> }
   </div>

@@ -72,21 +72,23 @@
     </header>
 
     <main [class.with-commit]="!!panelHash()">
-      @if (showSettings()) {
-        <app-settings [wizard]="isWizard()" (addProject)="openNewProject()" />
-      } @else if (viewAll()) {
-        <app-overview (selectProject)="selectProject($event)" />
-      } @else if (slug()) {
-        @switch (tab()) {
-          @case ('tasks') { <app-tasks [slug]="slug()" [externalFilter]="taskFilter()" (jumpWorktree)="jumpToWorktree($event)" /> }
-          @case ('board') { <app-board [slug]="slug()" (jumpTask)="jumpToTask($event)" /> }
-          @case ('branches') { <app-branches [slug]="slug()" [activeBranch]="branchParam()" (openCommit)="openCommitInGraph($event)" (jumpWorktree)="jumpToWorktree($event)" (jumpTask)="jumpToTask($event)" /> }
-          @case ('worktrees') { <app-worktrees [slug]="slug()" (jumpTask)="jumpToTask($event)" (openCommit)="openCommitInGraph($event)" (jumpFiles)="filesNav($event)" (jumpBranch)="jumpToBranch($event)" /> }
-          @case ('graph') { <app-graph [slug]="slug()" [activeHash]="panelHash()" (openCommit)="openCommit($event)" (jumpTask)="jumpToTask($event)" /> }
-          @case ('files') { <app-files [slug]="slug()" [wt]="wtParam()" [file]="fileParam()" (nav)="filesNav($event)" /> }
-          @case ('stats') { <app-stats [slug]="slug()" (jumpTask)="jumpToTask($event)" /> }
+      <div class="main-inner">
+        @if (showSettings()) {
+          <app-settings [wizard]="isWizard()" (addProject)="openNewProject()" />
+        } @else if (viewAll()) {
+          <app-overview (selectProject)="selectProject($event)" />
+        } @else if (slug()) {
+          @switch (tab()) {
+            @case ('tasks') { <app-tasks [slug]="slug()" [externalFilter]="taskFilter()" (jumpWorktree)="jumpToWorktree($event)" (jumpBranch)="jumpToBranch($event)" /> }
+            @case ('board') { <app-board [slug]="slug()" (jumpTask)="jumpToTask($event)" (jumpWorktree)="jumpToWorktree($event)" /> }
+            @case ('branches') { <app-branches [slug]="slug()" [activeBranch]="branchParam()" (openCommit)="openCommitInGraph($event)" (jumpWorktree)="jumpToWorktree($event)" (jumpTask)="jumpToTask($event)" /> }
+            @case ('worktrees') { <app-worktrees [slug]="slug()" [activeWorktree]="wtParam()" (jumpTask)="jumpToTask($event)" (openCommit)="openCommitInGraph($event)" (jumpFiles)="filesNav($event)" (jumpBranch)="jumpToBranch($event)" /> }
+            @case ('graph') { <app-graph [slug]="slug()" [activeHash]="panelHash()" (openCommit)="openCommit($event)" (jumpTask)="jumpToTask($event)" (jumpWorktree)="jumpToWorktree($event)" (jumpBranch)="jumpToBranch($event)" /> }
+            @case ('files') { <app-files [slug]="slug()" [wt]="wtParam()" [file]="fileParam()" (nav)="filesNav($event)" /> }
+            @case ('stats') { <app-stats [slug]="slug()" (jumpTask)="jumpToTask($event)" /> }
+          }
         }
-      }
+      </div>
     </main>
   </div>
 </div>

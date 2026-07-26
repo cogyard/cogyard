@@ -1,0 +1,21 @@
+/* Layout only — the NAME wears the shared .btn-link.mono recipe from styles.scss,
+   so a worktree/branch reference is the same accent-mono-underlined link every
+   other navigate-somewhere control in the portal is. Nothing here redefines
+   font-size / weight / colour for the name. */
+.gref {
+  display: inline-flex; align-items: center; gap: var(--app-space-2);
+  min-width: 0; max-width: 100%; vertical-align: bottom;
+}
+
+
+.gref-name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: var(--app-space-2);
+}
+/* On its own tab the name is not a link — plain text, no underline, no accent. */
+.gref-plain { color: var(--app-fg); font-weight: 600; }
+
+.gref-ico { width: 12px; height: 12px; flex: 0 0 auto; }
+/* The branch mark is inline SVG on currentColor; the worktree mark is the
+   supplied raster and keeps its own colours. object-fit stops it distorting. */
+.wt-ico { object-fit: contain; }

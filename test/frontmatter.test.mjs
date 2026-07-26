@@ -2,7 +2,10 @@
 // dashboard view, claim check, and CLI command rides on.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseFrontmatter, parseScalar, stripInlineComment } from '../core/frontmatter.mjs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { parseFrontmatter, parseScalar, stripInlineComment, readTaskFile } from '../core/frontmatter.mjs';
 
 test('parseScalar: scalars', () => {
   assert.equal(parseScalar('null'), null);
@@ -99,4 +102,33 @@ test('parseFrontmatter: dedent closes nested blocks', () => {
   assert.equal(fm.env.ports.backend, 7440);
   assert.equal(fm.env.hostname, 'mb.lan');
   assert.equal(fm.after, 'yes');
+});
+
+// --- legacy `category` → `type` alias (task 096) -----------------------------
+// The task-kind enum was renamed category→type; readTaskFile canonicalizes an old
+// `category:` key to `type` at the parse boundary so pre-096 files still validate
+// without a mass rewrite. This is the ONLY place that reads `category`.
+test('readTaskFile: legacy `category` is aliased to `type`; explicit `type` wins', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'cogyard-fm-'));
+  try {
+    const legacy = join(dir, '001-legacy.md');
+    writeFileSync(legacy, '---\nid: 1\nstatus: OPEN\ncategory: bug\n---\nbody\n');
+    assert.equal(readTaskFile(legacy).frontmatter.type, 'bug');
+
+    const modern = join(dir, '002-modern.md');
+    writeFileSync(modern, '---\nid: 2\nstatus: OPEN\ntype: feature\n---\nbody\n');
+    assert.equal(readTaskFile(modern).frontmatter.type, 'feature');
+
+    // Both present (shouldn't happen) — explicit type is not clobbered by the alias.
+    const both = join(dir, '003-both.md');
+    writeFileSync(both, '---\nid: 3\nstatus: OPEN\ntype: docs\ncategory: bug\n---\nbody\n');
+    assert.equal(readTaskFile(both).frontmatter.type, 'docs');
+
+    // Neither → type stays undefined (the validator then errors on it).
+    const neither = join(dir, '004-neither.md');
+    writeFileSync(neither, '---\nid: 4\nstatus: OPEN\n---\nbody\n');
+    assert.equal(readTaskFile(neither).frontmatter.type, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

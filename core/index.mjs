@@ -24,6 +24,8 @@ export { tryExec, execLoud, findRepoRoot, findTasksDir, gitP, defaultBranch, def
 export { memoize, clearMemo } from './memo.mjs';
 export { STATUS, STATUSES, isValidStatus, isLegacyStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate, BUCKET_KEYS, bucketOf, waitingWhyOf } from './status.mjs';
 export { validateTask, validateTasks } from './validate.mjs';
+export { resolveAxes, axisLookup, registeredLabels, seedSharedAxes, DEFAULT_SHARED_AXES,
+  readSharedAxes, readProjectAxes, sanitizeAxes, writeSharedAxes, writeProjectAxes } from './axes.mjs';
 export { stripInlineComment, parseScalar, parseFrontmatter, readTaskFile, listTaskFiles, loadTasks, computeDerived } from './frontmatter.mjs';
 export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject } from './registry.mjs';
 export { loadProject, computeStaleMap, loadProjectAsync, tasksToData, generateIndexMd } from './project.mjs';
@@ -39,5 +41,6 @@ export { ADDONS_DIR, listAddonIds, loadManifest, loadAddons, listAddons, addonSt
 export { PRICING_VERSIONS, priceFor } from './pricing.mjs';
 export { appendClaimEvent, resolveProjectForPath, collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage, transcriptsRoot, findTranscriptsForSession } from './usage.mjs';
 export { activityRollup, activityDay, activityPunchcard } from './activity.mjs';
+export { chatsForTask, transcriptForChat } from './task-chats.mjs';
 export { OPEN_TARGETS_PATH, openTargets, findOpenTarget, writeOpenTargets, resolveOpenArgs, resolveOpenCommand, defaultBrowserBundleId } from './open-targets.mjs';
 export { runDoctor, NODE_FLOOR_MAJOR } from './doctor.mjs';

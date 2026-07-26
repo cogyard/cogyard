@@ -9,6 +9,7 @@ CLAUDE.md export-ignore
 
 # Owner-internal A/B diff helper (developer tooling, not part of the product).
 scripts/ab-api.sh export-ignore
+scripts/trace-png-to-svg.py export-ignore
 
 # Maintainer publish/backup tooling (task 63) — NOT part of the public product, and
 # the scanner + manifest even contain owner/other-project names as match patterns, so
@@ -36,6 +37,12 @@ docs/PORTAL-V2-DESIGN.md export-ignore
 # replaces the old `*.local.md` gitignore rule, which was silently dropping them from
 # the backup entirely.
 *.local.md export-ignore
+
+# cogyard's OWN project label-axis map (task 096) — this project's domain categories
+# (Subsystem/Lifecycle with internal labels), not tool code. Other projects author
+# their own; the public snapshot ships none.
+.cogyard/axes.json export-ignore
+.cogyard/ export-ignore
 
 # demo machinery (tasks 087/088) — private on main, never in the public snapshot
 extras/demo-maker/** export-ignore

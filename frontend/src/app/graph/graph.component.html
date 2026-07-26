@@ -17,8 +17,12 @@
           </div>
           <div class="dag-hash">●</div>
           <div class="dag-msg">
-            <span class="wt-label">{{ r.wtName }}</span>
-            @if (r.branch) { <p-tag styleClass="dag-ref local" [value]="r.branch" /> }
+            <app-git-ref kind="worktree" [name]="r.wtName"
+              (open)="jumpWorktree.emit(r.wtName!)" />
+            @if (r.branch) {
+              <app-git-ref kind="branch" [name]="r.branch"
+                (open)="jumpBranch.emit(r.branch!)" />
+            }
             <span class="wt-count dirty">{{ r.dirtyCount }} uncommitted</span>
           </div>
           <div class="dag-author"></div>
@@ -55,7 +59,7 @@
           <div class="dag-hash">{{ r.shortHash }}</div>
           <div class="dag-msg">
             @for (c of r.chips; track $index) {
-              <p-tag styleClass="dag-ref {{ c.cls }}" [value]="c.text" />
+              <p-tag styleClass="badge mono dag-ref {{ c.cls }}" [value]="c.text" />
             }
             @for (id of r.taskIds; track id) {
               <button class="btn-link mono" (click)="$event.stopPropagation(); jumpTask.emit(id)">#{{ id }}</button>

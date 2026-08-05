@@ -9,8 +9,10 @@
 //   * server/  (same repo) imports the read functions for the /api surface.
 //   * cli/tasks.mjs + cli/env.mjs (same repo) build the command surface on top.
 //   * generateIndexMd / loadTasks feed _tasks/INDEX.md, which the bd-pickup-task
-//     skill and the /cogyard natural-language path READ directly. INDEX.md is
-//     consumed tooling, not portal display — do not retire it.
+//     skill and the /cogyard natural-language path browse directly. `cli/tasks.mjs
+//     find` is the authoritative id→file resolver (matches id/filename-stem/slug,
+//     same as drift/claim/release); INDEX.md is a browsing snapshot, auto-refreshed
+//     by `tasks sync push`. Consumed tooling, not portal display — do not retire it.
 //   * Do NOT remove, rename, or change the signature of any export without
 //     updating server/ and cli/ in lockstep.
 // ----------------------------------------------------------------------------
@@ -30,7 +32,7 @@ export { stripInlineComment, parseScalar, parseFrontmatter, readTaskFile, listTa
 export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject } from './registry.mjs';
 export { loadProject, computeStaleMap, loadProjectAsync, tasksToData, generateIndexMd } from './project.mjs';
 export { loadPortAllocations, gitWorktrees, computeWorktrees, worktreesForProject, projectWorktreePaths } from './worktrees.mjs';
-export { gitCommits, commitsPerDay, mergesPerDay, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees } from './git-views.mjs';
+export { gitCommits, commitsPerDay, mergesPerDay, parseGraphLog, aheadBehind, branchDivergence, matchBranchTask, gitDag, listStashes, spliceStashRows, gitDagWithStashes } from './git-views.mjs';
 export { lightWorktreeStats, taskCountsFromFrontmatter, projectOverview, worktreeNamesForProject, annotateWorktree } from './overview.mjs';
 export { worktreeUnmergedCount, projectUnmerged } from './unmerged.mjs';
 export { inferStatus } from './analyze.mjs';

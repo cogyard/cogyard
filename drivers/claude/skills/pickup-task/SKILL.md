@@ -65,7 +65,13 @@ Skip if working on a single machine with no remote sync.
 
 ### 2. Locate and read the task file
 
-Find the file by ID. The dashboard or `_tasks/INDEX.md` lists them. For ID `037`, the file is typically `_tasks/037-<slug>.md`.
+Resolve the ID to a path with:
+
+```
+cogyard tasks find <id-or-slug>
+```
+
+This is the authoritative lookup — it matches frontmatter `id`, filename stem, or `slug` (the same rule `drift`/`claim`/`release` resolve by internally), so it can't diverge from what those commands will actually operate on. Don't glob `_tasks/037-<slug>.md` by guessing the slug, and don't treat `_tasks/INDEX.md` as a source of truth for lookup — it's a generated human-browsing snapshot (regenerated on every `tasks sync push`, but still just a cache); if `find` and `INDEX.md` ever disagree, `find` wins. The dashboard or `INDEX.md` are fine for *browsing* ("what tasks exist"), never for resolving a specific ID to a file.
 
 Read the entire body. Note:
 - The frontmatter (especially `status`, `depends_on`, `claimed_at`, `touches_paths`)

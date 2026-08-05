@@ -8,10 +8,6 @@
 .dag-row:hover { background: var(--app-hover); }
 .dag-row.active { background: var(--app-accent-tint2); box-shadow: inset 3px 0 0 var(--app-accent); }
 .dag-row.active:hover { background: var(--app-accent-tint3); }
-.wt-row { background: var(--app-surface-2); }
-.wt-row .dag-hash { color: #16a34a; text-align: center; }
-.wt-count { font-size: 11.5px; margin-left: 8px; white-space: nowrap; }
-.wt-count.dirty { color: #d97706; font-weight: 600; }
 /* collapsed stash pseudo-rows — dotted/hollow node + 📦 + message */
 .stash-row { background: var(--app-surface-2); }
 .stash-row .dag-hash.stash-icon { text-align: center; padding-right: 8px; }

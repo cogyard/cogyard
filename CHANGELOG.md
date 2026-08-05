@@ -9,6 +9,59 @@ Only *released* versions appear here. cogyard's version counter (the root
 only the versions actually cut with `bin/publish-snapshot` — so this history
 mirrors the `v*` release tags, not every intermediate bump.
 
+## [1.53.0] — 2026-08-05
+
+### Added
+
+- **Tab icons** — each tab in the per-project strip (Tasks, Board, Branches,
+  Worktrees, Graph, Files, Stats) now carries a small outline icon before its
+  label, tinting with the tab's active state.
+- **`cogyard tasks find <id | slug | file>`** — resolves a task reference to its
+  file path. The authoritative answer to "where is task NNN", replacing guesses
+  at the filename convention.
+- **Escape collapses an expanded task row**, whether the pointer is over the row
+  or over its expanded detail region.
+- **The live demo shows a task's chats** — expanding a task in the demo now
+  renders the Chats box with real labels across its created, implemented, and
+  mentioned buckets, and clicking a chat opens the transcript popup with
+  content.
+
+### Changed
+
+- **The demo endpoint-coverage guard runs at merge time.** The check that
+  catches an SPA endpoint the demo crawler doesn't export now runs in CI on
+  every push to `main`, not only in the nightly demo refresh. Previously the
+  gap was introduced on one commit, passed CI green, rode into the next release
+  tag, and only surfaced days later as a red nightly against a stale tree. It
+  stays in the nightly too.
+
+### Fixed
+
+- **`tasks sync push` no longer commits other sessions' work.** A project's task
+  store has a single working tree shared by every worktree, and `sync push`
+  staged and committed all of it (`git add .` followed by a pathspec-less
+  commit). Whichever session pushed first absorbed every other session's
+  uncommitted task edits under its own message; the other session's later push
+  then printed "Nothing to commit." with no sign that anything had been taken.
+  `sync push` and `analyze --apply` now commit only the caller's paths, and
+  report other pending files rather than swallowing them.
+- **Task lookup no longer depends on a stale index.** Resolving a task id to a
+  file was documented as reading `_tasks/INDEX.md`, but nothing ever read that
+  file back and it had gone months out of date, while the CLI quietly used a
+  different directory scan. `sync push` now regenerates `INDEX.md` and folds it
+  into the same commit, so it stays current.
+- **`sync push` on a plain `_tasks/` directory.** Git reports paths relative to
+  the repository root, not the directory it was invoked in. For projects whose
+  `_tasks/` is a normal tracked directory rather than a shared-store symlink,
+  `sync push` built pathspecs like `_tasks/001-foo.md` and ran them from inside
+  `_tasks/`, failing with `fatal: pathspec ... did not match any files`.
+- **The Files tab scrolls properly.** The tree sidebar and the open-file pane
+  now scroll independently instead of the whole page moving as one block. Their
+  own CSS was already correct but inert — no ancestor passed a bounded height
+  down the chain, so neither pane had a fixed-height box to scroll inside.
+- **The Graph tab** no longer lists worktree pseudo-rows alongside real branches
+  and commits.
+
 ## [1.47.2] — 2026-07-24
 
 ### Added

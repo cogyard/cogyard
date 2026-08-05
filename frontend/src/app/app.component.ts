@@ -102,7 +102,7 @@ export class AppComponent implements OnInit {
   // The strip renders PORTAL_TABS minus ui.hiddenTabs. The current tab
   // always shows even when hidden — a deep link (e.g. /p/x/board) must not leave
   // the user on an invisible tab. Content rendering (@switch) stays unfiltered.
-  readonly tabs = computed<{ id: Tab; label: string }[]>(() => {
+  readonly tabs = computed<{ id: Tab; label: string; icon: string }[]>(() => {
     const hidden = new Set(this.cfg.config()?.ui?.hiddenTabs ?? []);
     return PORTAL_TABS.filter((t) => !hidden.has(t.id) || t.id === this.tab());
   });

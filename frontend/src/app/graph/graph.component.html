@@ -5,35 +5,12 @@
 } @else {
   <div class="dag">
     @for (r of rows(); track r.hash) {
-      @if (r.kind === 'worktree') {
-        <div class="dag-row wt-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
-          <div class="dag-graph">
-            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
-              @for (s of r.segs; track $index) {
-                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
-              }
-              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="#fff" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
-            </svg>
-          </div>
-          <div class="dag-hash">●</div>
-          <div class="dag-msg">
-            <app-git-ref kind="worktree" [name]="r.wtName"
-              (open)="jumpWorktree.emit(r.wtName!)" />
-            @if (r.branch) {
-              <app-git-ref kind="branch" [name]="r.branch"
-                (open)="jumpBranch.emit(r.branch!)" />
-            }
-            <span class="wt-count dirty">{{ r.dirtyCount }} uncommitted</span>
-          </div>
-          <div class="dag-author"></div>
-          <div class="dag-date"></div>
-        </div>
-      } @else if (r.kind === 'stash') {
+      @if (r.kind === 'stash') {
         <div class="dag-row stash-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
           <div class="dag-graph">
             <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
               @for (s of r.segs; track $index) {
-                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="(s.wt || s.stash) ? '3 3' : null" />
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.stash ? '3 3' : null" />
               }
               <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="none" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
             </svg>
@@ -51,7 +28,7 @@
           <div class="dag-graph">
             <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
               @for (s of r.segs; track $index) {
-                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" />
               }
               <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" [attr.fill]="dotColor(r)" stroke="#fff" stroke-width="1.5" />
             </svg>

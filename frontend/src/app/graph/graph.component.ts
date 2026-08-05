@@ -1,5 +1,4 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
-import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { Tag } from 'primeng/tag';
 import { OriginLinkComponent } from '../shared/origin-link/origin-link.component';
@@ -13,20 +12,19 @@ const COLORS = ['#60a5fa', '#4ade80', '#fb923c', '#f472b6', '#c084fc', '#38bdf8'
 const MAIN = '#111827';
 
 interface Chip { cls: string; text: string; }
-interface Seg { from: number; to: number; half: string; color: number; main: boolean; wt?: boolean; stash?: boolean; }
+interface Seg { from: number; to: number; half: string; color: number; main: boolean; stash?: boolean; }
 interface Row {
   hash: string; shortHash: string; subject: string; author: string; date: string;
   col: number; onMain: boolean; segs: Seg[];
   chips: Chip[]; taskIds: string[]; cleanSubject: string;
-  // working-tree pseudo-rows (kind === 'worktree'); hash is 'wt:<abs path>'
   // stash pseudo-rows (kind === 'stash'); hash is the stash ref (e.g. 'stash@{0}')
-  kind?: 'worktree' | 'stash'; wtName?: string; branch?: string | null; dirtyCount?: number; isMain?: boolean;
+  kind?: 'stash';
   stashRef?: string; message?: string; base?: string;
 }
 
 @Component({
   selector: 'app-graph',
-  imports: [Tag, Skeleton, OriginLinkComponent, GitRefComponent],
+  imports: [Tag, Skeleton, OriginLinkComponent],
   templateUrl: './graph.component.html',
   styleUrl: './graph.component.scss',
 })
@@ -38,7 +36,6 @@ export class GraphComponent {
   activeHash = input<string | null>(null);
   openCommit = output<string>();
   jumpBranch = output<string>();
-  jumpWorktree = output<string>();
   jumpTask = output<string>();
 
   // The row currently open in the diff panel (commit hash or 'wt:<path>') — highlight it.
@@ -86,7 +83,7 @@ export class GraphComponent {
   }
 
   private toRow(r: any): Row {
-    if (r.kind === 'worktree' || r.kind === 'stash') return { ...r, chips: [], taskIds: [], cleanSubject: '' };
+    if (r.kind === 'stash') return { ...r, chips: [], taskIds: [], cleanSubject: '' };
     // taskIds + cleanSubject are computed server-side (core/git-views parseTaskTags)
     // and served on the row — the SPA consumes them, never re-parses [#NN].
     return { ...r, chips: this.chips(r.refs || []), taskIds: r.taskIds ?? [], cleanSubject: r.cleanSubject ?? '' };

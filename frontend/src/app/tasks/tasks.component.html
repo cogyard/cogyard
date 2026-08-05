@@ -47,7 +47,8 @@
           </tr>
         </ng-template>
         <ng-template #body let-t>
-          <tr class="grid-row" [class.expanded]="isExpanded(t)" (click)="toggle(t)">
+          <tr class="grid-row" [class.expanded]="isExpanded(t)" (click)="toggle(t)"
+              (mouseenter)="hoveredFile.set(t.file)" (mouseleave)="hoveredFile.set(null)">
             <td class="mono">{{ t.id != null ? '#' + t.id : '?' }} @if (t.stale) { <span class="warn" pTooltip="Possibly outdated! Code has changed since task written.">⚠️</span> }</td>
             @if (showStatusColumn()) {
               <td class="status">
@@ -72,7 +73,7 @@
           </tr>
         </ng-template>
         <ng-template #expandedrow let-t>
-          <tr>
+          <tr (mouseenter)="hoveredFile.set(t.file)" (mouseleave)="hoveredFile.set(null)">
             <td [attr.colspan]="showStatusColumn() ? 6 : 5" class="body-row">
               <div class="gitbox">
                 <div class="gb-head">GIT</div>

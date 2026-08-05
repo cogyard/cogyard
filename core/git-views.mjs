@@ -5,7 +5,6 @@ import { join, basename } from 'node:path';
 import { tryExec, gitP, defaultBranch } from './exec.mjs';
 import { memoize } from './memo.mjs';
 import { loadTasks } from './frontmatter.mjs';
-import { worktreesForProject } from './worktrees.mjs';
 
 // The /commit skill stamps a leading [#NN] task tag on commit subjects. This is
 // the ONE place that convention is parsed: it returns the referenced task ids and
@@ -204,8 +203,8 @@ async function branchDivergence(proj) {
 // it keyed by those ref OIDs: a poll where no ref moved reuses the cached lanes
 // instead of re-walking + re-assigning. `git rev-parse --branches --tags --remotes`
 // is the cheap signal (one spawn) vs. the 250-commit log + lane pass it guards.
-// Volatile worktree/stash overlays are NOT cached here — they're spliced fresh by
-// gitDagWithWorktrees, so dirty/stash state never goes stale.
+// Volatile stash overlays are NOT cached here — they're spliced fresh by
+// gitDagWithStashes, so stash state never goes stale.
 async function gitDag(proj, limit = 250) {
   const repo = proj.path;
   return memoize('dag', `${repo}|${limit}`,
@@ -317,69 +316,6 @@ function dagFromLog(raw, mainSet) {
   return { rows, laneCount: lanes.length };
 }
 
-// --- Working-tree pseudo-rows (SmartGit-style) -------------------------------
-// Post-pass over gitDag rows: each DIRTY checkout (main's plus every worktree)
-// becomes a `kind: 'worktree'` row spliced directly above its HEAD commit's row,
-// in that row's lane. Pseudo-rows do not participate in lane assignment — they
-// borrow the anchor's col and replay the anchor's incoming lanes as straight
-// verticals so pass-through lines don't visually break. Checkouts whose HEAD is
-// outside the row window are skipped (the Worktrees tab still shows them).
-function spliceWorktreeRows(dag, worktrees) {
-  const rows = dag.rows;
-  if (!rows.length) return dag;
-  const byAnchor = new Map(); // row index -> worktree entries anchored there
-  for (const wt of worktrees) {
-    if (!wt.dirtyCount) continue; // clean (0) or unknown (null) → no node
-    const head = wt.headFull || wt.head;
-    if (!head) continue;
-    const i = rows.findIndex((r) => r.hash === head || r.hash.startsWith(head));
-    if (i === -1) continue; // HEAD beyond the DAG's -n window
-    if (!byAnchor.has(i)) byAnchor.set(i, []);
-    byAnchor.get(i).push(wt);
-  }
-  if (!byAnchor.size) return dag;
-
-  const out = [];
-  for (let i = 0; i < rows.length; i++) {
-    const anchor = rows[i];
-    const group = byAnchor.get(i);
-    if (group) {
-      group.sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0) || String(a.name).localeCompare(String(b.name)));
-      // Lanes entering the anchor row also cross every pseudo-row above it.
-      const passSegs = anchor.segs
-        .filter((s) => s.half === 'full' || s.half === 'top')
-        .map((s) => ({ from: s.from, to: s.from, half: 'full', color: s.color, main: s.main }));
-      group.forEach((wt, j) => {
-        const segs = passSegs.slice();
-        // Connector into the anchor's dot. The topmost node starts at its own dot
-        // (bottom half); stacked nodes below it carry the line full-height.
-        segs.push({ from: anchor.col, to: anchor.col, half: j === 0 ? 'bottom' : 'full', color: anchor.col, main: anchor.onMain, wt: true });
-        out.push({
-          kind: 'worktree',
-          hash: 'wt:' + wt.path, // unique row key; doubles as the ?commit= deep-link value
-          col: anchor.col,
-          segs,
-          onMain: anchor.onMain,
-          wtPath: wt.path,
-          wtName: wt.name,
-          branch: wt.branch,
-          dirtyCount: wt.dirtyCount,
-          isMain: !!wt.isMain,
-          clone: wt.clone || null,
-        });
-      });
-      // A tip commit draws nothing in its top half-row, which would leave the
-      // connector dangling half a row above the dot — extend it to the dot.
-      if (!anchor.segs.some((s) => s.half === 'top' && s.to === anchor.col)) {
-        out.push({ ...anchor, segs: [...anchor.segs, { from: anchor.col, to: anchor.col, half: 'top', color: anchor.col, main: anchor.onMain, wt: true }] });
-        continue;
-      }
-    }
-    out.push(anchor);
-  }
-  return { ...dag, rows: out };
-}
-
 // --- Stash rows (collapsed) --------------------------------------------------
 // A `git stash` is stored as a little cluster of commits on refs/stash (the stash
 // commit, its index parent, and — with `-u` — an untracked-files parent). Now that
@@ -398,18 +334,18 @@ async function listStashes(repo) {
   });
 }
 
-// Post-pass mirroring spliceWorktreeRows: each stash becomes a `kind: 'stash'` row
-// spliced directly above its base commit's row, borrowing that row's lane and
-// replaying its incoming lanes as straight verticals so pass-through lines don't
-// break. A dotted connector ties the stash dot to the base commit's dot. Stashes
-// whose base commit is outside the row window are skipped.
+// Post-pass over gitDag rows: each stash becomes a `kind: 'stash'` row spliced
+// directly above its base commit's row, borrowing that row's lane and replaying
+// its incoming lanes as straight verticals so pass-through lines don't break. A
+// dotted connector ties the stash dot to the base commit's dot. Stashes whose
+// base commit is outside the row window are skipped.
 function spliceStashRows(dag, stashes) {
   const rows = dag.rows;
   if (!rows.length || !stashes.length) return dag;
   const byAnchor = new Map(); // row index -> stash entries anchored there
   for (const st of stashes) {
     if (!st.base) continue;
-    const i = rows.findIndex((r) => r.kind !== 'worktree' && r.kind !== 'stash' && (r.hash === st.base || r.hash.startsWith(st.base)));
+    const i = rows.findIndex((r) => r.kind !== 'stash' && (r.hash === st.base || r.hash.startsWith(st.base)));
     if (i === -1) continue; // base beyond the DAG's -n window
     if (!byAnchor.has(i)) byAnchor.set(i, []);
     byAnchor.get(i).push(st);
@@ -456,11 +392,13 @@ function spliceStashRows(dag, stashes) {
   return { ...dag, rows: out };
 }
 
-// The DAG the portal's Graph tab renders: commit rows + working-tree pseudo-rows
-// + collapsed stash rows.
-async function gitDagWithWorktrees(proj, limit = 250) {
-  const [dag, wts, stashes] = await Promise.all([gitDag(proj, limit), worktreesForProject(proj), listStashes(proj.path)]);
-  return spliceStashRows(spliceWorktreeRows(dag, wts), stashes);
+// The DAG the portal's Graph tab renders: commit rows + collapsed stash rows.
+// Worktree state does NOT belong here — it's shown on the dedicated Worktrees
+// tab, and as a "has worktree" annotation on the Branches tab (see
+// server/git.mjs's Branch.hasWorktree) — never as a row in the commit timeline.
+async function gitDagWithStashes(proj, limit = 250) {
+  const [dag, stashes] = await Promise.all([gitDag(proj, limit), listStashes(proj.path)]);
+  return spliceStashRows(dag, stashes);
 }
 
-export { parseTaskTags, matchBranchTask, commitsPerDay, mergesPerDay, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceWorktreeRows, spliceStashRows, gitDagWithWorktrees };
+export { parseTaskTags, matchBranchTask, commitsPerDay, mergesPerDay, gitCommits, parseGraphLog, aheadBehind, branchDivergence, gitDag, dagFromLog, listStashes, spliceStashRows, gitDagWithStashes };

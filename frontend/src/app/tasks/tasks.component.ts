@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, signal, computed } from '@angular/core';
+import { Component, input, output, inject, effect, signal, computed, HostListener } from '@angular/core';
 import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -340,6 +340,19 @@ export class TasksComponent {
     const s = new Set(this.expanded());
     if (s.has(t.file)) s.delete(t.file);
     else { s.add(t.file); this.loadChats(t); }
+    this.expanded.set(s);
+  }
+
+  // Escape collapses whichever row is under the mouse — scoped to hover (not a
+  // "collapse all", not tied to activation order) since multiple rows can be
+  // expanded at once. No-op if the hovered row is already collapsed, or nothing
+  // is hovered.
+  hoveredFile = signal<string | null>(null);
+  @HostListener('document:keydown.escape') onEscape() {
+    const f = this.hoveredFile();
+    if (!f || !this.expanded().has(f)) return;
+    const s = new Set(this.expanded());
+    s.delete(f);
     this.expanded.set(s);
   }
 

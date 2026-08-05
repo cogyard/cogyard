@@ -74,6 +74,74 @@ function cmdInit() {
   }
 }
 
+// Synchronous sleep (no busy loop) — used only to back off while waiting on the
+// store lock. Atomics.wait blocks the thread for `ms` without spinning.
+function sleepMs(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch {} }
+
+// --- Shared-store write lock (task 101) -------------------------------------
+// The shared store has ONE working tree, symlinked into the main checkout AND
+// every worktree, so two sessions' `sync push` runs race on the SAME git index.
+// Serialize the stage→commit→push sequence with an O_EXCL sentinel (the same
+// primitive next-id already uses). Non-blocking with a short deadline so a push
+// never hangs; a sentinel older than STALE_MS is swept so a holder that crashed
+// between lock and release can't wedge every future session.
+function withStoreLock(canonical, fn) {
+  const lock = join(canonical, '.sync-push.lock');
+  const STALE_MS = 60 * 1000;
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { writeFileSync(lock, `${process.pid} ${new Date().toISOString()}\n`, { flag: 'wx' }); break; }
+    catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      // Sweep a stale lock (crashed holder), else back off and retry to the deadline.
+      try { if (Date.now() - statSync(lock).mtimeMs > STALE_MS) { unlinkSync(lock); continue; } }
+      catch { continue; } // lock vanished between EEXIST and stat — loop to grab it
+      if (Date.now() > deadline) fail('another `sync push` holds the store lock (waited 5s). Retry shortly.');
+      sleepMs(100);
+    }
+  }
+  try { return fn(); } finally { try { unlinkSync(lock); } catch {} }
+}
+
+// Split the store's pending files into "mine" (this push should commit them) and
+// "foreign" (a DIFFERENT worktree/branch actively claims them — committing them
+// here is exactly the attribution bug this task fixes). Default scope = every
+// pending file EXCEPT task files whose claim names another branch; foreign files
+// are reported, never absorbed and never silently skipped. Dotfiles (lock
+// sentinels, .git internals) are ignored entirely — they are not task content.
+function classifyPending(tasksDir, currentBranch) {
+  // Column-free plumbing: `diff --name-only HEAD` (all uncommitted tracked
+  // changes, staged or not) ∪ `ls-files --others` (untracked). Avoids parsing
+  // porcelain's XY status columns — tryExec trims output, which would strip the
+  // leading space off the first porcelain line and misalign a fixed slice.
+  //
+  // `--relative` on the diff call matters: git reports diff paths relative to
+  // the REPO ROOT, not cwd. That's invisible in the shared-store model (tasksDir
+  // IS its own repo root, so root-relative == tasksDir-relative), but breaks the
+  // normal-directory model (_tasks/ as a subdir of the project repo) — without
+  // it this returns "_tasks/NNN-foo.md" while every caller below (and `git add`/
+  // `git commit`, run with cwd: tasksDir) expects tasksDir-relative "NNN-foo.md".
+  // `ls-files` doesn't need the flag — it's cwd-relative by default already.
+  const changed = tryExec('git diff --name-only --relative HEAD', { cwd: tasksDir }) || '';
+  const untracked = tryExec('git ls-files --others --exclude-standard', { cwd: tasksDir }) || '';
+  const pending = [...new Set([...changed.split('\n'), ...untracked.split('\n')])]
+    .map((p) => p.trim())
+    .filter((p) => p && !basename(p).startsWith('.'));
+  const envByFile = new Map();
+  for (const t of loadTasks(tasksDir)) envByFile.set(basename(t.path), (t.frontmatter || {}).env || {});
+  const mine = [], foreign = [];
+  for (const rel of pending) {
+    const env = envByFile.get(basename(rel));
+    const claimed = env && env.claimed_at && env.claimed_at !== 'null';
+    const branch = claimed ? (env.branch && env.branch !== 'null' ? env.branch : null) : null;
+    // Foreign only when the file is claimed on a NAMED branch other than ours.
+    // A null-branch claim (claimed from the main checkout, no worktree) can't
+    // collide across worktrees, so it stays in scope.
+    (branch && currentBranch && branch !== currentBranch ? foreign : mine).push(rel);
+  }
+  return { mine, foreign };
+}
+
 function cmdSync(args) {
   const sub = args[0];
   const repoRoot = findRepoRoot();
@@ -88,44 +156,95 @@ function cmdSync(args) {
     try { execLoud(`git pull --rebase origin tasks`, { cwd: tasksDir }); }
     catch { fail('pull failed (rebase conflict?). Investigate manually in _tasks/.'); }
   } else if (sub === 'push') {
-    const message = args.slice(1).join(' ') || `tasks: update ${new Date().toISOString()}`;
-    execLoud(`git add .`, { cwd: tasksDir });
-    const status = tryExec(`git status --porcelain`, { cwd: tasksDir });
-    if (!status) { process.stdout.write(`Nothing to commit.\n`); return; }
-    execLoud(`git commit -m ${JSON.stringify(message)}`, { cwd: tasksDir });
-    // Local-only tolerance: push only when the store actually has an
-    // origin AND a tasks branch. Local-only shared stores and normal-dir
-    // projects (where _tasks rides the project repo) commit locally + notice —
-    // they must NOT fail(), or every skill sync errors on them.
+    // `sync push "<msg>"` scopes to this session's own pending edits (default),
+    // or `sync push "<msg>" -- <path> [<path>...]` to commit exactly named paths.
+    const rest = args.slice(1);
+    const dashIdx = rest.indexOf('--');
+    const explicit = dashIdx === -1 ? [] : rest.slice(dashIdx + 1);
+    const message = (dashIdx === -1 ? rest : rest.slice(0, dashIdx)).join(' ')
+      || `tasks: update ${new Date().toISOString()}`;
+    const canonical = realpathSync(tasksDir);
+    const currentBranch = tryExec('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot }) || '';
     const remotes = (tryExec('git remote', { cwd: tasksDir }) || '').split('\n');
     const hasTasksBranch = !!tryExec('git rev-parse --verify --quiet refs/heads/tasks', { cwd: tasksDir });
-    if (!remotes.includes('origin') || !hasTasksBranch) {
-      const why = !remotes.includes('origin') ? 'no remote configured' : 'no tasks branch (normal-dir project — tasks ride the project repo)';
-      process.stdout.write(`Committed locally; skipping push (${why}).\n`);
-      return;
-    }
-    try { execLoud(`git push origin tasks`, { cwd: tasksDir }); }
-    catch {
-      process.stdout.write(`Push failed; pulling and retrying...\n`);
-      try {
-        execLoud(`git pull --rebase origin tasks`, { cwd: tasksDir });
-        execLoud(`git push origin tasks`, { cwd: tasksDir });
-      } catch { fail('push retry failed. Investigate manually in _tasks/.'); }
-    }
+    const remoteBacked = remotes.includes('origin') && hasTasksBranch;
+
+    withStoreLock(canonical, () => {
+      // Team stores: pull before write so the scoped commit lands on current
+      // origin/tasks (mirrors env.mjs's claim path). --autostash tolerates other
+      // sessions' pending edits in the shared tree.
+      if (remoteBacked) tryExec('git pull --rebase --autostash origin tasks', { cwd: tasksDir });
+
+      const { mine, foreign } = explicit.length
+        ? { mine: explicit, foreign: [] }
+        : classifyPending(tasksDir, currentBranch);
+      const reportForeign = () => {
+        if (foreign.length) process.stdout.write(
+          `${foreign.length} file(s) claimed by other sessions — left pending, not committed by this push:\n` +
+          foreign.map((f) => `  ${f}`).join('\n') + '\n');
+      };
+
+      if (!mine.length) { reportForeign(); if (!foreign.length) process.stdout.write('Nothing to commit.\n'); return; }
+
+      // Keep INDEX.md in lockstep with every default-scope push (core/index.mjs's
+      // contract: pickup-task reads it directly, so it must never go stale).
+      // Skip for explicit `-- <path>` pushes — those promise to commit exactly
+      // the named paths, and INDEX.md isn't one of them.
+      if (!explicit.length) {
+        regenerateIndex(tasksDir, repoRoot);
+        if (!mine.includes('INDEX.md')) mine.push('INDEX.md');
+      }
+
+      // Scope BOTH halves: a pathspec-less `git commit` would still absorb
+      // whatever another session left staged, so add AND commit take the paths.
+      const pathspec = mine.map((p) => JSON.stringify(p)).join(' ');
+      execLoud(`git add -- ${pathspec}`, { cwd: tasksDir });
+      if (tryExec(`git diff --cached --quiet -- ${pathspec}`, { cwd: tasksDir }) !== null) {
+        // Non-null (exit 0) => nothing staged for the named paths.
+        process.stdout.write('Nothing to commit for this session.\n');
+        reportForeign();
+        return;
+      }
+      execLoud(`git commit -m ${JSON.stringify(message)} -- ${pathspec}`, { cwd: tasksDir });
+      reportForeign();
+
+      // Local-only tolerance: push only when the store has an origin AND a tasks
+      // branch. Local-only shared stores and normal-dir projects (where _tasks
+      // rides the project repo) commit locally + notice — they must NOT fail(),
+      // or every skill sync errors on them.
+      if (!remoteBacked) {
+        const why = !remotes.includes('origin') ? 'no remote configured' : 'no tasks branch (normal-dir project — tasks ride the project repo)';
+        process.stdout.write(`Committed locally; skipping push (${why}).\n`);
+        return;
+      }
+      if (tryExec(`git push origin tasks`, { cwd: tasksDir }) === null) {
+        process.stdout.write(`Push failed; pulling and retrying...\n`);
+        tryExec(`git pull --rebase --autostash origin tasks`, { cwd: tasksDir });
+        if (tryExec(`git push origin tasks`, { cwd: tasksDir }) === null) fail('push retry failed. Investigate manually in _tasks/.');
+      }
+    });
   } else {
-    fail('usage: tasks.mjs sync pull | tasks.mjs sync push <message>');
+    fail('usage: tasks.mjs sync pull | tasks.mjs sync push <message> [-- <path>...]');
   }
+}
+
+// The one place that writes INDEX.md. core/index.mjs's contract calls it
+// "consumed tooling" the pickup-task skill reads directly — that's only true
+// if it's regenerated on every mutation, not just when someone runs the bare
+// `tasks` command by hand. cmdSync's push path calls this too (see below).
+function regenerateIndex(tasksDir, repoRoot) {
+  const project = repoRoot ? basename(repoRoot) : basename(dirname(tasksDir));
+  const tasks = loadTasks(tasksDir);
+  for (const t of tasks) t.derived = computeDerived(t, tasks, repoRoot);
+  writeFileSync(join(tasksDir, 'INDEX.md'), generateIndexMd(tasks, project));
+  return { tasks, project };
 }
 
 function cmdGenerate(opts) {
   const repoRoot = findRepoRoot();
   const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
   if (!tasksDir || !existsSync(tasksDir)) fail('no _tasks/ found');
-  const project = repoRoot ? basename(repoRoot) : basename(dirname(tasksDir));
-  const tasks = loadTasks(tasksDir);
-  for (const t of tasks) t.derived = computeDerived(t, tasks, repoRoot);
-  const indexMd = generateIndexMd(tasks, project);
-  writeFileSync(join(tasksDir, 'INDEX.md'), indexMd);
+  const { tasks, project } = regenerateIndex(tasksDir, repoRoot);
   if (!opts.quiet) process.stdout.write(`Wrote ${join(tasksDir, 'INDEX.md')}\n`);
   return { tasks, project, tasksDir };
 }
@@ -567,6 +686,32 @@ function cmdStaleness() {
   process.exit(1);
 }
 
+// The one place an id/filename/slug turns into an actual _tasks/ file. Every
+// command that takes a task reference (find, drift, ...) goes through this —
+// so "how do I look up a task" always has ONE true answer, not a filename
+// convention in a skill doc that can drift from what the code really does.
+function resolveTask(tasksDir, idArg) {
+  const want = String(idArg).replace(/\.md$/, '');
+  return loadTasks(tasksDir).find((t) => {
+    const fm = t.frontmatter || {};
+    return String(fm.id) === want || basename(t.path).replace(/\.md$/, '') === want || String(fm.slug) === want;
+  });
+}
+
+// find: resolve an id/filename/slug to its file path. The lookup primitive
+// other tooling (and the pickup-task skill) should call instead of guessing
+// `_tasks/NNN-<slug>.md` or trusting a possibly-stale INDEX.md.
+function cmdFind(idArg) {
+  if (!idArg) fail('usage: tasks.mjs find <task-id-or-file-or-slug>');
+  const repoRoot = findRepoRoot();
+  if (!repoRoot) fail('not in a git repo');
+  const tasksDir = join(repoRoot, '_tasks');
+  if (!existsSync(tasksDir)) fail('no _tasks/ in this repo');
+  const task = resolveTask(tasksDir, idArg);
+  if (!task) fail(`task not found: ${idArg}`);
+  process.stdout.write(task.path + '\n');
+}
+
 // Drift gate: commits on the (fetched) default branch touching a task's
 // `touches_paths` since its `last_reviewed_at_commit`. Prints the offending
 // commits (empty = no drift). Resolves the branch internally — no `..main` in
@@ -578,11 +723,7 @@ function cmdDrift(idArg) {
   if (!repoRoot) fail('not in a git repo');
   const tasksDir = join(repoRoot, '_tasks');
   if (!existsSync(tasksDir)) fail('no _tasks/ in this repo');
-  const want = String(idArg).replace(/\.md$/, '');
-  const task = loadTasks(tasksDir).find((t) => {
-    const fm = t.frontmatter || {};
-    return String(fm.id) === want || basename(t.path).replace(/\.md$/, '') === want || String(fm.slug) === want;
-  });
+  const task = resolveTask(tasksDir, idArg);
   if (!task) fail(`task not found: ${idArg}`);
   const fm = task.frontmatter || {};
   const since = fm.last_reviewed_at_commit;
@@ -620,6 +761,7 @@ function cmdAnalyze(opts) {
     const repoSha = tryExec('git rev-parse --short HEAD', { cwd: proj.path }) || '';
     const today = new Date().toISOString().slice(0, 10);
     let writeCount = 0;
+    const writtenFiles = [];
     for (const t of tasks) {
       const inferred = inferStatus(t);
       const file = basename(t.path);
@@ -644,16 +786,23 @@ function cmdAnalyze(opts) {
           '  claimed_at: null', '  claimed_by: null', '  claimed_by_session: null', '---', '',
         ].join('\n');
         writeFileSync(t.path, fm + (t.body || ''));
+        writtenFiles.push(basename(t.path));
         writeCount++;
       }
     }
     if (apply && writeCount > 0) {
       process.stdout.write(`\n  ✓ Wrote frontmatter to ${writeCount} files in ${proj.label}.\n`);
       if (!noPush) {
+        // Scope to ONLY the files analyze rewrote (task 101) — the store's one
+        // working tree may hold another session's unrelated pending edits, and a
+        // `git add .` would sweep them into this commit under the wrong message.
+        const pathspec = writtenFiles.map((p) => JSON.stringify(p)).join(' ');
         try {
-          execSync(`git add .`, { cwd: tasksDir });
-          execSync(`git commit -m "analyze: backfill frontmatter for ${writeCount} tasks (heuristic)"`, { cwd: tasksDir });
-          execSync(`git push origin tasks`, { cwd: tasksDir });
+          withStoreLock(realpathSync(tasksDir), () => {
+            execSync(`git add -- ${pathspec}`, { cwd: tasksDir });
+            execSync(`git commit -m "analyze: backfill frontmatter for ${writeCount} tasks (heuristic)" -- ${pathspec}`, { cwd: tasksDir });
+            execSync(`git push origin tasks`, { cwd: tasksDir });
+          });
           process.stdout.write(`  ✓ Pushed to origin/tasks.\n`);
         } catch (e) { process.stdout.write(`  ⚠ Push failed: ${e.message}\n`); }
       } else process.stdout.write(`  (skipped push — run \`tasks.mjs sync push\` from ${proj.label} to publish.)\n`);
@@ -864,6 +1013,12 @@ Subcommands:
                                       branch (main/master)? Prints the gap and
                                       exits 1 when behind. Used by the pickup/
                                       write-task drift gates.
+  find <task-id-or-file-or-slug>      Resolve an id/filename/slug to its file
+                                      path. THE lookup primitive — matches
+                                      frontmatter id, filename stem, or slug
+                                      (same rule drift/claim/release use
+                                      internally). Prefer this over guessing
+                                      _tasks/NNN-<slug>.md or reading INDEX.md.
   drift <task-id-or-file>             Commits on the default branch touching a
                                       task's touches_paths since its
                                       last_reviewed_at_commit. Exits 1 on drift.
@@ -904,7 +1059,9 @@ Files:
 
 switch (cmd) {
   case 'init': cmdInit(); break;
-  case 'sync': cmdSync(opts.positional.slice(1)); break;
+  // Raw argv tail (not opts.positional) so `sync push "<msg>" -- <path>...`
+  // keeps its `--` separator — the generic parseArgs swallows a bare `--`.
+  case 'sync': cmdSync(process.argv.slice(2).slice(process.argv.slice(2).indexOf('sync') + 1)); break;
   case 'analyze': cmdAnalyze(opts.flags); break;
   case 'projects': cmdProjects(opts.positional.slice(1)); break;
   case 'next-id': cmdNextId(opts.positional[1]); break;
@@ -915,6 +1072,7 @@ switch (cmd) {
   case 'doctor': cmdDoctor(); break;
   case 'default-branch': cmdDefaultBranch(); break;
   case 'staleness': cmdStaleness(); break;
+  case 'find': cmdFind(opts.positional[1]); break;
   case 'drift': cmdDrift(opts.positional[1]); break;
   case 'validate': cmdValidate(opts.flags); break;
   case 'labels': cmdLabels(opts.flags); break;

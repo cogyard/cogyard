@@ -18,7 +18,7 @@ export async function handle(path, u, proj, res) {
     return json(res, 200, { slug: proj.slug, label: proj.label, worktrees });
   }
   if (path === '/api/graph') {
-    const [g, originUrl] = await Promise.all([core.gitDagWithWorktrees(proj), originHttpUrl(proj.path)]);
+    const [g, originUrl] = await Promise.all([core.gitDagWithStashes(proj), originHttpUrl(proj.path)]);
     return json(res, 200, { slug: proj.slug, label: proj.label, originUrl, ...g });
   }
   return false;

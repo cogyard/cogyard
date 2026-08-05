@@ -1,8 +1,11 @@
 // core/project.mjs — project loading (sync CLI path + async server path with
 // parallel staleness prefetch), portal serialization, and INDEX.md generation.
 // generateIndexMd / loadTasks feed _tasks/INDEX.md, which the bd-pickup-task
-// skill and the /cogyard natural-language path READ directly. INDEX.md is
-// consumed tooling, not portal display — do not retire it.
+// skill and the /cogyard natural-language path browse directly. `cli/tasks.mjs
+// find` (resolveTask, same id/filename-stem/slug match as drift/claim/release)
+// is the authoritative way to resolve a specific id — INDEX.md is a generated
+// snapshot for browsing, auto-refreshed by `tasks sync push`, not the lookup
+// mechanism itself. Consumed tooling, not portal display — do not retire it.
 
 import { join, basename } from 'node:path';
 import { gitP } from './exec.mjs';

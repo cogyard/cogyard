@@ -9,7 +9,7 @@
 // Adapters live in <repo>/drivers/<name>/adapter.mjs. The contract + the
 // "how to add an agent" guide are in docs/DRIVERS.md.
 
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync } from 'node:fs';
 import { readConfig } from './config.mjs';
@@ -49,7 +49,13 @@ function listDriverNames() {
 }
 
 async function loadAdapter(name) {
-  const mod = await import(join(DRIVERS_DIR, name, 'adapter.mjs'));
+  // A filesystem path (absolute, or ending in .mjs) loads that adapter directly,
+  // so a driver can live OUTSIDE the repo (e.g. the private demo adapter the
+  // shadow-yard demo runs under). A bare name resolves under drivers/<name>/.
+  const spec = name.includes('/') || name.endsWith('.mjs')
+    ? (isAbsolute(name) ? name : join(process.cwd(), name))
+    : join(DRIVERS_DIR, name, 'adapter.mjs');
+  const mod = await import(spec);
   return mod.default;
 }
 

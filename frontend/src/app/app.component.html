@@ -63,7 +63,7 @@
           <p-tabs [value]="tab()" (valueChange)="setTab($any($event))">
             <p-tablist>
               @for (t of tabs(); track t.id) {
-                <p-tab [value]="t.id">{{ t.label }}</p-tab>
+                <p-tab [value]="t.id"><span class="tab-ico" [style.mask-image]="'url(' + t.icon + ')'" [style.-webkit-mask-image]="'url(' + t.icon + ')'" aria-hidden="true"></span>{{ t.label }}</p-tab>
               }
             </p-tablist>
           </p-tabs>
@@ -83,7 +83,7 @@
             @case ('board') { <app-board [slug]="slug()" (jumpTask)="jumpToTask($event)" (jumpWorktree)="jumpToWorktree($event)" /> }
             @case ('branches') { <app-branches [slug]="slug()" [activeBranch]="branchParam()" (openCommit)="openCommitInGraph($event)" (jumpWorktree)="jumpToWorktree($event)" (jumpTask)="jumpToTask($event)" /> }
             @case ('worktrees') { <app-worktrees [slug]="slug()" [activeWorktree]="wtParam()" (jumpTask)="jumpToTask($event)" (openCommit)="openCommitInGraph($event)" (jumpFiles)="filesNav($event)" (jumpBranch)="jumpToBranch($event)" /> }
-            @case ('graph') { <app-graph [slug]="slug()" [activeHash]="panelHash()" (openCommit)="openCommit($event)" (jumpTask)="jumpToTask($event)" (jumpWorktree)="jumpToWorktree($event)" (jumpBranch)="jumpToBranch($event)" /> }
+            @case ('graph') { <app-graph [slug]="slug()" [activeHash]="panelHash()" (openCommit)="openCommit($event)" (jumpTask)="jumpToTask($event)" (jumpBranch)="jumpToBranch($event)" /> }
             @case ('files') { <app-files [slug]="slug()" [wt]="wtParam()" [file]="fileParam()" (nav)="filesNav($event)" /> }
             @case ('stats') { <app-stats [slug]="slug()" (jumpTask)="jumpToTask($event)" /> }
           }

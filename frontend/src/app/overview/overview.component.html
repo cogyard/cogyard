@@ -1,6 +1,32 @@
 @if (loading()) {
   <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
 } @else {
+  @if (briefs().length) {
+    <!-- Collapsed by default (owner, 2026-09-03): a dozen paragraphs stacked
+         above the table is the first thing on the page, and it is not what this
+         page is for. The header carries the only part that needs to survive
+         being closed — how many projects could not be briefed at all. -->
+    <section class="daily" [class.closed]="!dailyOpen()">
+      <header class="daily-head" (click)="toggleDaily()">
+        <span class="daily-title">Daily Overview</span>
+        <span class="daily-count hint sm">{{ dailySummary() }}</span>
+        <span class="row-gap"></span>
+        <button type="button" class="btn-link daily-toggle" [attr.aria-expanded]="dailyOpen()">{{ dailyOpen() ? 'hide' : 'read' }}</button>
+      </header>
+      @if (dailyOpen()) {
+        <div class="briefs">
+          @for (p of briefs(); track p.slug) {
+            <article class="brief-lead" [class.failed]="p.brief.status === 'failed'">
+              <button class="btn-link bl-name" (click)="selectProject.emit(p.slug)">{{ p.label }}</button>
+              <span class="bl-when hint sm">{{ briefWhen(p.brief) }}</span>
+              <p class="bl-text">{{ p.brief.status === 'failed' ? briefAlarm(p.brief) : p.brief.lead }}</p>
+            </article>
+          }
+        </div>
+      }
+    </section>
+  }
+
   <div class="toolbar">
     <span class="hint sm">Cost columns = API-equivalent spend by model family, locked in when each task ran. Per-token-type detail on a project's Tasks tab.</span>
     <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
@@ -18,7 +44,7 @@
         <th class="col-date">Last commit</th>
       </tr>
       <tr class="totals-row">
-        <td>All · {{ agg().totals.projects }} projects</td>
+        <td>All · {{ agg().totals.projects }} projects@if (agg().jobs.length || agg().outside) {<span class="dim"> + rows below</span>}</td>
         <td class="ctr">{{ agg().totals.tasks }}</td>
         <td class="ctr">{{ agg().totals.wt }}</td>
         <td class="ctr">{{ agg().totals.dirty || '—' }}</td>
@@ -36,12 +62,12 @@
         </td>
         <td class="tasks">
           <span class="total">{{ p.tasks?.total || 0 }}</span>
-          @if (p.tasks?.ready) { <span class="ready">{{ p.tasks.ready }} ready</span> }
+          @if (p.tasks?.ready) { <span class="ready">{{ p.tasks.ready }} idle</span> }
           @if (p.tasks?.claimed) { <span class="dim">🔒 {{ p.tasks.claimed }}</span> }
         </td>
         <td class="wt">
           {{ p.worktrees?.count || 0 }}
-          @if (p.worktrees?.stale) { <p-tag styleClass="badge caps stale" value="{{ p.worktrees.stale }} stale" /> }
+          @if (p.worktrees?.stale) { <app-flag tone="review">{{ p.worktrees.stale }} stale</app-flag> }
         </td>
         <td>
           @if (p.dirty) { <span class="dirty">● {{ p.dirty }}</span> } @else { <span class="dim">clean</span> }
@@ -53,6 +79,48 @@
         }
         <td class="col-date dim">{{ p.latestCommit?.date || '—' }}</td>
       </tr>
+    </ng-template>
+    <!-- Task 130: usage that has no project row to sit in, below the projects
+         and counted in the totals row above. Nothing renders when there is none. -->
+    <ng-template #footer>
+      @if (agg().jobs.length) {
+        <tr class="ov-foot group-head">
+          <td colspan="5" title="The agent calls cogyard's own scheduled tasks made — not any one project's">Scheduled tasks</td>
+          <td class="num strong">{{ fmtCost(agg().jobsTotal.total) }}</td>
+          @for (f of agg().families; track f) { <td class="num">{{ fmtCost(agg().jobsTotal.fam[f]) }}</td> }
+          <td></td>
+        </tr>
+        @for (j of agg().jobs; track j.id) {
+          <tr class="ov-foot member">
+            <td colspan="5" class="dim">{{ j.id }}</td>
+            <td class="num strong">{{ fmtCost(j.total) }}</td>
+            @for (f of agg().families; track f) { <td class="num">{{ fmtCost(j.fam[f]) }}</td> }
+            <td></td>
+          </tr>
+        }
+      }
+      @if (agg().outside; as o) {
+        <tr class="ov-foot group-head">
+          <td colspan="5">
+            Outside any project
+            <span class="hint sm">{{ o.slugs.length }} folder{{ o.slugs.length === 1 ? '' : 's' }}</span>
+            <button type="button" class="btn-link fold-toggle" [attr.aria-expanded]="outsideOpen()" (click)="toggleOutside()">{{ outsideOpen() ? 'hide' : 'show' }}</button>
+          </td>
+          <td class="num strong">{{ fmtCost(o.total) }}</td>
+          @for (f of agg().families; track f) { <td class="num">{{ fmtCost(o.fam[f]) }}</td> }
+          <td></td>
+        </tr>
+        @if (outsideOpen()) {
+          @for (s of o.slugs; track s.slug) {
+            <tr class="ov-foot member">
+              <td colspan="5" class="dim">{{ s.slug }}</td>
+              <td class="num strong">{{ fmtCost(s.total) }}</td>
+              @for (f of agg().families; track f) { <td class="num">{{ fmtCost(s.fam[f]) }}</td> }
+              <td></td>
+            </tr>
+          }
+        }
+      }
     </ng-template>
   </p-table>
   <div class="act-gap"></div>

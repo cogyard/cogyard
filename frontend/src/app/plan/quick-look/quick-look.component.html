@@ -1,0 +1,43 @@
+<div class="ql-backdrop" (click)="close.emit()">
+  <div class="ql" (click)="$event.stopPropagation()" role="dialog" [attr.aria-label]="task().title">
+    <button type="button" class="ql-close" (click)="close.emit()" aria-label="Close">✕</button>
+    <div class="ql-title">
+      @if (task().type) { <span class="ql-type" [pTooltip]="task().type!" tooltipPosition="top">{{ typeIcons[task().type!] || '•' }}</span> }
+      <span class="card-title">{{ task().title }}</span>
+    </div>
+    <div class="ql-status hint">
+      <app-task-chip [id]="task().id" [slug]="slug()" (open)="openTask.emit($event)" />
+      <span>{{ task().status }}</span>
+      <span>{{ task().done }}/{{ task().total }}</span>
+      <span class="ql-prog"><i [style.width.%]="pct()"></i></span>
+    </div>
+    @if (task().youSteps.length) {
+      <div class="ql-steps">
+        @for (y of task().youSteps; track $index) {
+          <div class="ql-step">
+            <app-flag [tone]="$index === 0 && task().youNext ? 'warn' : 'neutral'">{{ y.kinds.join(', ') }}</app-flag>
+            <span class="ql-step-text" [pTooltip]="plain(y.text)" tooltipPosition="top">{{ plain(y.text) }}</span>
+          </div>
+        }
+      </div>
+    }
+    @if (chats().length) {
+      <div>
+        @for (c of chats(); track c.sessionId + '/' + c.role) {
+          <div class="chat-row">
+            <code>{{ shortId(c) }}</code>
+            <app-action-chip [kind]="c.role" />
+            <span class="chat-label">
+              @if (c.title) { <span class="chat-title">{{ c.title }}</span> }
+              @if (c.label) { <span class="chat-snippet">{{ c.label }}</span> }
+              @if (!c.title && !c.label) { <span class="chat-snippet">(no label)</span> }
+            </span>
+          </div>
+        }
+      </div>
+    } @else if (loading()) {
+      <div class="hint">…</div>
+    }
+    @if (task().what) { <p class="ql-what">{{ task().what }}</p> }
+  </div>
+</div>

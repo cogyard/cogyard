@@ -13,7 +13,7 @@
           @if (isFoldLane(lane.slug)) {
             <button class="lane-label lane-fold" (click)="toggleExpand()" [title]="'Expand to show all projects'">{{ lane.slug }} ▸</button>
           } @else {
-            <span class="lane-label" [title]="lane.slug">{{ lane.slug }}</span>
+            <span class="lane-label" [title]="lane.title">{{ lane.slug }}</span>
           }
           <div class="lane-cells">
             @for (c of lane.cells; track c.date) {

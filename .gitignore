@@ -12,8 +12,6 @@ frontend/src/version.json
 # unsaved. They are now TRACKED + export-ignore'd (.gitattributes) instead: saved to
 # the private backup, stripped from the public snapshot. gitignore is for regenerable
 # junk only; anything you'd want back after a disk death must be tracked.
-# task system: _tasks is a symlink to the shared store (tasks.mjs convert)
-_tasks
 frontend/public/assets/material-icons/
 # worktree port management: written per-worktree by the SessionStart hook
 .claude/launch.json

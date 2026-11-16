@@ -1,0 +1,10 @@
+/* LAYOUT ONLY. The chip's LOOK (.tchip / .tchip-primary) lives in
+   styles.scss, not here — Cleanup's colour key renders the same swatches to
+   explain them, and a class two components wear cannot sit inside one
+   component's emulated encapsulation (docs/UI-CONVENTIONS.md). Keeping it there
+   is also what makes that key undriftable: it is the chip's own CSS.
+
+   The host is the flex item wherever a chip sits in a flex row (Cleanup's
+   .c-tasks, the calendar's .badges, Graph's .dag-msg), so it must not be the
+   default inline box. */
+:host { display: inline-flex; flex: 0 0 auto; min-width: 0; }

@@ -1,0 +1,17 @@
+@if (other() && claimedBy()) {
+  <span class="who hint">
+    <span class="ava" aria-hidden="true">{{ initials() }}</span>{{ claimedBy() }}@if (heldFor()) {<span> · {{ heldFor() }}</span>}
+  </span>
+} @else if (live(); as l) {
+  <span class="line" [class.card]="layout() === 'card'">
+    <span class="live hint" [attr.data-state]="l.state" [pTooltip]="tip()" tooltipPosition="top">
+      @if (logo() && !logoFailed()) { <img class="logo" [src]="logo()" [alt]="agentName()" (error)="logoFailed.set(true)" /> }
+      <i class="dot" aria-hidden="true"></i><b>{{ word() }}</b>@if (elapsed()) {<span>{{ elapsed() }}</span>}
+      @if (l.state === 'background' && layout() === 'card') { <span class="bg-note">· background job running</span> }
+      @if (l.autopilot && layout() === 'row') { <span class="hint sm">· autopilot</span> }
+    </span>
+    @if (l.autopilot && layout() === 'card') {
+      <span class="hint sm">autopilot@if (autopilotNote()) { · {{ autopilotNote() }}}</span>
+    }
+  </span>
+}

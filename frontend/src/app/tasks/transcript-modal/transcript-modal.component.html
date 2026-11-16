@@ -2,10 +2,10 @@
   <div class="tr-modal" (click)="$event.stopPropagation()">
     <div class="tr-modal-head">
       <div class="tr-modal-title">
-        <span class="chat-role" [class]="'role-' + chat().role">{{ chat().role }}</span>
+        <app-action-chip [kind]="chat().role" />
         <span class="tr-modal-label">{{ chat().label || shortId() }}</span>
         <code class="dim">{{ shortId() }}</code>
-        @if (chat().archived) { <span class="chat-flag arch">archived</span> }
+        @if (chat().archived) { <span class="chat-flag">archived</span> }
       </div>
       <button type="button" class="tr-modal-close" (click)="close.emit()" aria-label="Close">✕</button>
     </div>
@@ -22,7 +22,7 @@
               <div class="tr-bubble" [innerHTML]="turnHtml(turn.text)"></div>
             </div>
           }
-          @if (tr.truncated) { <div class="dim tr-note">…transcript truncated (very long chat) — <code>bencc show {{ shortId() }}</code> for the full file.</div> }
+          @if (tr.truncated) { <div class="dim tr-note">…transcript truncated (very long chat) — <code>cogyard sessions show {{ shortId() }}</code> prints the whole chat.</div> }
         }
       } @else {
         <div class="dim tr-note">loading transcript…</div>

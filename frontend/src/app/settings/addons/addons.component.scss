@@ -32,16 +32,6 @@
   background: var(--app-surface); padding: 14px 16px;
 }
 
-/* Type comes from the global .badge/.badge.caps recipe. This one is the OUTLINED
-   capability pill (bordered, fully-round) rather than the filled table badge, so
-   it keeps its own padding/radius/border — shape only, never font. */
-.badge {
-  padding: 3px 8px; border-radius: 999px; flex: 0 0 auto;
-  border: 1px solid var(--app-border); color: var(--app-fg-muted); background: var(--app-surface-2);
-}
-.badge.on { color: #16a34a; border-color: currentColor; background: transparent; }
-.badge.warn { color: var(--app-accent); border-color: currentColor; background: transparent; }
-.badge.off { color: var(--app-fg-dim); }
 
 /* --- the dialog ------------------------------------------------------------ */
 .addon-dialog { display: flex; flex-direction: column; gap: var(--app-space-5); }
@@ -66,11 +56,29 @@
 .tier-mark { opacity: 0.6; }
 
 .manual-result { display: flex; flex-direction: column; gap: var(--app-space-3); }
-.command-row { display: flex; align-items: center; gap: var(--app-space-4); }
-.command {
-  flex: 1; font-size: 12.5px; padding: 8px 10px; border-radius: 6px;
-  background: var(--app-surface-2); color: var(--app-page-fg-strong);
-  overflow-x: auto; white-space: nowrap;
-}
 .safe-result { margin: 0; font-size: 12.5px; color: #16a34a; }
 .safe-result.failed { color: var(--app-accent); }
+
+/* The auto-save state line under the config form (task 127). */
+.save-state { align-self: flex-end; }
+
+/* A manifest-declared setup walkthrough (task 127). These are the same rules the
+   credential guide used when it lived on the Machine card — moved here with it,
+   so the look is unchanged and any add-on that declares `setup` inherits it.
+   The <li> stays a list-item: `display: flex` on it drops the marker, which is
+   how a numbered walkthrough silently loses its numbers. */
+.addon-setup { display: flex; flex-direction: column; gap: var(--app-space-5); }
+.addon-setup > .card-hint { margin: 0; }
+.setup-steps {
+  margin: 0; padding-left: 20px;
+  display: flex; flex-direction: column; gap: var(--app-space-5);
+}
+.setup-steps li > .step-what, .setup-steps li > .hint { display: block; }
+.setup-steps li > * + * { margin-top: var(--app-space-3); }
+.setup-steps li::marker { color: var(--app-fg-muted); font-weight: 600; }
+.step-what { font-size: 13px; font-weight: 600; color: var(--app-page-fg-strong); }
+.setup-warn { color: var(--app-accent); }
+
+/* A setup step that needs something from the owner (a token) before its command
+   is usable. Same .field/.eyebrow recipes as every other input on the page. */
+.setup-input { margin: 0; }

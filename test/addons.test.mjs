@@ -11,7 +11,7 @@
 
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -82,6 +82,23 @@ test('ADDONS_DIR resolves under the redirected COGYARD_HOME', () => {
 
 test('discovery lists only folders holding addon.mjs, sorted', () => {
   assert.deepEqual(listAddonIds(), ['broken', 'elsewhere', 'good']);
+});
+
+// The install every add-on README recommends, because it makes the add-on track
+// a checkout. A Dirent for a symlink reports isDirectory() === false, so the
+// obvious type check silently discovers nothing — which is what it did until
+// this test existed.
+test('discovery finds a SYMLINKED add-on, the documented install', () => {
+  const source = join(HOME, 'src-addon');
+  mkdirSync(source, { recursive: true });
+  writeFileSync(join(source, 'addon.mjs'), 'export const manifest = { id: "linked", label: "Linked" };');
+  symlinkSync(source, join(DIR, 'linked'));
+  try {
+    assert.ok(listAddonIds().includes('linked'));
+  } finally {
+    rmSync(join(DIR, 'linked'), { force: true });
+    rmSync(source, { recursive: true, force: true });
+  }
 });
 
 // --- catalog ----------------------------------------------------------------------

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
+  <!-- Info glyph for a settings card's instructions tooltip (task 216).
+       Stroked on the same 24-grid as the tab glyphs and rendered as a mask,
+       so it takes the colour of the text around it. -->
+  <g fill="none" stroke="#1f2328" stroke-width="1.8" stroke-linecap="round">
+    <circle cx="12" cy="12" r="9.2"/>
+    <path d="M12 11 V16.5"/>
+  </g>
+  <circle cx="12" cy="7.6" r="1.2" fill="#1f2328"/>
+</svg>

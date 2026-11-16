@@ -3,7 +3,7 @@ description: Find the chats that created, implemented, and mentioned a task — 
 allowed-tools: Bash, Read, AskUserQuestion
 ---
 
-# /task-chats — which chats made this task, and read them
+# /cogyard-task-chats — which chats made this task, and read them
 
 Given a task id, list the chats that **created**, **implemented**, and merely
 **mentioned** it, then — on request — READ a chosen chat's transcript so you can
@@ -63,6 +63,7 @@ by hand, or its transcripts were culled before the ledgers banked it).
 Ask the user (AskUserQuestion, or honor an explicit pick in `$ARGUMENTS`) which
 chat to read, if any. To read the chosen chat, use the **Read** tool on its
 `transcriptPath` (it's a `.jsonl` — read the head to orient, then search within
-for the parts that matter), or run `bencc show <shortId>` for a rendered view.
+for the parts that matter), or run `cogyard sessions show <shortId>` for the
+whole chat as readable turns (add `--archive` if the agent has deleted it).
 Then answer the user's question from the transcript, or continue the work they
 point you at. Still no resume — you are reading the record, not re-entering it.

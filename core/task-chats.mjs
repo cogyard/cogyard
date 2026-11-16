@@ -10,7 +10,7 @@
 // This is core/usage.mjs's sessionTaskIds ladder run the OTHER direction — task
 // → sessions instead of session → task. Ranking of the IMPLEMENTED bucket,
 // strongest first: claimed (claims.jsonl) → committed (activity commitTasks).
-// MENTIONED is the tasks-only touch (`_tasks/N-` referenced without claiming or
+// MENTIONED is the tasks-only touch (`.cogyard/tasks/N-` or `_tasks/N-` referenced without claiming or
 // committing). CREATED is the stamped author session, else a best-effort,
 // clearly-marked git-time inference.
 //
@@ -23,14 +23,16 @@ import { claimWindows, readActivityLedger, readUsageLedger } from './usage.mjs';
 import { adapter } from './drivers.mjs';
 import { discoverProjects } from './registry.mjs';
 import { loadTasks } from './frontmatter.mjs';
+import { normalizeTaskId } from './validate.mjs';
 import { tryExec } from './exec.mjs';
+import { tasksDirOf } from './tasks-dir.mjs';
 
-// A ledger `project` value matches the wanted slug when it equals it or is one
-// of its per-clone keys (`slug__clone`). A null want (the --everywhere case)
+// A ledger `project` value matches the wanted slug when it equals it (alias
+// slugs are mapped by the ledger reader). A null want (the --everywhere case)
 // matches everything.
 function projectMatcher(want) {
   if (!want) return () => true;
-  return (p) => p === want || String(p || '').startsWith(want + '__');
+  return (p) => p === want;
 }
 
 // slug → repo path (for the created-side task-file read + git backfill).
@@ -39,7 +41,7 @@ function repoPathForProject(slug) {
   try {
     for (const p of discoverProjects()) {
       if (p.error) continue;
-      if (p.slug === slug || String(p.slug).startsWith(slug + '__')) return p.path;
+      if (p.slug === slug) return p.path;
     }
   } catch {}
   return null;
@@ -59,20 +61,28 @@ function buildIndex() {
   const desktop = new Map(); // sid → {title, isArchived, lastActivityAt}
   const sess = adapter.sessions && adapter.sessions.supported ? adapter.sessions : null;
   if (sess) {
-    for (const s of sess.list()) {
+    const rows = sess.list();
+    for (const s of rows) {
       if (s.sessionId && !desktop.has(s.sessionId)) desktop.set(s.sessionId, s);
+    }
+    // A ledger row may carry a transcript id the chat has since moved off (a
+    // rewind starts a new transcript — task 208); it still names the same chat.
+    // Second pass, so a chat's CURRENT id always wins over another's old one.
+    for (const s of rows) {
+      for (const prior of s.priorSessionIds || []) {
+        if (prior && !desktop.has(prior)) desktop.set(prior, s);
+      }
     }
   }
   return { times, desktop };
 }
 
 // One session id + its role → the chat entry the surfaces render. transcriptPath
-// is the durable handle any surface hands to a reader (`bencc show <id>` or
-// Claude's Read tool); it survives archiving — archiving is a UI flag, the
+// is the durable handle any surface hands to a reader (`cogyard sessions show
+// <id>` or Claude's Read tool); it survives archiving — archiving is a UI flag, the
 // .jsonl stays on disk (task 106).
 function chatEntry(sid, role, idx, inferred = false) {
-  const files = adapter.transcripts.findBySession(sid);
-  const transcriptPath = files.length ? files[0] : null;
+  const transcriptPath = adapter.transcripts.pickFullest(adapter.transcripts.findBySession(sid));
   const d = idx.desktop.get(sid) || {};
   const t = idx.times.get(sid) || {};
   const fromTranscript = transcriptPath && adapter.transcripts.firstHumanLabel
@@ -80,7 +90,12 @@ function chatEntry(sid, role, idx, inferred = false) {
   return {
     sessionId: sid,
     role,
-    label: fromTranscript || d.title || null,
+    // The agent app's own name for the chat (the Desktop sidebar title) and the
+    // first-prompt snippet travel separately so surfaces can show both side by
+    // side (task 165). label no longer falls back to the title — that would
+    // print the same words twice on a chat with no readable first prompt.
+    title: d.title || null,
+    label: fromTranscript || null,
     startedAt: t.first || null,
     lastActiveAt: t.last || d.lastActivityAt || null,
     transcriptPath,
@@ -92,7 +107,7 @@ function chatEntry(sid, role, idx, inferred = false) {
 // --- created-side inference --------------------------------------------------
 
 // ISO author time of the commit that first ADDED the task file, read from the
-// store repo (the _tasks dir, which may be a symlink into the shared store —
+// store repo (the task directory, which may be a symlink into the shared store —
 // git -C follows it). null when the file/history isn't resolvable.
 function taskAddTime(tasksDir, taskFile) {
   if (!taskFile) return null;
@@ -109,7 +124,7 @@ function taskAddTime(tasksDir, taskFile) {
 const CREATE_WINDOW_MS = 2 * 86400000;
 
 // Best-effort creator: among the sessions that ACTUALLY REFERENCED this task
-// (candidates — write-task's authoring session emits `_tasks/N-` into its own
+// (candidates — write-task's authoring session emits a `<task dir>/N-` path into its own
 // transcript, so the real creator is in this set), the one whose human-prompt
 // activity sits closest to the task file's git add time. Restricting to
 // referencing sessions is what keeps an unrelated long-running session from
@@ -143,12 +158,13 @@ function inferCreator(addTime, candidates, matchProject) {
 function createdChat(project, taskId, idx, matchProject, candidates) {
   const repo = repoPathForProject(project);
   if (!repo) return null;
-  const tasksDir = join(repo, '_tasks');
+  const tasksDir = tasksDirOf(repo);
   let fm = null;
   let taskFile = null;
   try {
     for (const t of loadTasks(tasksDir)) {
-      if (t.frontmatter && String(t.frontmatter.id) === String(taskId)) { fm = t.frontmatter; taskFile = t.path; break; }
+      // Padding-insensitive: stores write `id: 33` or `id: 033` for the same task.
+      if (t.frontmatter && normalizeTaskId(t.frontmatter.id) === normalizeTaskId(taskId)) { fm = t.frontmatter; taskFile = t.path; break; }
     }
   } catch {}
   // Forward path (exact): write-task stamps created_by_session into the file it
@@ -179,7 +195,7 @@ function chatsForTask(project, taskId) {
   }
   // committed / mentioned — from the banked activity rows, aggregated per
   // session first so the mentioned bucket can apply a RELEVANCE THRESHOLD. A
-  // single incidental `_tasks/NN-` (from an `ls _tasks/`, a grep, or reading the
+  // single incidental `<task dir>/NN-` (from an `ls` of the task dir, a grep, or reading the
   // index) must NOT tag a whole chat as "mentioned" — that's the same trap
   // core/activity.mjs's sessionTaskIds guards against, and skipping it turned a
   // long-lived low-numbered task's list into ~every chat in the project.
@@ -195,7 +211,7 @@ function chatsForTask(project, taskId) {
   const mentionedRaw = new Set();
   // The banked commit/ref counts are collected per whole transcript RECORD, not
   // per git-commit command line (a `core/usage.mjs` limitation), so a record
-  // holding git-log output or a doc lists several `[#NN]`/`_tasks/NN-` tags that
+  // holding git-log output or a doc lists several `[#NN]`/`<task dir>/NN-` tags that
   // co-occur with identical counts — e.g. {37:4, 40:4, 89:4} where only 89 is
   // real. Proportional dominance can't separate a tie, so require want to be the
   // session's UNIQUE top signal; a tie means the ledger genuinely can't attribute.
@@ -244,12 +260,13 @@ function chatsForTask(project, taskId) {
 // One chat's readable transcript, for the portal viewer (task 30 follow-up).
 // Resolves the durable transcript path via the adapter and asks it to parse the
 // conversation into turns — the read half the owner wanted IN the portal, not
-// just a copyable `bencc show` command. Returns found:false when the transcript
+// just a copyable `cogyard sessions show` command. Returns found:false when the transcript
 // was culled (the chat metadata may survive, the .jsonl doesn't).
 // → { sessionId, found, transcriptPath, turns:[{role,text,timestamp}], truncated }
 function transcriptForChat(sessionId) {
-  const files = sessionId ? adapter.transcripts.findBySession(sessionId) : [];
-  const file = files.length ? files[0] : null;
+  // A chat that moved into a worktree has a file under each folder; read the
+  // fuller one, not whichever was found first (task 215).
+  const file = sessionId ? adapter.transcripts.pickFullest(adapter.transcripts.findBySession(sessionId)) : null;
   if (!file) return { sessionId, found: false, transcriptPath: null, turns: [], truncated: false };
   const { turns, truncated } = adapter.transcripts.readTurns
     ? adapter.transcripts.readTurns(file) : { turns: [], truncated: false };

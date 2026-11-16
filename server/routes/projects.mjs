@@ -50,7 +50,7 @@ export async function handlePost(path, req, res) {
       ok: true,
       slug: result.slug,
       repoRoot: result.repoRoot,
-      store: result.storePath,
+      storePath: result.storePath,
       kind: result.kind,
       steps: result.steps,
       warnings: result.warnings,

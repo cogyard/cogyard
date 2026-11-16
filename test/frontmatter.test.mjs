@@ -6,6 +6,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseFrontmatter, parseScalar, stripInlineComment, readTaskFile } from '../core/frontmatter.mjs';
+import { validateTask } from '../core/validate.mjs';
 
 test('parseScalar: scalars', () => {
   assert.equal(parseScalar('null'), null);
@@ -20,6 +21,19 @@ test('parseScalar: scalars', () => {
   assert.equal(parseScalar('plain string'), 'plain string');
   // date-like strings stay strings
   assert.equal(parseScalar('2026-06-10'), '2026-06-10');
+});
+
+test('parseScalar: quoted values follow YAML escapes', () => {
+  // A real title from another project that showed its backslashes on Plan cards.
+  assert.equal(parseScalar('"\\"Write by hand\\" textarea"'), '"Write by hand" textarea');
+  assert.equal(parseScalar('"a \\\\ b"'), 'a \\ b');
+  assert.equal(parseScalar('"line\\nbreak"'), 'line\nbreak');
+  assert.equal(parseScalar("'it''s'"), "it's");
+  // An unknown escape is left as written, and a single-quoted backslash is literal.
+  assert.equal(parseScalar('"C:\\x"'), 'C:\\x');
+  assert.equal(parseScalar("'a\\b'"), 'a\\b');
+  // A lone quote character is not a quoted empty string.
+  assert.equal(parseScalar('"'), '"');
 });
 
 test('stripInlineComment: comment after whitespace is stripped', () => {
@@ -47,10 +61,7 @@ test('parseFrontmatter: the real v2 task schema shape', () => {
     '  - core/git-views.mjs',
     '  - server/routes/git.mjs',
     'commit_policy: per-phase',
-    'parallel_safe: true',
-    'coordination:',
-    '  - with: 18',
-    '    hazard: server/routes/git.mjs',
+    'resources: [prod-db, dns]',
     'env:',
     '  planet: null',
     '  ports:',
@@ -65,10 +76,28 @@ test('parseFrontmatter: the real v2 task schema shape', () => {
   assert.deepEqual(fm.depends_on, []);
   assert.deepEqual(fm.related, [9, 10, 18]);
   assert.deepEqual(fm.touches_paths, ['core/git-views.mjs', 'server/routes/git.mjs']);
-  assert.equal(fm.parallel_safe, true);
+  assert.deepEqual(fm.resources, ['prod-db', 'dns']);
   assert.equal(fm.env.planet, null);
   assert.equal(fm.env.ports.backend, null);
   assert.equal(fm.env.claimed_at, null);
+});
+
+test('parseFrontmatter: resources as a block list (task 239)', () => {
+  const fm = parseFrontmatter(['resources:', '  - prod-db', '  - app-store-submission'].join('\n'));
+  assert.deepEqual(fm.resources, ['prod-db', 'app-store-submission']);
+});
+
+test('validate: resources are short names; coordination / parallel_safe warn on an open task only (task 239)', () => {
+  const v = (fm) => validateTask({ path: '/x/001-t.md', hasFrontmatter: true, body: '',
+    frontmatter: { id: 1, slug: 't', status: 'OPEN', type: 'bug', ...fm } }, {});
+  assert.deepEqual(v({ resources: ['prod-db', 'app-store-submission'] }).errors, []);
+  assert.match(v({ resources: ['Prod DB'] }).errors.join(), /resources: "Prod DB" is not a short name/);
+  assert.match(v({ resources: ['prod_db'] }).errors.join(), /not a short name/);
+  assert.match(v({ resources: 'prod-db' }).errors.join(), /resources: expected a list/);
+  assert.match(v({ coordination: [] }).warnings.join(), /coordination: retired/);
+  assert.match(v({ parallel_safe: true }).warnings.join(), /parallel_safe: retired/);
+  assert.deepEqual(v({ status: 'DONE', done_date: '2026-11-01', coordination: [], parallel_safe: false }).warnings
+    .filter((w) => /retired/.test(w)), [], 'a closed task keeps them as history');
 });
 
 test('parseFrontmatter: inline comment on an array does not corrupt the value', () => {

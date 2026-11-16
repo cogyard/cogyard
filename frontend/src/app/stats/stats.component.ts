@@ -3,7 +3,6 @@ import { Skeleton } from 'primeng/skeleton';
 import { ApiService } from '../services/api.service';
 import { ActivityResponse, ActivityDayCell, ProjectUsageResponse } from '../services/models';
 import { StoreService } from '../services/store.service';
-import { RefreshService } from '../services/refresh.service';
 import { ConfigService } from '../services/config.service';
 import { ActivityHeatmapComponent } from '../shared/activity-heatmap/activity-heatmap.component';
 import { ActivityDayComponent } from '../shared/activity-day/activity-day.component';
@@ -33,12 +32,11 @@ export class StatsComponent {
 
   private api = inject(ApiService);
   private store = inject(StoreService);
-  private refresh = inject(RefreshService);
   private cfg = inject(ConfigService);
   weekStart = computed(() => this.cfg.config()?.ui?.weekStart ?? 'sunday');
   dayStart = computed(() => this.cfg.config()?.ui?.dayStart ?? 0);
 
-  private cached = computed(() => this.store.sig<ActivityResponse>('activity')());
+  private cached = this.store.use<ActivityResponse>(() => 'activity');
   loading = computed(() => this.cached() === null);
   byDay = computed<Record<string, number>>(() => this.cached()?.commits[this.slug()] ?? {});
   // Per-day merged-task ids + per-day cost cells for the calendar.
@@ -57,15 +55,9 @@ export class StatsComponent {
   // Token/cost usage for this project — the project-level table,
   // moved here from the Tasks tab. Same store key as the Tasks
   // tab's per-task USAGE boxes, so both load into one signal.
-  usage = computed(() => this.store.sig<ProjectUsageResponse>(`usage|${this.slug()}`)());
+  usage = this.store.use<ProjectUsageResponse>(() => (this.slug() ? `usage|${this.slug()}` : null));
 
   constructor() {
-    effect(() => {
-      this.refresh.tick();
-      this.store.load('activity', this.api.activity());
-      const s = this.slug();
-      if (s) this.store.load(`usage|${s}`, this.api.projectUsage(s));
-    });
     // Switching projects closes any open day detail.
     effect(() => { this.slug(); this.selectedDay.set(null); this.calDay.set(null); });
   }

@@ -8,13 +8,19 @@
 //                                        from stdin, collects that transcript only
 //   usage.mjs backfill                   first-run harvest of ALL existing
 //                                        transcripts, rows flagged backfilled:true
+//   usage.mjs reprice [--dry-run]        price the rows a missing model left at
+//                                        costUSD:null (all projects)
+//   usage.mjs pricing [sync]             show the active price table (or pull
+//                                        live rates now, then reprice)
 //   usage.mjs report [project]           rollup (all projects, or one in detail)
 //   usage.mjs --help
 
 import { existsSync } from 'node:fs';
 import {
-  collectUsage, usageRollup, projectUsage, findTranscriptsForSession, LEDGER_PATH,
+  collectUsage, repriceLedger, refreshPricing, readUsageLedger,
+  usageRollup, projectUsage, findTranscriptsForSession, LEDGER_PATH,
 } from '../core/usage.mjs';
+import { activeVersions, pricingStatus } from '../core/pricing.mjs';
 
 function fail(msg, code = 1) {
   process.stderr.write(`usage.mjs: ${msg}\n`);
@@ -62,13 +68,62 @@ function report(project) {
     }
     return;
   }
-  const rows = usageRollup();
-  if (!rows.length) {
+  const { projects, jobs, outside } = usageRollup();
+  if (!projects.length && !jobs.length && !outside.length) {
     process.stdout.write(`Ledger is empty (${LEDGER_PATH}). Run: usage.mjs backfill\n`);
     return;
   }
-  for (const p of rows) {
-    process.stdout.write(`${p.project.padEnd(40)} ${fmtCost(p).padStart(10)}   ${p.sessions} sessions   ${fmtTokens(p.tokens)}\n`);
+  const line = (name, p) => process.stdout.write(`${name.padEnd(40)} ${fmtCost(p).padStart(10)}   ${p.sessions} sessions   ${fmtTokens(p.tokens)}\n`);
+  for (const p of projects) line(p.project, p);
+  // Every row is in exactly one section, so the sections add up to the ledger.
+  if (jobs.length) {
+    process.stdout.write('\n## Scheduled tasks\n');
+    for (const j of jobs) line(j.job, j);
+  }
+  if (outside.length) {
+    process.stdout.write('\n## Outside any project\n');
+    for (const p of outside) line(p.project, p);
+  }
+}
+
+// Models the ledger has rows for but the table can't price — the failure this
+// whole mechanism exists to make loud instead of silent ($0 that reads as free).
+function unpricedModels() {
+  const counts = new Map();
+  for (const row of readUsageLedger()) {
+    if (row.costUSD !== null && row.costUSD !== undefined) continue;
+    counts.set(row.model, (counts.get(row.model) || 0) + 1);
+  }
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function pricingReport() {
+  const st = pricingStatus();
+  const current = activeVersions()[0];
+  process.stdout.write(`driver     ${st.driver}\n`);
+  const table = st.synced ? 'synced'
+    : st.seedVersions ? 'built-in seed (never synced)'
+      : 'none — this driver ships no price table, so cost is never computed';
+  process.stdout.write(`table      ${table}\n`);
+  process.stdout.write(`version    ${st.version || '—'}\n`);
+  process.stdout.write(`source     ${st.source || '—'}\n`);
+  // Only this driver's entry — the store holds every driver's table, and showing
+  // another one's would imply rates that aren't in play here.
+  if (st.synced) {
+    process.stdout.write(`store      ${st.storePath}\n`);
+    process.stdout.write(`updated    ${st.updated}\n`);
+  }
+  if (current) {
+    process.stdout.write('\n$ per MTok\n');
+    for (const [model, r] of Object.entries(current.models).sort()) {
+      process.stdout.write(`  ${model.padEnd(32)} in $${String(r.input).padStart(6)}   out $${String(r.output).padStart(6)}\n`);
+    }
+  }
+  const unpriced = unpricedModels();
+  if (unpriced.length) {
+    process.stdout.write('\nUNPRICED — ledger rows with no cost (they read as $0):\n');
+    for (const [model, n] of unpriced) process.stdout.write(`  ${model.padEnd(32)} ${n} row(s)\n`);
+    process.stdout.write('Run `usage.mjs pricing sync` — if a model stays here, the feed does not carry it.\n');
   }
 }
 
@@ -79,6 +134,13 @@ Subcommands:
   collect [--session <id>]   Harvest new transcript content (idempotent)
   collect --hook             SessionEnd-hook mode (hook JSON on stdin)
   backfill                   Harvest all existing transcripts, flagged backfilled
+  reprice [--dry-run]        Fill in cost for rows whose model was missing from
+                             the price table when they were collected (every
+                             project). Priced rows are never touched.
+  pricing                    Show the active price table, where it came from,
+                             and any models the ledger can't price
+  pricing sync               Pull live rates now; reprice unpriced rows if the
+                             table changed (the portal does this every 24h)
   report [project]           Cost/token rollup (all projects, or one in detail)
 `);
 }
@@ -104,6 +166,21 @@ switch (cmd) {
   case 'backfill': {
     const result = collectUsage({ backfilled: true });
     process.stdout.write(JSON.stringify(result) + '\n');
+    break;
+  }
+  case 'reprice': {
+    const result = repriceLedger({ dryRun: rest.includes('--dry-run') });
+    process.stdout.write(JSON.stringify(result) + '\n');
+    break;
+  }
+  case 'pricing': {
+    if (rest[0] === 'sync') {
+      const result = await refreshPricing();
+      process.stdout.write(JSON.stringify(result) + '\n');
+      if (!result.sync.ok) process.exitCode = 1;
+      break;
+    }
+    pricingReport();
     break;
   }
   case 'report':

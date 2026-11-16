@@ -1,0 +1,111 @@
+:host { display: block; }
+
+/* Layout only — text styling comes from the shared recipes in styles.scss
+   (.card-title / .card-hint / .eyebrow / .hint / .set-input / .row-del /
+   .btn-pill / .btn-primary). */
+
+/* swatch pair · path field · browse · white-border checkbox · clear.
+   minmax(0, …) on the flexible track for the same reason the Open-in targets
+   grid needs it: an input's intrinsic width would otherwise set the track and
+   push the card past the page. */
+.icon-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 2fr) auto auto auto;
+  gap: var(--app-space-4); align-items: center;
+  max-width: 720px;
+}
+
+/* The two states a rail icon actually has to survive: the sidebar's indigo, and
+   the white plate the SELECTED row forces behind every icon. Showing one and not
+   the other is what let a black-on-transparent logo look fine here and vanish in
+   the rail. Both are the rail's real 20px, not a scaled-up preview — artwork
+   that only reads at 40px does not read in the sidebar. */
+.ico-swatches { display: flex; align-items: center; gap: var(--app-space-4); }
+/* Caption BESIDE its swatch, not under it. Stacked, "selected" (41px) was wider
+   than the 26px chip it labelled, so the two captions collided — and the extra
+   line made the cell 39px against a 27px input, floating the swatches 6px above
+   the field they belong to. Inline, the row is one control height again. */
+.sw-cell { display: flex; align-items: center; gap: 5px; }
+.sw-cap {
+  font-size: 10.5px; line-height: 1; color: var(--app-fg-muted); white-space: nowrap;
+}
+.sw {
+  width: 26px; height: 26px; border-radius: 5px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid var(--app-border);
+}
+.sw img { width: 20px; height: 20px; object-fit: contain; display: block; }
+/* The two swatches mirror app.component.scss's rail rules, state for state. A
+   preview that invents its own colours is worse than none — the first cut painted
+   the selected swatch flat white when the real selected row is the ACCENT fill
+   with a white plate inset, and never showed the plate on the idle swatch at all,
+   so ticking "white border" changed nothing on screen. */
+.sw-rail { background: var(--app-sidebar-bg); }   /* idle row = the sidebar's own ground */
+.sw-sel  { background: var(--app-accent); }       /* selected row = .sidebar-item.active */
+/* The plate itself, same geometry as .si-icon img.bordered: inset on the image,
+   so the row's colour still shows around it. Idle gets it only when the owner
+   ticks the box; selected always does, which is the rail's own rule. */
+.sw.plated img {
+  background: #fff; border-radius: 4px; padding: 1.5px; box-sizing: border-box;
+}
+/* Nothing to show (empty field, or a path that didn't resolve) — the slots stay,
+   dimmed, so the row doesn't reflow while you type. */
+.ico-swatches.empty .sw { opacity: 0.4; }
+
+/* The field stacks its own hint line under the input. */
+.ico-field { display: flex; flex-direction: column; gap: var(--app-space-2); min-width: 0; }
+/* Same fallback pair the Location-on-disk card above uses for its own warnings —
+   one error colour on this page, not two. */
+.hint.bad { color: var(--app-danger, #d9534f); }
+
+/* The checkbox carries its own label here (there is no column header to name it). */
+.ico-border { display: flex; align-items: center; gap: var(--app-space-2); white-space: nowrap; }
+
+/* The help toggle rides in the card title, so the card reads as one line until
+   you ask for more. */
+.card-title { display: flex; align-items: center; gap: var(--app-space-3); }
+.ico-help { font-weight: 500; }
+.ico-help-panel {
+  display: flex; flex-direction: column; gap: var(--app-space-3);
+  padding: var(--app-space-4);
+  border: 1px solid var(--app-border); border-radius: 8px;
+  background: var(--app-surface-2);
+  max-width: 78ch;
+}
+.ico-help-panel p { margin: 0; font-size: 12.5px; color: var(--app-fg-dim); text-wrap: pretty; }
+
+/* Copy instructions sits WITH its one-line explanation rather than in the action
+   row — alone down there the label said nothing about who the brief is for. */
+.ico-brief { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; }
+
+/* The repo's images, each rendered on the indigo it will have to sit on — a list
+   of bare paths would make you guess twice. Scrolls rather than growing: a repo
+   with 200 images must not push Save off the page. */
+.ico-picker {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: var(--app-space-2);
+  max-height: 260px; overflow-y: auto;
+  padding: var(--app-space-3);
+  border: 1px solid var(--app-border); border-radius: 8px;
+  background: var(--app-surface);
+  max-width: 720px;
+}
+button.pick {
+  display: flex; align-items: center; gap: var(--app-space-3);
+  padding: 5px 7px; border: 1px solid transparent; border-radius: 6px;
+  background: none; font: inherit; font-size: 12px; color: var(--app-fg-dim);
+  cursor: pointer; text-align: left; min-width: 0;
+}
+button.pick:hover { background: var(--app-hover); color: var(--app-fg); }
+button.pick.on { border-color: var(--app-accent); color: var(--app-fg); }
+.pick-sw {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 4px;
+  background: var(--app-sidebar-bg);
+  display: flex; align-items: center; justify-content: center;
+}
+.pick-sw img { width: 18px; height: 18px; object-fit: contain; display: block; }
+/* Long paths truncate at the FRONT — the filename is the part you are reading. */
+.pick-path {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  direction: rtl; text-align: left;
+}

@@ -1,19 +1,20 @@
 // core/project.mjs — project loading (sync CLI path + async server path with
-// parallel staleness prefetch), portal serialization, and INDEX.md generation.
-// generateIndexMd / loadTasks feed _tasks/INDEX.md, which the bd-pickup-task
-// skill and the /cogyard natural-language path browse directly. `cli/tasks.mjs
-// find` (resolveTask, same id/filename-stem/slug match as drift/claim/release)
-// is the authoritative way to resolve a specific id — INDEX.md is a generated
-// snapshot for browsing, auto-refreshed by `tasks sync push`, not the lookup
-// mechanism itself. Consumed tooling, not portal display — do not retire it.
+// parallel staleness prefetch) and portal serialization. (It also generated the
+// store's INDEX.md until task 190 removed that file: nothing read it, and it
+// put a generated file in every store commit.)
 
 import { join, basename } from 'node:path';
+import { realpathSync } from 'node:fs';
 import { gitP } from './exec.mjs';
 import { loadTasks, computeDerived } from './frontmatter.mjs';
 import { isClosed, bucketOf, waitingWhyOf } from './status.mjs';
+import { tasksDirOf } from './tasks-dir.mjs';
+import { liveForTask, claimedByOther, cachedUser } from './live-state.mjs';
+import { whoAmI } from './close.mjs';
+import { validateTasks } from './validate.mjs';
 
 function loadProject(projectPath) {
-  const tasksDir = join(projectPath, '_tasks');
+  const tasksDir = tasksDirOf(projectPath);
   const tasks = loadTasks(tasksDir);
   for (const t of tasks) t.derived = computeDerived(t, tasks, projectPath);
   return { tasks, tasksDir, project: basename(projectPath) };
@@ -71,22 +72,50 @@ async function computeStaleMap(tasks, repoRoot) {
 // Async equivalent of loadProject for the server: staleness prefetched in
 // parallel, then fed into computeDerived so no per-task git runs sequentially.
 async function loadProjectAsync(projectPath) {
-  const tasksDir = join(projectPath, '_tasks');
+  const tasksDir = tasksDirOf(projectPath);
   const tasks = loadTasks(tasksDir);
   const staleMap = await computeStaleMap(tasks, projectPath);
   for (const t of tasks) t.derived = computeDerived(t, tasks, projectPath, staleMap.has(t) ? staleMap.get(t) : false);
   return { tasks, tasksDir, project: basename(projectPath) };
 }
-function tasksToData(tasks) {
-  return tasks.map((t) => ({
+// `storePath` resolves the task-store link (.cogyard/tasks or _tasks) ONCE per project, not per file: for a
+// shared-store project every task lives in the same store, and realpath-ing each
+// of a few hundred files to learn the same answer is waste. Null when the caller
+// doesn't pass a tasks dir, or when it can't be resolved — a missing provenance
+// line is a fine degradation, a crashed task list is not.
+function resolveStorePath(tasksDir) {
+  if (!tasksDir) return null;
+  try { return realpathSync(tasksDir); } catch { return null; }
+}
+
+// tasksDir is optional so existing callers keep working; pass it to get the
+// file-provenance fields (task 132 — where each task file actually lives, which
+// nothing in the portal could say while `file` was a bare basename).
+function tasksToData(tasks, tasksDir) {
+  const storePath = resolveStorePath(tasksDir);
+  const user = cachedUser(whoAmI);
+  // Each task's schema errors (task 217) — the check `cogyard tasks validate`
+  // runs, over the whole project so duplicate ids and dangling deps count.
+  // Errors only: warnings are soft by design (older files predate fields).
+  const { results } = validateTasks(tasks);
+  return tasks.map((t, i) => ({
     id: t.frontmatter?.id ?? null,
     title: t.frontmatter?.title || basename(t.path).replace(/\.md$/, ''),
     status: t.frontmatter?.status || 'UNKNOWN',
     file: basename(t.path),
+    // `file` stays the basename — it is the row key the whole tasks view tracks
+    // by. Provenance rides alongside it: filePath is where the file REALLY is
+    // (through the store, symlink resolved), storePath the store holding it.
+    filePath: storePath ? join(storePath, basename(t.path)) : null,
+    storePath,
     progress: t.derived || {},
     claimedAt: t.derived?.claimedAt,
     claimedBy: t.derived?.claimedBy,
     claimedByName: t.derived?.claimedByName,
+    // What the agent on it is doing right now (task 202) — only on this
+    // machine's own claims; someone else's claim shows their name instead.
+    live: liveForTask(t.frontmatter, { user }),
+    claimedByOther: claimedByOther(t.frontmatter, user),
     stale: !!t.derived?.stale,
     ready: !!t.derived?.ready,
     bucket: bucketOf(t.derived || {}, t.hasFrontmatter), // server-computed group; SPA consumes, never re-derives
@@ -94,43 +123,8 @@ function tasksToData(tasks) {
     bodyMd: t.body || '',
     fm: t.frontmatter || {},
     hasFrontmatter: t.hasFrontmatter,
+    schemaErrors: results[i].errors,
   }));
 }
 
-function generateIndexMd(tasks, project) {
-  const lines = [`# Task index for ${project}`, '', `Generated ${new Date().toISOString()}`, ''];
-  // Group via the shared SSOT (core/status.mjs bucketOf) — same categorization
-  // the portal and the /api `bucket` field use, so INDEX.md never drifts from
-  // them. Four buckets (task 091); the done-family sub-groups by status.
-  const buckets = { ready: [], claimed: [], waiting: [], done: [] };
-  for (const t of tasks) buckets[bucketOf(t.derived || {}, t.hasFrontmatter)].push(t);
-  function row(t) {
-    const fm = t.frontmatter || {};
-    const id = fm.id || basename(t.path).split('-')[0];
-    const title = fm.title || basename(t.path).replace(/^\d+[a-z]?-/, '').replace(/\.md$/, '');
-    const file = basename(t.path);
-    const progress = t.derived?.totalCount > 0 ? ` (${t.derived.checkedCount}/${t.derived.totalCount})` : '';
-    const claim = t.derived?.claimed ? ` 🔒 ${t.derived.claimedByName || t.derived.claimedBy || '?'}` : '';
-    const stale = t.derived?.stale ? ' ⚠️ stale' : '';
-    const why = waitingWhyOf(t.derived || {}, t.hasFrontmatter);
-    return `- **${id}** [${title}](${file})${progress}${claim}${stale}${why ? ` — ${why}` : ''}`;
-  }
-  function section(title, list) {
-    if (!list.length) return;
-    lines.push(`## ${title} (${list.length})`, '');
-    for (const t of list.sort((a, b) => Number(a.frontmatter?.id || 0) - Number(b.frontmatter?.id || 0))) {
-      lines.push(row(t));
-    }
-    lines.push('');
-  }
-  section('Ready to pick', buckets.ready);
-  section('Claimed', buckets.claimed);
-  section('Waiting', buckets.waiting);
-  const byStatus = (s) => buckets.done.filter((t) => t.frontmatter?.status === s);
-  section('Enough (closed; leftovers harvestable)', byStatus('ENOUGH'));
-  section('Done', byStatus('DONE').slice(-10));
-  section('Obsolete', byStatus('OBSOLETE'));
-  return lines.join('\n') + '\n';
-}
-
-export { loadProject, computeStaleMap, loadProjectAsync, tasksToData, generateIndexMd };
+export { loadProject, computeStaleMap, loadProjectAsync, tasksToData };

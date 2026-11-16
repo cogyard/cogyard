@@ -1,0 +1,11 @@
+@if (show() === 'status') {
+  <span class="badge caps tchip" [attr.data-state]="current()"
+        [pTooltip]="statusTip()" tooltipPosition="left">{{ word() }}</span>
+} @else {
+  <!-- The Tasks tab's own icon leads the id, where a "#" used to be — the same
+       way app-git-ref leads a worktree or branch name with its kind's icon. -->
+  <button class="badge mono tchip" [class.tchip-primary]="role() === 'primary'"
+          [attr.data-bucket]="bucket()"
+          (click)="$event.stopPropagation(); open.emit(key())"
+          [pTooltip]="tip()" tooltipPosition="top"><span class="task-ico" aria-hidden="true"></span>{{ key() }}</button>
+}

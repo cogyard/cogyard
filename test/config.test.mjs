@@ -56,26 +56,28 @@ test('writeConfig: merge-patch preserves unknown keys', () => {
 
 // --- projectDefaults ----------------------------------------------------------
 
-test('projectDefaults: no file → built-in defaults', () => {
+test('projectDefaults: no file → built-in defaults (the kind only — no store choice)', () => {
   clearConfig();
-  assert.deepEqual(projectDefaults(), { kind: 'single', store: 'shared' });
+  assert.deepEqual(projectDefaults(), { kind: 'single' });
 });
 
-test('projectDefaults: valid config.defaults overlays the built-ins', () => {
-  writeConfig({ defaults: { kind: 'fullstack', store: 'shared' } });
-  assert.deepEqual(projectDefaults(), { kind: 'fullstack', store: 'shared' });
-  clearConfig();
-});
-
-test('projectDefaults: invalid kind/store are dropped, not crashed on', () => {
-  writeConfig({ defaults: { kind: 'nonsense', store: 'bogus' } });
-  assert.deepEqual(projectDefaults(), { kind: 'single', store: 'shared' });
+test('projectDefaults: a valid config.defaults kind overlays the built-in', () => {
+  writeConfig({ defaults: { kind: 'fullstack' } });
+  assert.deepEqual(projectDefaults(), { kind: 'fullstack' });
   clearConfig();
 });
 
-test('projectDefaults: partial overlay keeps the other built-in', () => {
-  writeConfig({ defaults: { kind: 'library' } });
-  assert.deepEqual(projectDefaults(), { kind: 'library', store: 'shared' });
+test('projectDefaults: an invalid kind is dropped, not crashed on', () => {
+  writeConfig({ defaults: { kind: 'nonsense' } });
+  assert.deepEqual(projectDefaults(), { kind: 'single' });
+  clearConfig();
+});
+
+// Task 169: a config.json written by an older release may still carry
+// `store: 'shared'` — it is ignored, never sent back out.
+test('projectDefaults: an older file\'s store key is ignored', () => {
+  writeConfig({ defaults: { kind: 'library', store: 'shared' } });
+  assert.deepEqual(projectDefaults(), { kind: 'library' });
   clearConfig();
 });
 
@@ -87,16 +89,33 @@ test('uiPrefs: no file → hiddenTabs defaults to []', () => {
 });
 
 test('uiPrefs: valid hiddenTabs subset persists', () => {
-  writeConfig({ ui: { hiddenTabs: ['board', 'branches'] } });
-  assert.deepEqual(uiPrefs().hiddenTabs, ['board', 'branches']);
+  writeConfig({ ui: { hiddenTabs: ['plan', 'branches'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['plan', 'branches']);
   clearConfig();
 });
 
 test("uiPrefs: a persisted 'settings' tab id (legacy config) is dropped on read", () => {
   // The per-project settings tab no longer exists; stale configs that hid it
   // must degrade silently instead of leaking an unknown id to the UI.
-  writeConfig({ ui: { hiddenTabs: ['board', 'settings'] } });
-  assert.deepEqual(uiPrefs().hiddenTabs, ['board']);
+  writeConfig({ ui: { hiddenTabs: ['plan', 'settings'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['plan']);
+  clearConfig();
+});
+
+test("uiPrefs: a hidden 'board' (replaced by 'plan', task 179) stays hidden as 'plan'", () => {
+  writeConfig({ ui: { hiddenTabs: ['board', 'graph'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['plan', 'graph']);
+  clearConfig();
+});
+
+// Task 249: Stats and Cleanup moved into the project's Admin tab, which can't
+// be hidden — a config that hid them (or the older 'activity') loads with
+// those ids simply gone.
+test("uiPrefs: a hidden 'stats' / 'cleanup' / 'activity' (now inside Admin) is dropped on read", () => {
+  writeConfig({ ui: { hiddenTabs: ['stats', 'cleanup', 'activity', 'graph'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, ['graph']);
+  writeConfig({ ui: { hiddenTabs: ['stats', 'cleanup'] } });
+  assert.deepEqual(uiPrefs().hiddenTabs, []);
   clearConfig();
 });
 
@@ -109,6 +128,58 @@ test('uiPrefs: unknown tab ids are dropped, known ones kept', () => {
 test('uiPrefs: non-array hiddenTabs is ignored → []', () => {
   writeConfig({ ui: { hiddenTabs: 'board' } });
   assert.deepEqual(uiPrefs().hiddenTabs, []);
+  clearConfig();
+});
+
+// --- uiPrefs.defaultTab (task 216) ----------------------------------
+
+test("uiPrefs: no file → defaultTab is 'tasks'", () => {
+  clearConfig();
+  assert.equal(uiPrefs().defaultTab, 'tasks');
+});
+
+test('uiPrefs: a valid visible defaultTab persists', () => {
+  writeConfig({ ui: { defaultTab: 'plan' } });
+  assert.equal(uiPrefs().defaultTab, 'plan');
+  clearConfig();
+});
+
+test("uiPrefs: an unknown defaultTab falls back to 'tasks'", () => {
+  writeConfig({ ui: { defaultTab: 'bogus' } });
+  assert.equal(uiPrefs().defaultTab, 'tasks');
+  clearConfig();
+});
+
+test("uiPrefs: a legacy 'board' defaultTab maps to 'plan'", () => {
+  writeConfig({ ui: { defaultTab: 'board' } });
+  assert.equal(uiPrefs().defaultTab, 'plan');
+  clearConfig();
+});
+
+// Task 249: a landing tab of Stats or Cleanup (or the older 'activity') names
+// no top-level tab any more, so it falls back like any unknown id — to Tasks,
+// or to the first visible tab when Tasks is hidden.
+test("uiPrefs: a defaultTab of 'stats' / 'cleanup' / 'activity' falls back", () => {
+  for (const t of ['stats', 'cleanup', 'activity']) {
+    writeConfig({ ui: { defaultTab: t } });
+    assert.equal(uiPrefs().defaultTab, 'tasks', t);
+    writeConfig({ ui: { defaultTab: t, hiddenTabs: ['tasks'] } });
+    assert.equal(uiPrefs().defaultTab, 'daily', `${t} with Tasks hidden`);
+  }
+  clearConfig();
+});
+
+test('uiPrefs: a hidden defaultTab resolves to the first visible tab', () => {
+  writeConfig({ ui: { defaultTab: 'plan', hiddenTabs: ['plan', 'daily'] } });
+  assert.equal(uiPrefs().defaultTab, 'tasks');
+  writeConfig({ ui: { defaultTab: 'tasks', hiddenTabs: ['daily', 'tasks'] } });
+  assert.equal(uiPrefs().defaultTab, 'plan');
+  clearConfig();
+});
+
+test("uiPrefs: every tab hidden → defaultTab is 'tasks'", () => {
+  writeConfig({ ui: { defaultTab: 'plan', hiddenTabs: ['daily', 'tasks', 'plan', 'branches', 'worktrees', 'graph', 'files'] } });
+  assert.equal(uiPrefs().defaultTab, 'tasks');
   clearConfig();
 });
 

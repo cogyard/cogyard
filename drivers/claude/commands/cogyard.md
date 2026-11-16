@@ -1,5 +1,5 @@
 ---
-description: Show /cogyard usage (bare) or run a subcommand. Use `/cogyard open` to launch the dashboard.
+description: Show /cogyard usage (bare) or run a subcommand. Use `/cogyard open` to launch the dashboard. Also for questions about the task list — "what's in tasks?", "what's left?", "what's claimed?" — answered from `cogyard tasks plan` (what's left) and `cogyard tasks current` (what's claimed).
 allowed-tools: Bash
 ---
 
@@ -20,7 +20,7 @@ WHAT YOU ACTUALLY DO
   Ask about tasks  /cogyard how many OPEN tasks I have
                    /cogyard what's claimed right now
                    /cogyard show me blocked tasks in my-project
-                   → Claude reads _tasks/INDEX.md + frontmatter directly. No server needed.
+                   → Claude answers from `cogyard tasks plan` / `current` and the task files. No server needed.
   See status       Go to the portal: http://localhost:7437 by default (live Angular UI —
                    the only dashboard), or your own mapped hostname if you set one up.
                    `/cogyard open` opens it. Cross-project view = the portal's "All" tab.
@@ -30,7 +30,7 @@ PLUMBING — the skills above call these for you; you rarely type them
   init                                        One-time setup in a fresh repo.
   next-id <slug>                              Reserve next task id (write-task runs this).
   current                                     JSON of tasks claimed in this repo.
-  sync pull | push "<msg>"                    Cross-machine _tasks/ sync (clones share via symlink).
+  sync pull | push "<msg>"                    Cross-machine task-store sync (worktrees share it via the .cogyard/tasks link).
   analyze [--apply] [--all]                   Infer frontmatter for unknown tasks.
   --backfill                                  Walk unknown-frontmatter files in $EDITOR.
 
@@ -73,11 +73,15 @@ Forward to `cogyard`. If the args look like a recognized subcommand (`init`, `sy
 cogyard tasks $ARGUMENTS
 ```
 
-If the args look like a natural-language question (e.g. "how many tasks", "what's claimed", "show me blocked"), do NOT shell out — instead answer programmatically by reading `_tasks/INDEX.md` and frontmatter files directly, then reply with the answer in chat.
+If the args look like a natural-language question (e.g. "how many tasks", "what's claimed", "show me blocked"), do NOT forward them — answer from these read-only commands, then reply with the answer in chat:
+
+- `cogyard tasks plan --json` — what's left, in the order it can run: what can start now, what waits on what, what's parked or waiting on the owner.
+- `cogyard tasks current` — what's claimed right now.
+- `cogyard tasks find <id>` — one task's file; read its frontmatter for anything the two above don't say (closed tasks, `done_date`, labels).
 
 ## Notes for Claude
 
-- The dashboard server only sees projects registered via `cogyard tasks init` in each clone. Use `cogyard tasks projects list` to see them.
-- For programmatic queries, prefer reading `_tasks/INDEX.md` directly over scraping the HTML.
+- The dashboard server only sees registered projects — ones set up with `cogyard init` or `cogyard onboard`. Use `cogyard tasks projects list` to see them.
+- For programmatic queries, prefer `cogyard tasks plan --json` and the task files over scraping the HTML.
 
 Arguments passed: $ARGUMENTS

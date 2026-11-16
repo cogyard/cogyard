@@ -1,0 +1,11 @@
+/* Type is the global .badge.mono recipe (square). A status is a single letter
+   sitting in a 20px file-tree row, so this chip keeps a tighter padding and
+   leading than a word chip — the one size rule a chip component sets for
+   itself. Colours are the --app-git-* theme values. */
+:host { display: inline-flex; flex: none; vertical-align: baseline; }
+.gst { padding: 0 5px; line-height: 16px; }
+.gst[data-git='a'] { background: var(--app-git-a); color: var(--app-git-a-fg); }
+.gst[data-git='m'] { background: var(--app-git-m); color: var(--app-git-m-fg); }
+.gst[data-git='d'] { background: var(--app-git-d); color: var(--app-git-d-fg); }
+.gst[data-git='r'] { background: var(--app-git-r); color: var(--app-git-r-fg); }
+.gst[data-git='u'] { background: var(--app-git-u); color: var(--app-git-u-fg); }

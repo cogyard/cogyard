@@ -10,7 +10,9 @@
 // core/pricing.mjs. Transcripts get pruned by agent retention; the ledger is forever.
 //
 // Files:
-//   usage.jsonl   — one row per (sessionId, model, taskId) aggregate per collection
+//   usage.jsonl   — one row per (sessionId, model, taskId) aggregate per collection.
+//                   A scheduled job's call carries `job: <id>` and a null
+//                   `project` (jobForPath; task 130) — in activity.jsonl too.
 //   claims.jsonl  — claim/release events appended by cli/env.mjs (task↔session join)
 //   cursors.json  — per-transcript byte offset + recent dedupe keys (idempotency)
 //   activity.jsonl        — attention/labor rows: per collection, per
@@ -25,12 +27,12 @@
 
 import {
   readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync,
-  statSync,
+  statSync, renameSync, realpathSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
-import { COGYARD_HOME } from './paths.mjs';
-import { readRegistry } from './registry.mjs';
-import { priceFor } from './pricing.mjs';
+import { COGYARD_HOME, JOB_RUN_ROOT } from './paths.mjs';
+import { readRegistry, ledgerSlugResolver } from './registry.mjs';
+import { priceFor, syncPricing } from './pricing.mjs';
 import { adapter } from './drivers.mjs';
 
 const USAGE_DIR = join(COGYARD_HOME, 'usage');
@@ -45,6 +47,14 @@ function transcriptsRoot() { return adapter.transcripts.root(); }
 function findTranscriptsForSession(sessionId) { return adapter.transcripts.findBySession(sessionId); }
 
 function ensureUsageDir() { mkdirSync(USAGE_DIR, { recursive: true }); }
+
+// A ledger read for QUERIES: each row's `project` mapped to the project that
+// owns that slug now (registry aliases — see ledgerSlugResolver). The files are
+// never rewritten with it; anything that writes a ledger back reads it raw.
+function readResolved(path) {
+  const resolve = ledgerSlugResolver();
+  return readJsonl(path).map((r) => (r.project == null ? r : { ...r, project: resolve(r.project) }));
+}
 
 function readJsonl(path) {
   if (!existsSync(path)) return [];
@@ -68,7 +78,7 @@ function appendClaimEvent(event) {
 // → Map sessionId → [{taskId, project, start, end|null}], windows sorted by start.
 function claimWindows() {
   const bySession = new Map();
-  for (const ev of readJsonl(CLAIMS_PATH)) {
+  for (const ev of readResolved(CLAIMS_PATH)) {
     if (!ev.sessionId) continue;
     if (!bySession.has(ev.sessionId)) bySession.set(ev.sessionId, []);
     const windows = bySession.get(ev.sessionId);
@@ -92,6 +102,33 @@ function taskForTimestamp(windows, ts) {
 }
 
 // --- project resolution -----------------------------------------------------
+
+// A transcript's cwd → the scheduled job that made the call, or null. Each job's
+// agent call runs in its own folder, `$COGYARD_HOME/run/<job-id>` (core/addons/
+// jobs.mjs), so a transcript recorded there is that job's and nobody else's.
+// Checked BEFORE any project rule: a job that scans every project belongs to
+// none of them, and the folder's own basename would otherwise become a junk
+// project slug (task 130 — the `T` slug was exactly that, from tmpdir()).
+// Both spellings of the root are tried, because the agent records its cwd
+// with symlinks resolved and $COGYARD_HOME may sit under one.
+function jobForPath(p) {
+  if (!p) return null;
+  const roots = [JOB_RUN_ROOT];
+  try { const real = realpathSync(JOB_RUN_ROOT); if (real !== JOB_RUN_ROOT) roots.push(real); } catch { /* no job has run yet */ }
+  for (const root of roots) {
+    if (p.startsWith(root + '/')) return p.slice(root.length + 1).split('/')[0] || null;
+  }
+  return null;
+}
+
+// Where a transcript's rows are filed: `{ job }` for a scheduled job's call,
+// else `{ project, worktree }` from the path rules below. A job row carries no
+// project at all, so nothing keyed by project can ever absorb it.
+function fileForPath(p) {
+  const job = jobForPath(p);
+  if (job) return { project: null, worktree: null, job };
+  return { project: resolveProjectForPath(p), worktree: worktreeForPath(p) };
+}
 
 // A transcript's cwd → registry project slug. Agent worktrees resolve to the
 // parent repo (the active adapter knows that layout). Unregistered paths get a
@@ -202,8 +239,7 @@ function collectUsage(opts = {}) {
     }
 
     if (aggregates.size) {
-      const project = resolveProjectForPath(cwd);
-      const worktree = worktreeForPath(cwd);
+      const { project, worktree, job } = fileForPath(cwd);
       for (const agg of aggregates.values()) {
         const { costUSD, pricingVersion } = priceFor(agg.model, agg.tokens);
         if (costUSD === null) skippedModels.add(agg.model);
@@ -212,6 +248,7 @@ function collectUsage(opts = {}) {
           sessionId: sessionId || basename(file, '.jsonl'),
           project,
           worktree,
+          ...(job ? { job } : {}),
           taskId: agg.taskId,
           model: agg.model,
           tokens: agg.tokens,
@@ -236,21 +273,201 @@ function collectUsage(opts = {}) {
   return { rows: newRows.length, files: touchedFiles, skippedModels: [...skippedModels], activity };
 }
 
+// --- repricing --------------------------------------------------------------
+
+// Fill in cost for ledger rows that were collected while their model was missing
+// from the price table (costUSD: null — a model released after the table was
+// last updated). Priced rows are NEVER touched: cost stays locked in at the
+// version it was collected with. The tokens on an unpriced row are exact, so
+// the fill-in is exact arithmetic, not an estimate — but it uses the price
+// version in effect NOW rather than when the work ran, so repriced rows are
+// flagged `backfilled` like any other after-the-fact pricing.
+// Rewrites the ledger atomically (tmp + rename). Runs across every project.
+// → {scanned, repriced, byModel: {<model>: n}, stillUnpriced: {<model>: n}}
+function repriceLedger(opts = {}) {
+  const rows = readJsonl(LEDGER_PATH); // raw: this rewrites the file
+  const byModel = {};
+  const stillUnpriced = {};
+  let repriced = 0;
+
+  for (const row of rows) {
+    if (row.costUSD !== null && row.costUSD !== undefined) continue;
+    const { costUSD, pricingVersion } = priceFor(row.model, row.tokens || {});
+    if (costUSD === null) {
+      stillUnpriced[row.model] = (stillUnpriced[row.model] || 0) + 1;
+      continue;
+    }
+    row.costUSD = costUSD;
+    row.pricingVersion = pricingVersion;
+    row.backfilled = true;
+    byModel[row.model] = (byModel[row.model] || 0) + 1;
+    repriced += 1;
+  }
+
+  const result = { scanned: rows.length, repriced, byModel, stillUnpriced };
+  if (opts.dryRun || !repriced) return result;
+
+  const tmp = LEDGER_PATH + '.reprice.tmp';
+  writeFileSync(tmp, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  renameSync(tmp, LEDGER_PATH);
+  return result;
+}
+
+// Refresh the price table from upstream, then heal what it unblocks: rows a
+// missing model left unpriced get their cost filled in. This pairing is the
+// whole point of the sync — a new model that ships mid-week no longer needs a
+// human to notice the $0 and hand-edit a table.
+//
+// Lives here rather than in core/pricing.mjs because pricing.mjs cannot import
+// usage.mjs (usage already imports pricing — that's the cycle). Never throws:
+// the portal calls it on a timer.
+// → {sync: <syncPricing result>, reprice: <repriceLedger result | null>}
+async function refreshPricing() {
+  let sync;
+  try { sync = await syncPricing(); }
+  catch (err) { return { sync: { ok: false, changed: false, reason: err.message }, reprice: null }; }
+  if (!sync.changed) return { sync, reprice: null };
+  let reprice = null;
+  try { reprice = repriceLedger(); }
+  catch (err) { reprice = { error: err.message }; }
+  return { sync, reprice };
+}
+
 // --- activity collection ------------------------------------------
 
 // UTC hour bucket key for an ISO timestamp: "2026-07-02T14".
 function hourKey(ts) { return String(ts).slice(0, 13); }
 
-// Task-file references in raw transcript text: `_tasks/NNN-…` is the
+// Task-file references in raw transcript text: `.cogyard/tasks/NNN-…` (or the
+// older `_tasks/NNN-…`, task 160) is the
 // cogyard task-file naming convention, so counting matches per task id tells us
 // which task a session was actually working — far better coverage than the
 // claims join (most sessions never formally claim). Format-agnostic: it greps
 // the raw line, not an agent-specific field.
-const TASK_REF_RE = /_tasks\/0*(\d+)-/g;
+const TASK_REF_RE = /(?:_tasks|\.cogyard\/tasks)\/0*(\d+)-/g;
 // Stronger still: `[#NN]` tags in the session's OWN `git commit` invocations
-// (the /commit skill stamps them). Scoped to lines containing 'git commit' so
-// `git log` output echoing OTHER commits' historical tags never counts.
+// (the /commit skill stamps them). Read ONLY from the shell commands the chat
+// actually ran (the driver's `parsed.commands`), and only from the part after
+// `git commit`. It used to be any transcript LINE containing both strings —
+// and a loaded skill, a task file or a pasted note is one line: the /commit
+// skill's own `[#37]` example credited every chat that loaded it with #37 and
+// #40 (task 152).
 const COMMIT_TAG_RE = /\[#0*(\d+)\]/g;
+// `git commit` at a COMMAND position — start of the command, or after a shell
+// separator — so a script or note that merely quotes "`git commit`" is not a
+// commit. The message is the rest of that line, plus a heredoc body when the
+// line opens one (the /commit skill's own `-m "$(cat <<'EOF' … EOF)"` shape).
+const GIT_COMMIT_RE = /(?:^|[;&|(\n])\s*git(?:\s+-C\s+\S+)*\s+commit\b/;
+function commitMessageText(cmd) {
+  const m = cmd.match(GIT_COMMIT_RE);
+  if (!m) return null;
+  const rest = cmd.slice(m.index + m[0].length);
+  const nl = rest.indexOf('\n');
+  const first = nl === -1 ? rest : rest.slice(0, nl);
+  const doc = first.match(/<<-?\s*['"]?(\w+)['"]?/);
+  if (!doc || nl === -1) return first;
+  const end = rest.indexOf('\n' + doc[1], nl);
+  return first + rest.slice(nl, end === -1 ? undefined : end);
+}
+
+// One transcript line's task signals, folded into the two counters. The line-
+// level rule in one place so the swept ledger (collectActivity) and the live
+// reader (chatSignals) can never disagree about what counts as a reference.
+// `parsed` is the driver's parseLine result for the same line (null allowed).
+function harvestTaskRefs(line, parsed, tasks, commitTasks) {
+  for (const m of line.matchAll(TASK_REF_RE)) tasks[m[1]] = (tasks[m[1]] || 0) + 1;
+  for (const cmd of (parsed && parsed.commands) || []) {
+    const msg = commitMessageText(cmd);
+    if (msg == null) continue;
+    for (const m of msg.matchAll(COMMIT_TAG_RE)) commitTasks[m[1]] = (commitTasks[m[1]] || 0) + 1;
+  }
+}
+
+// --- live chat signals — read the SOURCE, not the ledger ---------------------
+// "Which task / which worktree did this chat work on?" has one source of truth:
+// the transcript. The activity ledger below is a swept CACHE of those same
+// files — written at server boot, at session end, and on the Stats tab's
+// Refresh — and any chat still open, or ended since the last sweep, is simply
+// not in it. The Cleanup tab's worktree↔chat join used to read the cache and
+// said "no chat found" for chats sitting right there in the sidebar (owner,
+// 2026-09-16; the ledger was a day stale on a server two days up).
+//
+// So this reads the files. Memoized per file on (size, mtime): a transcript is
+// parsed once and re-read only when it has grown — every read cheap, work done
+// only when the state actually moved. In-process, so the long-running portal
+// pays once; a CLI run pays once per invocation.
+//
+// It also keeps which worktrees the chat OPERATED ON, two ways, both counted:
+//   · every cwd the transcript passed through — not just the first one the
+//     ledger records. A chat launched in the main checkout that then entered
+//     a task worktree has hundreds of lines in that worktree.
+//   · every worktree the chat's OWN tool calls name (the driver reports these
+//     per line as `worktreesTouched`). An orchestrator that creates worktrees
+//     with `git worktree add` and drives them with `git -C …` never changes
+//     directory into them, so it leaves no cwd trace at all — this is the
+//     only evidence such a chat leaves, and it is direct: those are its
+//     commands.
+// Together this is the most direct evidence there is of which worktree a chat
+// drove, and the ONLY evidence for worktrees not named task-NNN.
+const signalCache = new Map(); // file → { size, mtimeMs, signals }
+function fileSignals(file) {
+  let st;
+  try { st = statSync(file); } catch { return null; }
+  const hit = signalCache.get(file);
+  if (hit && hit.size === st.size && hit.mtimeMs === st.mtimeMs) return hit.signals;
+  let text;
+  try { text = readFileSync(file, 'utf8'); } catch { return null; }
+  const tasks = {}, commitTasks = {}, cwds = {}, touched = {}, written = {};
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    const parsed = adapter.transcripts.parseLine(line);
+    harvestTaskRefs(line, parsed, tasks, commitTasks);
+    if (!parsed) continue;
+    if (parsed.cwd) cwds[parsed.cwd] = (cwds[parsed.cwd] || 0) + 1;
+    for (const w of parsed.worktreesTouched || []) touched[w] = (touched[w] || 0) + 1;
+    for (const f of parsed.filesWritten || []) written[f] = (written[f] || 0) + 1;
+  }
+  const signals = { tasks, commitTasks, cwds, touched, written };
+  signalCache.set(file, { size: st.size, mtimeMs: st.mtimeMs, signals });
+  return signals;
+}
+
+// A chat's signals across all of its transcript files, plus the worktrees it
+// operated on — names matched to the Worktrees tab (worktreeForPath for a cwd;
+// the driver already reports a touched worktree by name), each carrying how
+// many lines ran there or named it. The launch dir usually dominates by count,
+// so a consumer wants the whole ranked set, not a single "the" worktree.
+function chatSignals(sessionId) {
+  const tasks = {}, commitTasks = {}, cwds = {}, worktrees = {}, filesWritten = {};
+  // The chat's own log(s) plus its helper agents' (task 152): a helper's
+  // commits, worktrees and task-file edits are this chat's work. Stats
+  // collection already reads them (list() walks every file).
+  const helpers = adapter.transcripts.findHelpersBySession ? adapter.transcripts.findHelpersBySession(sessionId) : [];
+  for (const f of [...findTranscriptsForSession(sessionId), ...helpers]) {
+    const s = fileSignals(f);
+    if (!s) continue;
+    for (const [k, n] of Object.entries(s.written)) filesWritten[k] = (filesWritten[k] || 0) + n;
+    for (const [k, n] of Object.entries(s.tasks)) tasks[k] = (tasks[k] || 0) + n;
+    for (const [k, n] of Object.entries(s.commitTasks)) commitTasks[k] = (commitTasks[k] || 0) + n;
+    for (const [k, n] of Object.entries(s.cwds)) cwds[k] = (cwds[k] || 0) + n;
+    for (const [k, n] of Object.entries(s.touched)) worktrees[k] = (worktrees[k] || 0) + n;
+  }
+  // ranIn: only the worktrees the chat's own lines RAN in (its cwd), not ones
+  // it merely named in a command. Task 152's readiness reads this: a chat that
+  // ran in a worktree is held while that worktree is on disk (archiving a
+  // Desktop-managed one force-removes it), and running in `task-NNN-*` counts
+  // as working on NNN. Naming a worktree in `ls` or `git worktree list` is
+  // neither.
+  const ranIn = {};
+  for (const [p, n] of Object.entries(cwds)) {
+    const w = worktreeForPath(p);
+    if (w) {
+      worktrees[w] = (worktrees[w] || 0) + n;
+      ranIn[w] = (ranIn[w] || 0) + n;
+    }
+  }
+  return { tasks, commitTasks, cwds, worktrees, ranIn, filesWritten };
+}
 
 // Harvest attention/labor time data into activity.jsonl: exact human-prompt
 // timestamps (the attention signal) + per-hour assistant message counts (labor,
@@ -293,11 +510,8 @@ function collectActivity(opts = {}) {
 
     for (const line of chunk.toString('utf8').split('\n')) {
       if (!line.trim()) continue;
-      for (const m of line.matchAll(TASK_REF_RE)) tasks[m[1]] = (tasks[m[1]] || 0) + 1;
-      if (line.includes('git commit')) {
-        for (const m of line.matchAll(COMMIT_TAG_RE)) commitTasks[m[1]] = (commitTasks[m[1]] || 0) + 1;
-      }
       const parsed = adapter.transcripts.parseLine(line);
+      harvestTaskRefs(line, parsed, tasks, commitTasks);
       if (!parsed) continue;
       if (!sessionId && parsed.sessionId) sessionId = parsed.sessionId;
       if (!cwd && parsed.cwd) cwd = parsed.cwd;
@@ -315,11 +529,13 @@ function collectActivity(opts = {}) {
     }
 
     if (prompts.length || sawHours) {
+      const { project, worktree, job } = fileForPath(cwd);
       newRows.push({
         capturedAt,
         sessionId: sessionId || basename(file, '.jsonl'),
-        project: resolveProjectForPath(cwd),
-        worktree: worktreeForPath(cwd),
+        project,
+        worktree,
+        ...(job ? { job } : {}),
         prompts,
         hours,
         ...(Object.keys(tasks).length ? { tasks } : {}),
@@ -338,13 +554,13 @@ function collectActivity(opts = {}) {
   return { rows: newRows.length, files: touchedFiles };
 }
 
-function readActivityLedger() { return readJsonl(ACTIVITY_PATH); }
+function readActivityLedger() { return readResolved(ACTIVITY_PATH); }
 
 // --- task attribution fallback (task 103) ------------------------------------
 
 // Dominant task id in a {id: count} map: the top-count id. `floor` is the minimum
 // count the top id must clear (1 for commit tags — an own `[#NN]` commit is a
-// definitive signal; 2 for text refs — one passing `_tasks/NNN-` mention must not
+// definitive signal; 2 for text refs — one passing `<task dir>/NNN-` mention must not
 // tag). Ties resolve to the numerically lower id for determinism.
 function dominantTaskId(counts, floor) {
   const entries = Object.entries(counts || {})
@@ -362,7 +578,7 @@ function dominantTaskId(counts, floor) {
 // from the SAME banked signals the Stats calendar's #NN chips use
 // (core/activity.mjs sessionTaskIds), MINUS the ephemeral worktree-name rung
 // (task 103): a session's own `[#NN]` commit tags (commitTasks), else its dominant
-// `_tasks/NNN-` references (tasks). Both are mined into activity.jsonl at
+// `<task dir>/NNN-` references (tasks). Both are mined into activity.jsonl at
 // collection time and BANKED — so attribution survives transcript culling
 // (activity.jsonl is ledger data, not a transcript). Git is deliberately NOT a
 // source here: git can't tie a commit to a session, so a git/time-window join was
@@ -401,7 +617,7 @@ function effectiveTaskId(row, fallback) {
 
 // --- queries (for the API + CLI report) --------------------------------------
 
-function readUsageLedger() { return readJsonl(LEDGER_PATH); }
+function readUsageLedger() { return readResolved(LEDGER_PATH); }
 
 function emptyTokens() { return { input: 0, output: 0, cacheRead: 0, cacheWrite5m: 0, cacheWrite1h: 0 }; }
 
@@ -423,28 +639,51 @@ function round2(o) {
   return o;
 }
 
-// Cross-project rollup: [{project, models: {<model>: bucket}, total bucket fields}]
-function usageRollup() {
-  const projects = new Map();
-  for (const row of readUsageLedger()) {
-    const slug = row.project || '(unknown)';
-    if (!projects.has(slug)) projects.set(slug, newBucket({ project: slug, models: {}, sessions: new Set() }));
-    const p = projects.get(slug);
-    foldRow(p, row);
-    p.sessions.add(row.sessionId);
-    if (!p.models[row.model]) p.models[row.model] = newBucket();
-    foldRow(p.models[row.model], row);
-  }
-  return [...projects.values()]
-    .map((p) => round2({ ...p, sessions: p.sessions.size, models: Object.fromEntries(Object.entries(p.models).map(([m, b]) => [m, round2(b)])) }))
-    .sort((a, b) => b.costUSD - a.costUSD);
+// The three places a ledger row can belong on the cross-project views (task 130):
+//   'project' — a registered project (alias slugs already mapped by the reader)
+//   'job'     — a scheduled job's own agent call (row.job)
+//   'outside' — anything else: sessions run outside every registered project,
+//               a project since unregistered, rows from before job attribution
+// Every row lands in exactly one, so the three totals always add up to the
+// ledger's — nothing is dropped for having no project to show it under.
+// → (row) → { kind, key }
+function ledgerPlacement() {
+  const registered = new Set(readRegistry().map((e) => e.slug));
+  return (row) => {
+    if (row.job) return { kind: 'job', key: row.job };
+    if (row.project && registered.has(row.project)) return { kind: 'project', key: row.project };
+    return { kind: 'outside', key: row.project || '(unknown)' };
+  };
 }
 
-// One project: per-model breakdown + per-task + per-worktree rollups. Matches
-// the collapsed project slug OR any per-clone ledger slug (e.g. `proj` ↔
-// `proj__clone`).
+// Cross-project rollup, one bucket per project / job / outside slug:
+//   { projects: [{project, …}], jobs: [{job, …}], outside: [{project, …}] }
+// each entry {sessions, models: {<model>: bucket}, …total bucket fields},
+// sorted by cost. `outside` keeps its original slugs so a view can fold them
+// into one line and still say what is in it.
+function usageRollup() {
+  const place = ledgerPlacement();
+  const groups = { project: new Map(), job: new Map(), outside: new Map() };
+  for (const row of readUsageLedger()) {
+    const { kind, key } = place(row);
+    const m = groups[kind];
+    if (!m.has(key)) m.set(key, newBucket({ [kind === 'job' ? 'job' : 'project']: key, models: {}, sessions: new Set() }));
+    const b = m.get(key);
+    foldRow(b, row);
+    b.sessions.add(row.sessionId);
+    if (!b.models[row.model]) b.models[row.model] = newBucket();
+    foldRow(b.models[row.model], row);
+  }
+  const out = (m) => [...m.values()]
+    .map((p) => round2({ ...p, sessions: p.sessions.size, models: Object.fromEntries(Object.entries(p.models).map(([k, b]) => [k, round2(b)])) }))
+    .sort((a, b) => b.costUSD - a.costUSD);
+  return { projects: out(groups.project), jobs: out(groups.job), outside: out(groups.outside) };
+}
+
+// One project: per-model breakdown + per-task + per-worktree rollups. Rows
+// under the project's alias slugs are already mapped to it by the reader.
 function projectUsage(slug) {
-  const inProject = (row) => { const p = row.project || '(unknown)'; return p === slug || p.startsWith(slug + '__'); };
+  const inProject = (row) => (row.project || '(unknown)') === slug;
   const fallback = sessionTaskFallback();
   const models = {};
   const tasks = new Map();
@@ -507,7 +746,7 @@ function taskUsage(slug, taskId) {
 
 export {
   USAGE_DIR, LEDGER_PATH, CLAIMS_PATH, ACTIVITY_PATH, transcriptsRoot, findTranscriptsForSession,
-  appendClaimEvent, claimWindows, resolveProjectForPath,
-  collectUsage, collectActivity, readUsageLedger, readActivityLedger, usageRollup, projectUsage, taskUsage,
-  sessionTaskFallback, effectiveTaskId,
+  appendClaimEvent, claimWindows, resolveProjectForPath, worktreeForPath, jobForPath, chatSignals,
+  collectUsage, collectActivity, repriceLedger, refreshPricing, readUsageLedger, readActivityLedger, ledgerPlacement, usageRollup, projectUsage, taskUsage,
+  sessionTaskFallback, effectiveTaskId, harvestTaskRefs,
 };

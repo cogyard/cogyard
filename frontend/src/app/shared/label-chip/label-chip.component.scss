@@ -1,0 +1,22 @@
+/* Shape and type are the global .badge recipe (square). A label chip owns its
+   colour: neutral grey with a hairline edge, or — when the label belongs to an
+   axis (task 096) — that axis's colour (--chip, from /api/axes) as a tint,
+   mixed against theme values so any picked colour stays legible. The edge is an
+   INSET line so the chip is the same size as every other chip. */
+:host { display: inline-flex; flex: 0 0 auto; min-width: 0; vertical-align: baseline; }
+.label {
+  background: var(--app-border-soft); color: var(--app-fg-dim);
+  box-shadow: inset 0 0 0 1px var(--app-border);
+}
+.label.axis {
+  background: color-mix(in srgb, var(--chip) 16%, var(--app-surface));
+  color: color-mix(in srgb, var(--chip) 60%, var(--app-fg));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chip) 45%, transparent);
+}
+/* With the inline ×: room for the button on the right. */
+.label.removable { display: inline-flex; align-items: center; gap: var(--app-space-2); padding-right: 4px; }
+.label-x {
+  border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1;
+  padding: 0 2px; color: inherit; opacity: 0.7;
+}
+.label-x:hover { opacity: 1; }

@@ -5,9 +5,21 @@
   align-items: center; height: 28px; border-bottom: 1px solid var(--app-border-soft); cursor: pointer;
 }
 .dag-row:last-child { border-bottom: none; }
+/* Same height main.with-commit .main-inner reserves for the commit dock
+   (app.component.scss: the dock is 46vh, plus a 16px gap). */
+.dock-spacer { height: calc(46vh + 16px); }
 .dag-row:hover { background: var(--app-hover); }
 .dag-row.active { background: var(--app-accent-tint2); box-shadow: inset 3px 0 0 var(--app-accent); }
 .dag-row.active:hover { background: var(--app-accent-tint3); }
+.wt-row { background: var(--app-surface-2); }
+.wt-row .dag-hash { color: #16a34a; text-align: center; }
+/* The count is the point of the row — it never gets squeezed out. Long worktree
+   and branch names ellipsize instead (the host element needs min-width:0 to be
+   allowed to shrink; .gref inside it already truncates). */
+.wt-row app-git-ref { min-width: 0; }
+.wt-task { flex: 0 0 auto; }
+.wt-count { font-size: 11.5px; margin-left: 8px; white-space: nowrap; flex: 0 0 auto; }
+.wt-count.dirty { color: #d97706; font-weight: 600; }
 /* collapsed stash pseudo-rows — dotted/hollow node + 📦 + message */
 .stash-row { background: var(--app-surface-2); }
 .stash-row .dag-hash.stash-icon { text-align: center; padding-right: 8px; }
@@ -21,21 +33,39 @@
 .dag-hash { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; color: var(--app-fg-muted); padding-right: 8px; }
 .dag-msg { display: flex; align-items: center; gap: var(--app-space-3); overflow: hidden; white-space: nowrap; padding-right: 10px; }
 .dag-subj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-fg); font-size: 12.5px; }
-/* p-tag ref chips — ng-deep; .p-tag.dag-ref outranks the Aura .p-tag defaults */
-/* size/weight/padding come from the global .badge.mono recipe; a ref chip is
-   deliberately SQUARED (3px) with a border, so only that stays local */
-:host ::ng-deep .p-tag.dag-ref {
-  flex: 0 0 auto; border-radius: 3px; border: 1px solid;
-}
-:host ::ng-deep .p-tag.dag-ref.local { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
-:host ::ng-deep .p-tag.dag-ref.remote { background: #eef4ff; color: #1e40af; border-color: #c7dbff; }
-/* release tag = inverse solid — same "milestone" treatment as the main-ref chip */
-:host ::ng-deep .p-tag.dag-ref.tag { background: #16a34a; color: #fff; border-color: #15803d; }
-:host ::ng-deep .p-tag.dag-ref.synced { background: #f1f5f9; color: #334155; border-color: #cbd5e1; }
-/* main ref = inverse, tied to the black trunk color */
-:host ::ng-deep .p-tag.dag-ref.main-ref { background: #111827; color: #fff; border-color: #111827; }
+/* ref chips are app-ref-chip (task 155) — their look is that component's */
 .dag-author { font-size: 11.5px; color: var(--app-fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 8px; }
 .dag-date { font-size: 11.5px; color: var(--app-fg-muted); font-family: ui-monospace, monospace; white-space: nowrap; }
 
 /* skeleton loading rows (layout only) */
 .skel { display: flex; flex-direction: column; gap: var(--app-space-3); }
+
+/* The Code / Task store switch (task 191) — its own row, on the very top. */
+.g-source { margin-bottom: var(--app-space-4); }
+/* The action bar: the same row in both views — origin pill, folder pill, any
+   store warnings, then the store's All / Flagged filter pinned right.
+   min-height holds the row steady while the data loads. */
+.g-bar {
+  display: flex; align-items: center; flex-wrap: wrap; gap: var(--app-space-4);
+  min-height: 34px; margin-bottom: var(--app-space-5);
+}
+.g-spacer { flex: 1; }
+/* The Files tab's own icon, drawn in the pill's text colour. */
+.folder-ico { mask: url('/assets/files.svg') center / contain no-repeat; -webkit-mask: url('/assets/files.svg') center / contain no-repeat; }
+/* Flags sit at the end of the message cell and never shrink; the subject
+   ellipsizes first. */
+.dag-flags { display: inline-flex; gap: var(--app-space-2); flex: 0 0 auto; }
+.pend-files { color: var(--app-fg-dim); }
+/* "N clean commits hidden" between flagged rows — a divider, not a row: no
+   click target, no lane. */
+.gap-row {
+  position: relative; height: 20px; display: flex; align-items: center; padding-left: 40px;
+  font-size: 11px; font-style: italic; color: var(--app-fg-muted);
+  background: var(--app-surface-2); border-bottom: 1px solid var(--app-border-soft);
+}
+/* The lane carries on through the divider, dashed: commits were skipped here,
+   the history did not stop. 9px = the first lane's centre (LW / 2). */
+.gap-row::before {
+  content: ''; position: absolute; left: 8px; top: 0; bottom: 0;
+  border-left: 2.5px dashed #60a5fa;
+}

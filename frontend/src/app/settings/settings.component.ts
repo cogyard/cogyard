@@ -4,6 +4,7 @@ import { Select } from 'primeng/select';
 import { SelectButton } from 'primeng/selectbutton';
 import { InputText } from 'primeng/inputtext';
 import { Checkbox } from 'primeng/checkbox';
+import { TooltipModule } from 'primeng/tooltip';
 import { MessageService } from 'primeng/api';
 import { ApiService } from '../services/api.service';
 import { ConfigService } from '../services/config.service';
@@ -11,7 +12,7 @@ import { ProjectKind, OpenTargetFull, WeekStart } from '../services/models';
 import { fmtHour } from '../shared/activity-punchcard/activity-punchcard.component';
 import { PORTAL_TABS } from '../shared/portal-tabs';
 import { AddonsComponent } from './addons/addons.component';
-import { AxesComponent } from './axes/axes.component';
+import { AxesComponent } from '../shared/axes/axes.component';
 
 // The /settings view AND the first-run setup wizard — the same form,
 // `wizard` just swaps the framing + shows the "add your first project" CTA. Every
@@ -22,7 +23,7 @@ import { AxesComponent } from './axes/axes.component';
 // — rendered as a plain label until a 2nd adapter exists).
 @Component({
   selector: 'app-settings',
-  imports: [FormsModule, Select, SelectButton, InputText, Checkbox, AddonsComponent, AxesComponent],
+  imports: [FormsModule, Select, SelectButton, InputText, Checkbox, TooltipModule, AddonsComponent, AxesComponent],
   templateUrl: './settings.component.html',
   styleUrl: './settings.component.scss',
 })
@@ -50,6 +51,13 @@ export class SettingsComponent {
   savingTabs = signal(false);
   copied = signal(false);
 
+  // Relay: a Scheduled tasks row asks for its add-on's dialog. The counter makes
+  // a repeat press re-open after a close.
+  // Bumped whenever an add-on switch moves, so sections gated on one re-read.
+  addonsChanged = signal(0);
+  openAddonRequest = signal<{ id: string; n: number } | null>(null);
+  openAddon(id: string) { this.openAddonRequest.update((prev) => ({ id, n: (prev?.n ?? 0) + 1 })); }
+
   // Tab visibility — one checkbox per strip tab; checked = visible.
   // Persisted inverted as ui.hiddenTabs. Every tab is hideable: this view (the
   // sidebar cog) is the un-hide surface, so there's no lock-out.
@@ -62,7 +70,18 @@ export class SettingsComponent {
       if (visible) next.delete(id); else next.add(id);
       return next;
     });
+    // Unticking the landing tab moves the choice to the first still-ticked tab
+    // now, so the picker shows what Save will store.
+    if (!visible && this.defaultTab() === id) {
+      this.defaultTab.set(PORTAL_TABS.find((t) => this.tabVisible(t.id))?.id ?? 'tasks');
+    }
   }
+
+  // The tab a project opens on (task 216) — offered from the ticked tabs only,
+  // saved with the visibility checkboxes by Save tabs.
+  defaultTab = signal<string>('tasks');
+  readonly defaultTabOptions = computed(() =>
+    PORTAL_TABS.filter((t) => this.tabVisible(t.id)).map((t) => ({ label: t.label, value: t.id })));
 
   // Kinds come from the scaffold registry via /api/config —
   // a drop-in scaffold appears here with no UI change. Empty until config loads
@@ -84,6 +103,7 @@ export class SettingsComponent {
       this.dayStart.set(c.ui?.dayStart ?? 0);
       this.projectsRoot.set(c.projectsRoot);
       this.hiddenTabs.set(new Set(c.ui?.hiddenTabs ?? []));
+      this.defaultTab.set(c.ui?.defaultTab ?? 'tasks');
       this.targets.set(c.openTargets.map((t) => ({ ...t, args: [...t.args] })));
     });
   }
@@ -108,11 +128,11 @@ export class SettingsComponent {
     });
   }
 
-  // Persist only ui.hiddenTabs — the server merge-patches it into the ui block,
-  // so the other prefs (weekStart/dayStart) are untouched by this save.
+  // Persist only ui.hiddenTabs + ui.defaultTab — the server merge-patches them
+  // into the ui block, so the other prefs (weekStart/dayStart) are untouched.
   saveTabs() {
     this.savingTabs.set(true);
-    this.api.saveConfig({ ui: { hiddenTabs: [...this.hiddenTabs()] } }).subscribe({
+    this.api.saveConfig({ ui: { hiddenTabs: [...this.hiddenTabs()], defaultTab: this.defaultTab() } }).subscribe({
       next: () => {
         this.savingTabs.set(false);
         this.cfg.reload(); // the shell's tab strip reads ConfigService — refresh applies it live
@@ -161,4 +181,6 @@ export class SettingsComponent {
       setTimeout(() => this.copied.set(false), 1500);
     });
   }
+
+
 }

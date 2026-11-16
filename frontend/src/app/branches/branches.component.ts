@@ -1,26 +1,24 @@
 import { Component, input, output, inject, effect, computed } from '@angular/core';
 import { GitRefComponent } from '../shared/git-ref/git-ref.component';
+import { TaskChipComponent } from '../shared/task-chip/task-chip.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { Tag } from 'primeng/tag';
+import { RefChipComponent } from '../shared/ref-chip/ref-chip.component';
+import { FlagComponent } from '../shared/flag/flag.component';
 import { TableModule } from 'primeng/table';
 import { OriginLinkComponent } from '../shared/origin-link/origin-link.component';
-import { ApiService } from '../services/api.service';
 import { Branch, BranchesResponse } from '../services/models';
-import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
 
 const STALE_DAYS = 30; // highlight branches untouched longer than this
 
 @Component({
   selector: 'app-branches',
-  imports: [Tag, TableModule, TooltipModule, Skeleton, OriginLinkComponent, GitRefComponent],
+  imports: [RefChipComponent, TableModule, TooltipModule, Skeleton, OriginLinkComponent, GitRefComponent, TaskChipComponent, FlagComponent],
   templateUrl: './branches.component.html',
   styleUrl: './branches.component.scss',
 })
 export class BranchesComponent {
-  private api = inject(ApiService);
-  private refresh = inject(RefreshService);
   private store = inject(StoreService);
   slug = input.required<string>();
   // Set from ?branch= (arriving from the Worktrees tab) — scroll its row into
@@ -28,11 +26,13 @@ export class BranchesComponent {
   activeBranch = input<string | null>(null);
   openCommit = output<string>();
   jumpWorktree = output<string>();
+  /** Same payload the Worktrees tab emits — '' means the main checkout. */
+  jumpFiles = output<{ wt: string; file: string | null }>();
   jumpTask = output<string>();
 
   isActive(b: Branch) { const a = this.activeBranch(); return !!a && b.name === a; }
 
-  private cached = computed(() => this.store.sig<BranchesResponse>(`branches|${this.slug()}`)());
+  private cached = this.store.use<BranchesResponse>(() => (this.slug() ? `branches|${this.slug()}` : null));
   main = computed(() => this.cached()?.main ?? null);
   originUrl = computed(() => this.cached()?.originUrl ?? null);
   all = computed<Branch[]>(() => this.cached()?.branches ?? []);
@@ -60,12 +60,6 @@ export class BranchesComponent {
   });
 
   constructor() {
-    effect(() => {
-      const s = this.slug();
-      this.refresh.tick();
-      if (!s) return;
-      this.store.load(`branches|${s}`, this.api.branches(s));
-    });
     // Scroll the active branch row into view once per selection — a background
     // refresh swapping the table must not re-scroll. Mirrors graph.component.
     effect(() => {

@@ -4,6 +4,7 @@ import { marked } from 'marked';
 import { ApiService } from '../../services/api.service';
 import { StoreService } from '../../services/store.service';
 import { TaskChat, TaskTranscriptResponse } from '../../services/models';
+import { ActionChipComponent } from '../../shared/action-chip/action-chip.component';
 
 // The transcript popup (task 30) — extracted from TasksComponent so the Tasks
 // tab's styles stay under budget and the viewer is a self-contained unit. Given
@@ -12,7 +13,7 @@ import { TaskChat, TaskTranscriptResponse } from '../../services/models';
 // (markdown). Dismiss with Escape, backdrop click, or the ✕ — all emit `close`.
 @Component({
   selector: 'app-transcript-modal',
-  imports: [],
+  imports: [ActionChipComponent],
   templateUrl: './transcript-modal.component.html',
   styleUrl: './transcript-modal.component.scss',
 })

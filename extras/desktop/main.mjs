@@ -124,7 +124,7 @@ async function pollTick() {
 }
 
 // Native notifications on meaningful, reproducible transitions between ticks:
-//   blocked↑ — a task became BLOCKED_ON (or had a dependency go unmet)
+//   blocked↑ — the project's blocked count went up (a dependency went unmet)
 //   ready↑   — a new task is unblocked and ready to pick up
 // First tick only seeds the baseline (no notification burst on launch). Each
 // notification click focuses the window and deep-links to that project.

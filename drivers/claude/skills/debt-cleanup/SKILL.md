@@ -1,11 +1,10 @@
 ---
-name: debt-cleanup
 description: |
   Structured multi-phase cleanup of a codebase that has grown feature-by-feature without refactoring.
-  Produces a numbered task doc in `_tasks/NNN-*.md` with Tier A/B/C grading, then executes it via
+  Produces a numbered task doc (`NNN-*.md` in the task store) with Tier A/B/C grading, then executes it via
   per-phase subagents with grep-able acceptance checks and a commit after each phase.
-  Built for cogyard-initialized projects (a `_tasks/` dir exists); in a repo without `_tasks/`, ask
-  the user where to put the task doc (e.g. `docs/` or repo root) instead of creating `_tasks/`.
+  Built for cogyard-initialized projects (a `.cogyard/tasks` task directory exists); in a repo without one, ask
+  the user where to put the task doc (e.g. `docs/` or repo root) instead of creating a task directory.
   Use when the user asks to "clean up", "refactor", "fix software engineering issues", or references
   a healthier reference project they want their current one to match.
 ---
@@ -34,7 +33,7 @@ Goal: produce a task doc that a future session (or you, in the same session) can
 
 3. **If a reference project is named, inspect its layering.** Look at *its* `routes → services → dal` structure, middleware setup, logger, error handling. Also note anti-patterns in the reference that should NOT be copied (per-route `try/catch`, non-null assertions, magic error codes). Take the structure, leave the implementation smells.
 
-4. **Write the task doc** at `_tasks/NNN-<slug>.md` using the Tier A/B/C template below. If the project has no `_tasks/` dir (not cogyard-initialized), don't create one for this — ask the user where the doc should live (e.g. `docs/` or repo root) and use that path throughout.
+4. **Write the task doc** using the Tier A/B/C template below. Reserve its id with `cogyard tasks next-id <slug>` and write at the exact `file` path that prints — never pick the number yourself (parallel sessions collide on it) and never write at `<repo>/.cogyard/tasks/…` (through a shared-store link that write prompts, or is refused in a worktree). If the project has no task directory (not cogyard-initialized), don't create one for this — ask the user where the doc should live (e.g. `docs/` or repo root) and use that path throughout.
 
 ### Stage 2 — The task doc
 

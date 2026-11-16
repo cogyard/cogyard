@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The project-settings cog (task 135) — the first tab in the strip. Stroked
+       and drawn on the same 24-grid as the other tab glyphs, because the strip
+       renders every icon as a mask; the sidebar's global-settings cog stays
+       filled, so the two settings surfaces don't read as the same control. -->
+  <g transform="translate(-20.48,-20.48) scale(23.04)">
+    <g fill="none" stroke="#1f2328" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M19.17 9.81 L21.14 10.31 A9.3 9.3 0 0 1 21.14 13.69 L19.17 14.19 A7.5 7.5 0 0 1 18.62 15.52 L19.66 17.27 A9.3 9.3 0 0 1 17.27 19.66 L15.52 18.62 A7.5 7.5 0 0 1 14.19 19.17 L13.69 21.14 A9.3 9.3 0 0 1 10.31 21.14 L9.81 19.17 A7.5 7.5 0 0 1 8.48 18.62 L6.73 19.66 A9.3 9.3 0 0 1 4.34 17.27 L5.38 15.52 A7.5 7.5 0 0 1 4.83 14.19 L2.86 13.69 A9.3 9.3 0 0 1 2.86 10.31 L4.83 9.81 A7.5 7.5 0 0 1 5.38 8.48 L4.34 6.73 A9.3 9.3 0 0 1 6.73 4.34 L8.48 5.38 A7.5 7.5 0 0 1 9.81 4.83 L10.31 2.86 A9.3 9.3 0 0 1 13.69 2.86 L14.19 4.83 A7.5 7.5 0 0 1 15.52 5.38 L17.27 4.34 A9.3 9.3 0 0 1 19.66 6.73 L18.62 8.48 Z"/>
+      <circle cx="12" cy="12" r="3.4"/>
+    </g>
+  </g>
+</svg>

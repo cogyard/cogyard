@@ -1,0 +1,88 @@
+<section class="settings-card">
+  <h3 class="card-title">Switches</h3>
+  <p class="card-hint">
+    How merging and resuming work in this project. A switch you don't set keeps cogyard's default.
+  </p>
+
+  @if (loading()) {
+    <p class="hint">Loading…</p>
+  } @else if (failed() || !data()) {
+    <p class="hint">Could not read this project's switches.</p>
+  } @else if (data(); as d) {
+    <div class="sw-rows">
+      <div class="sw-row">
+        <span class="eyebrow">Rebase onto main</span>
+        <span class="sw-val">
+          <p-selectbutton size="small" [options]="rebaseOptions" optionLabel="label" optionValue="value"
+                          [allowEmpty]="false" [ngModel]="rebaseShown()" (ngModelChange)="setRebase($event)" name="rebase" />
+          @if (rebase() === null) {
+            <span class="dim">default</span>
+          } @else {
+            <span class="dim">set for this project ·</span>
+            <button type="button" class="btn-link dim" (click)="resetRebase()">use the default ({{ d.defaults.rebase }})</button>
+          }
+          <span class="hint sm sw-explain">
+            @if (rebaseShown() === 'always') {
+              When a branch is behind main, merging and resuming a task rebase onto it without asking. A conflict still stops for you.
+            } @else {
+              When a branch is behind main, merging and resuming a task ask whether to rebase first.
+            }
+          </span>
+        </span>
+      </div>
+
+      <div class="sw-row">
+        <span class="eyebrow">Version on merge</span>
+        <span class="sw-val">
+          <p-selectbutton size="small" [options]="versionOptions" optionLabel="label" optionValue="value"
+                          [allowEmpty]="false" [ngModel]="versionShown()" (ngModelChange)="setVersion($event)" name="version" />
+          @if (versionKind() === null) {
+            <span class="dim">default</span>
+          } @else {
+            <span class="dim">set for this project ·</span>
+            <button type="button" class="btn-link dim" (click)="resetVersion()">use the default ({{ describe(d.defaults.version) }})</button>
+          }
+          @if (versionShown() === 'command') {
+            <span class="sw-cmd">
+              <input pInputText pSize="small" class="set-input" name="version-command"
+                     [ngModel]="command()" (ngModelChange)="command.set($event)" placeholder="poetry version minor" />
+              <input pInputText pSize="small" class="set-input" name="version-file"
+                     [ngModel]="file()" (ngModelChange)="file.set($event)" placeholder="pyproject.toml" />
+            </span>
+          }
+          <span class="hint sm sw-explain">
+            @switch (versionShown()) {
+              @case ('off') { Merging leaves the version alone. }
+              @case ('minor') { Every merge bumps the minor version in the root <code>package.json</code>. }
+              @case ('patch') { Every merge bumps the patch version in the root <code>package.json</code>. }
+              @case ('command') { Every merge runs this command from the repo root and commits it. The second field is the file that holds the version. }
+            }
+          </span>
+        </span>
+      </div>
+    </div>
+
+    @if (d.problems.length) {
+      <div class="sw-section">
+        <span class="eyebrow">Ignored in switches.json</span>
+        @for (p of d.problems; track p) { <span class="sw-warn">{{ p }}</span> }
+      </div>
+    }
+
+    @if (savedOnce()) {
+      <div class="sw-section">
+        <span class="hint">Saved in the project's task store, not committed yet. To commit it, run in the project:</span>
+        <span class="command-row">
+          <code class="ro-value plain">{{ commitCmd }}</code>
+          <button type="button" class="btn-link cp" (click)="copy(commitCmd)">{{ copied() ? 'copied' : 'copy' }}</button>
+        </span>
+      </div>
+    }
+
+    <div class="set-actions">
+      <button type="button" class="btn-primary" [disabled]="!canSave()" (click)="save()">
+        {{ saving() ? 'Saving…' : 'Save switches' }}
+      </button>
+    </div>
+  }
+</section>

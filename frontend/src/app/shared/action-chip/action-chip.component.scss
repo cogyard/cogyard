@@ -1,0 +1,5 @@
+/* LAYOUT ONLY. The chip's LOOK (.act-chip / .act-chip.worked) lives in
+   styles.scss beside .tchip-primary, because the worked-on ring is ONE rule the
+   two chips share — the ring must mean the same thing on both. The host sits
+   in flex rows (the CHATS box, the modal title) and must not shrink. */
+:host { display: inline-flex; flex: 0 0 auto; }

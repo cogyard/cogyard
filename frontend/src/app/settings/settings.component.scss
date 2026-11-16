@@ -3,24 +3,25 @@
 /* Layout only — text styling comes from the shared recipes in styles.scss
    (.page-title / .eyebrow / .hint / .field / .settings-card / .card-title /
    .card-hint). Never re-declare font-size/weight/color here. */
-.settings-wrap {
-  max-width: 760px; margin: 0 auto; padding: 24px 28px 48px;
-  display: flex; flex-direction: column; gap: var(--app-space-5);
-}
+/* NO max-width, margin, or padding here: the shell's .main-inner owns the content
+   column (1440px, centred, 24/32 padding) and every other tab declares no wrapper
+   at all. This page used to re-clamp itself to 760px, which is why it read as a
+   narrow strip beside Tasks and Worktrees — and why a table could not fit on it. */
+.settings-wrap { display: flex; flex-direction: column; gap: var(--app-space-5); }
+/* The form cards are prose-and-inputs, not data: a text field stretched across
+   1400px is unusable. The COLUMN is full width; each field keeps a readable one. */
+.settings-wrap .field { max-width: 560px; }
 .settings-head { display: flex; flex-direction: column; gap: var(--app-space-2); }
 
 .req { color: var(--app-accent); }
-.set-input { width: 100%; box-sizing: border-box; }
+/* .set-input and .set-actions are GLOBAL (styles.scss) — the child panels on this
+   page (<app-settings-axes>) need them too, and a
+   scoped copy here would be inert across the component boundary. */
 
 .set-readonly { display: flex; align-items: center; gap: var(--app-space-4); flex-wrap: wrap; }
-/* Value chip — a monospace-ish value in a tinted box (control-specific, not a
-   text recipe). */
-.ro-value {
-  font-size: 12.5px; padding: 4px 8px; border-radius: 6px;
-  background: var(--app-surface-2); color: var(--app-page-fg-strong);
-}
-
-.set-actions { display: flex; justify-content: flex-end; gap: var(--app-space-3); margin-top: var(--app-space-2); }
+/* .ro-value (the value chip) is GLOBAL (styles.scss) — the per-project settings
+   tab renders the same chip, and a scoped copy here would be inert across that
+   component boundary and would drift from this one. */
 
 /* Tab-visibility checkboxes — one row of label+checkbox pairs. */
 .tab-checks { display: flex; flex-wrap: wrap; gap: var(--app-space-4) var(--app-space-6); }
@@ -28,12 +29,51 @@
   display: flex; align-items: center; gap: var(--app-space-3); cursor: pointer;
   font-size: 13px; color: var(--app-page-fg-strong);
 }
+/* The landing-tab picker (task 216): label, short dropdown and info icon on
+   ONE line under the checkboxes — not a label, full-width dropdown and hint
+   line stacked. The hint lives in the icon's tooltip. */
+.landing-row { display: flex; align-items: center; gap: var(--app-space-3); }
+.landing-label { display: inline-flex; align-items: center; gap: var(--app-space-2); }
+.info-ico {
+  width: 15px; height: 15px; flex: none; cursor: help; color: var(--app-page-fg-muted, currentColor); opacity: .6;
+  background-color: currentColor;
+  mask: url('/assets/info.svg') no-repeat center / contain;
+  -webkit-mask: url('/assets/info.svg') no-repeat center / contain;
+  &:hover, &:focus-visible { opacity: 1; }
+}
+:host ::ng-deep .landing-select { min-width: 140px; }
 
-/* Open-in target editor — a compact grid that mirrors the row fields. */
+/* Open-in target editor — a compact grid that mirrors the row fields.
+   minmax(0, …) on every flexible track is load-bearing: a grid track's default
+   min-width is `auto`, so the four inputs' intrinsic width (a bare <input> is
+   ~20ch) added up to more than the card and pushed the whole section off the
+   right edge of the page. With a 0 floor the tracks can actually shrink, and
+   .set-input (width:100%) makes the inputs follow the track instead of setting
+   it. */
 .targets { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .target-row {
-  display: grid; grid-template-columns: 0.8fr 1fr 0.9fr 1.6fr auto; gap: var(--app-space-3); align-items: center;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1fr) minmax(0, 0.9fr) minmax(0, 1.6fr) auto;
+  gap: var(--app-space-3); align-items: center;
 }
 .target-row.eyebrow span { padding-left: 2px; }
 
 .cta-card { border-style: dashed; }
+
+
+
+/* The Machine card holds unrelated facts — where config lives, which agent
+   drives cogyard — each with its own explanation, so without separators they
+   read as one block.
+
+   Separated with the SAME recipe the Add-ons and Scheduled jobs cards use on
+   this page (.addon-row + .addon-row / .job-row + .job-row): --app-border-soft
+   at 1px, 12px of padding either side. Nothing else here is restyled — labels
+   and hints keep the page's shared .eyebrow / .hint recipes, so a Machine row
+   looks like every other field on the page rather than a local dialect. */
+.machine-card {
+  gap: 0;
+  > .field { padding: 12px 0; }
+  > .field + .field { border-top: 1px solid var(--app-border-soft); }
+}
+

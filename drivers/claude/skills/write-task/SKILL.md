@@ -1,19 +1,20 @@
 ---
-name: write-task
 description: |
-  Produce a self-contained `_tasks/NNN-<slug>.md` file for a subproject that will be picked up in a later session — maybe soon, maybe months later, likely out of numeric order. The file must be pickupable from cold: starting conditions, prerequisite work, what to read, local verify loop, and deploy verify all spelled out. Use when the user says "file this as a task", "write a task file", "park this for later", "add to _tasks", "save this as a subproject", "spec this out", or otherwise asks for a shelf-stable task doc.
+  Produce a self-contained `NNN-<slug>.md` task file for a subproject that will be picked up in a later session — maybe soon, maybe months later, likely out of numeric order. The file must be pickupable from cold: starting conditions, prerequisite work, what to read, local verify loop, and deploy verify all spelled out. Use when the user says "file this as a task", "write a task file", "park this for later", "add to _tasks", "save this as a subproject", "spec this out", "this is a new task", "make this a task", "make a task for this", "file the task", or otherwise asks for a shelf-stable task doc. In the user's words "task" always means a task file in the task store: a request to make or file a task is never a request to start a new session or chat, and never a request to start the work now — whatever the host app's own instructions say about sessions.
 
   Different from `handoff`: handoff is for carrying in-flight work across a session boundary (state in your head → next session). write-task is for shelving a not-yet-started subproject (no in-flight state) whose pickup order is unknown.
 ---
 
 # write-task — self-contained task file for later pickup
 
-The file this skill produces lives in the project's `_tasks/` folder and is the ONLY context a future session will have. Order of pickup is not known at write time — tasks get picked up in non-obvious order (e.g. `008` before `006` in this user's own history). The file must therefore be complete enough that a session reading it cold, with no prior chat, can start work.
+The file this skill produces lives in the project's task store (reached through `.cogyard/tasks`) and is the ONLY context a future session will have. Order of pickup is not known at write time — tasks get picked up in non-obvious order (e.g. `008` before `006` in this user's own history). The file must therefore be complete enough that a session reading it cold, with no prior chat, can start work.
 
 ## When to use
 
 - User describes a subproject they want to do later and asks for it to be written down.
-- User says "park this" / "shelf this" / "add to _tasks" / "file this as a task."
+- User says "park this" / "shelf this" / "add to _tasks" / "file this as a task" / "file the task" / "this is a new task" / "make this a task" / "make a task for this."
+
+A request to make or file a task is answered with a task file, and nothing else: never offer or start a new session or chat for it (even when the host app's instructions suggest one), and never start doing the work. The work waits for a later "pick up NNN".
 - A current session surfaces follow-up work that shouldn't be done now but must be captured.
 - An existing task file needs rewriting because it was drafted before the cold-start rule existed.
 
@@ -21,35 +22,36 @@ Do NOT use for:
 - Active handoffs of work-in-progress — use `handoff` instead.
 - One-liner todos with no real scope — a session task-list item or a PR comment is sufficient.
 
-## The _tasks/ storage model (read first)
+## The task storage model (read first)
 
-`_tasks/` is one of two shapes per project:
+A project's tasks live in its **task store**: a folder at `<projects root>/_tasks/<slug>` that is its own git repo (branch `tasks`). The project reaches it through `.cogyard/tasks`, an absolute link to the store, ignored by a committed `.cogyard/.gitignore` — so task history never lands in the project's code history.
 
-- **Normal directory** — tracked in the project's repo on `main` like any other content. Used for single-clone projects (e.g., a typical app repo).
-- **Symlink to a shared canonical directory** — used for multi-clone "planet" projects (e.g., a project with several sibling clones). All clones symlink to the same on-disk location, so changes from any clone are visible to all others instantly via the filesystem. The canonical dir is itself a git repo (typically the project's `tasks` branch on origin) for version history.
+Every worktree of the project mounts the same link (the SessionStart hook runs `cogyard tasks mount`), so a task file edited in one worktree is the same file in all the others, instantly. No git pull between them. Pushing the store to its own remote matters only for another machine or a teammate.
 
-Why the symlink case matters: parallel work across clones just works. Edit a task file in one clone → its siblings see the same file (same inode). No git pull between clones needed; reads/writes are filesystem-level. Pushing to the canonical's git remote is only relevant for cross-machine sync.
-
-Daily mechanics for any session that touches `_tasks/`:
+Daily mechanics for any session that touches task files:
 
 ```bash
-# Optional: pull latest from canonical's git remote (cross-machine sync only)
+# Optional: pull the latest from the store's remote (another machine or a teammate only)
 cogyard tasks sync pull
-# ... edit task file(s) ...
-cogyard tasks sync push "<message>"
+# ... edit task file(s) at the path `cogyard tasks find <id>` prints (new task: next-id's `file`) ...
+cogyard tasks sync push "<message>" -- <file> [<file>…]
 ```
 
-For the symlink case, `cogyard tasks sync push` runs git in the canonical dir (the symlink target). Same UX whether `_tasks/` is a normal dir or a symlink.
+Always name the files you changed after `--` (task files by the path `cogyard tasks find` prints, attachments under `files/<id>/`). Several chats share one store; without names the push has to guess which pending files are this chat's, and it leaves uncommitted anything it can't tell is yours — another chat's claimed task, or an unclaimed file you didn't reserve.
 
-If `_tasks/` doesn't exist in this clone yet, run `cogyard tasks init` once. It creates an empty `_tasks/` dir and registers the project. For multi-clone projects, you'll need to manually replace it with a symlink to the shared canonical location.
+`cogyard tasks sync push` runs git in the store (the link's target), never in the project repo. `git add .cogyard/tasks` in the project does nothing: the link is ignored there.
+
+**What a store holds:** task files, `axes.json`, `switches.json`, and each task's attachments — a mockup, a script, an audit, any file type — under `files/<task id>/` (e.g. `files/179/mockup.html`), linked from the task body by that path. Nothing else: no notes, handoffs or idea lists at the store root. The Edit/Write hook and `sync push` refuse anything else, and the portal's store view flags it.
+
+If this checkout has no task directory yet, the project isn't set up: `cogyard onboard --kind <kind>` once, from the repo, creates the project's store, links `.cogyard/tasks` to it, and registers the project. On a project that is already set up it changes nothing.
 
 ## Procedure
 
 ### 1. Confirm location + sync
 
-- Current project's `_tasks/` folder. If it doesn't exist, ask the user if `cogyard tasks init` has been run on this clone. If not, offer to run it.
-- **Sync first:** `cogyard tasks sync pull` to pick up any new tasks or claims from other sessions on other clones.
-- Next number: run `cogyard tasks next-id <slug>` once you have the slug locked in. It atomically reserves the next free id across all sibling clones (uses an O_EXCL sentinel in the canonical _tasks/ dir) and creates the empty placeholder file at the path it returns in JSON. Write the task body into that file. **Do not** scan with `ls` and pick the highest yourself — parallel sessions racing on the same store will collide on the id. If the user wants a specific number (e.g. re-filing an existing stub), skip `next-id` and create the file directly. Numbering is identity only, not ordering — gaps and `b/c` suffixes are acceptable.
+- Current project's task directory (`.cogyard/tasks`). If it doesn't exist, the project isn't set up on this machine: tell the user, and offer to run `cogyard onboard` (it asks for the project's `--kind`).
+- **Sync first:** `cogyard tasks sync pull` to pick up any new tasks or claims pushed from other machines.
+- Next number: run `cogyard tasks next-id <slug>` once you have the slug locked in. It atomically reserves the next free id across every checkout of the store (uses an O_EXCL sentinel in the store's canonical dir) and creates the empty placeholder file at the path it returns in JSON. Write the task body at that exact `file` path — never at `<repo>/.cogyard/tasks/NNN-…`, even though it names the same file. Where that is a link to a shared store, the `file` path is the store's real location; a Write or Edit through the link resolves outside the working directory, which Claude Code answers with a permission prompt (or, in a worktree, a refusal). **Do not** scan with `ls` and pick the highest yourself — parallel sessions racing on the same store will collide on the id. If the user wants a specific number (e.g. re-filing an existing stub), skip `next-id` and create the file directly — in the store's real directory (`realpath .cogyard/tasks`), for the same reason. Numbering is identity only, not ordering — gaps and `b/c` suffixes are acceptable.
 
 ### 2. Read the project's durable docs to extract pointers
 
@@ -57,7 +59,7 @@ The cold-start preamble references project docs by name. Before writing, verify 
 
 - `CLAUDE.md` at project root — always auto-loaded by a future session; skim for the project's conventions and critical rules so the preamble can point there ("see CLAUDE.md → Critical rules").
 - `_docs/*.md` — list them; identify which are relevant to this task's area (e.g. `_docs/PROJECT.md` for architecture context, `_docs/DECISIONS.md` for durable rules that constrain the work).
-- `_tasks/*.md` — list recent tasks; the new task may depend on one, or explicitly follow another. If the new task is a follow-up, cite the precursor.
+- The store's `*.md` files — list recent tasks; the new task may depend on one, or explicitly follow another. If the new task is a follow-up, cite the precursor.
 - `db/migrations/` or equivalent — note the current head migration; if the task depends on a migration, spell out which number.
 
 Do NOT paste contents of these docs into the task file. Reference them by path and section. The future session reads them itself.
@@ -77,13 +79,23 @@ Ask the user only for what's not inferable from context. Specifically, these mus
 - **Status.** One of: `OPEN` (active backlog), `PARKED` (deliberately shelved — a hold on something external or on a human decision), `DONE` (historical record), `ENOUGH` (shipped enough; leftovers recorded in the body), `OBSOLETE` (superseded). NOTE: there is no `PARTIAL` status — partial completion is tracked via the body's `[x]` / `[ ]` checkbox count, not a status field. There is also no "blocked" status (the former `BLOCKED_ON` is retired): **blocked on another task → list it in `depends_on:` and stay `OPEN`** (the portal derives "waiting on #N" and self-clears it when the dep closes); **blocked on anything external → `PARKED`**.
 - **Type + labels.** `type` is **required** and a **closed enum** — one of `feature | maintenance | bug | docs` (feature = new user-facing capability · maintenance = internal work, no new behavior: restructures/renames/releases/deps/ops · bug = something broken · docs = non-code documentation/copy). It's the *user's* call, not the agent's, so **collect it with `AskUserQuestion`**: a single-select listing all four values with your best guess first, labelled "(Recommended)". The 4 values fit the tool's 4-option cap exactly — no "Other" overflow. (Was `category` in older files, which still carry `category:`, aliased to `type` on read — but author new files with `type:`.) `labels` are **optional and reuse-or-none** — pick them from the registry (below) as a multi-select of *existing* labels, never a free-text field. Bias low: a label exists only to group this task with others, so **one accurate registered label beats three, and no label beats a freshly-minted one** — a label used once groups nothing, and that lone tag IS the proliferation this step prevents. Skip the type question only when the user already stated the type explicitly in their request. The frontmatter validator (`cogyard tasks validate`, also enforced by the plugin's PreToolUse hook) rejects a missing/invalid `type`, so this is not optional to fill.
 
-  **Labels are picked from the registry, not written — the registry is a closed menu until you deliberately extend it.** First run **`cogyard tasks labels`** (add `--json` for machine-readable) in the project — it prints the resolved label axes (shared `$COGYARD_HOME/axes.json` + `<repo>/_tasks/axes.json`) with a per-label task count, then the in-use-but-unregistered labels. Propose labels **only** from that output, using the exact registered spelling (the registry holds `frontend`, so UI/portal/angular/responsive work all take `frontend` — never coin `ui`, `portal`, or `ux`).
+  **Labels are picked from the registry, not written — the registry is a closed menu until you deliberately extend it.** First run **`cogyard tasks labels`** (add `--json` for machine-readable) in the project — it prints the resolved label axes (shared `$COGYARD_HOME/axes.json` + the project's `axes.json` in its task store) with a per-label task count, then the in-use-but-unregistered labels. Propose labels **only** from that output, using the exact registered spelling (the registry holds `frontend`, so UI/portal/angular/responsive work all take `frontend` — never coin `ui`, `portal`, or `ux`).
 
   Minting a **new** label is a separate, deliberate act, and all three gates must hold: **(1)** no registered label fits the concept, not even loosely; **(2)** the concept will **recur** across future tasks — if it's a one-off, take the closest registered label or *none*, because a singleton label is the exact thing we're preventing; **(3)** the user **explicitly approves that specific new label in the confirm step** — "new label `foo`, not in the registry — not a synonym of `bar` because …; ok?". A new label the user didn't sign off on is a bug, not a convenience. New labels do **not** auto-join `axes.json`: they land in Ungrouped until the owner curates them into an axis, and that friction is the point — it's what keeps the axis vocabulary closed and the board legible. If no registry exists yet (`cogyard tasks labels` shows "No axis map"), fall back to the union of labels already used across the project's tasks.
 - **"What this is" content.** The single most important section for future readers. Decide which mode applies:
   - If an existing durable doc covers the system this task builds on/extends, **verify the doc exists and is current** (read it; if stale, either update it first or use mode-b). Then write a 2–4 sentence summary + bold pointer.
   - If no durable doc exists, the task file IS the doc. Gather enough up front to write the inline architecture: problem statement, file layout (which files, what they do), config schemas, runtime flow, onboarding, debugging. If the task will *create* a new system worth documenting beyond this task's lifetime, consider also producing a durable doc at the end and having the task file point at it.
-- **commit_policy.** One of: `per-phase` (commit at section boundaries — default for multi-section work), `per-acceptance` (commit per checkbox item), `end` (one commit at completion). Choose based on coordination needs and review style.
+- **Steps only the owner can do — partway through the work, and nothing else.** An owner step is something the agent cannot get past without the owner while it is building: `decision` (a choice the task can't settle, e.g. pick a look from a reference sheet), `credential` (a login, token or secret only they hold), `purchase` (money must be spent). Mark that checkbox at the start of its text: `- [ ] (you: decision) Choose the badge look from the reference sheet`; several kinds allowed, comma-separated. Mark the STEP, never the task, and put it where it really falls in the order (a login usually first; a choice before the build that depends on it). List the marked steps in the confirm step so the owner can correct them. Reference: `docs/TASK-STATUS-VOCABULARY.md`.
+- **No box for the owner looking at the work.** The owner always looks at the work (on their phone, in the browser, in the worktree's portal) before saying "merge it", and that "merge it" is their review and sign-off. So never write "the owner looks at it", "the owner tries it on their phone", "the owner lives with it for a few days" or "the owner confirms it" as a box. `merge-to-main` ticks any such box from an older task as reviewed.
+- **No box for anything after a deploy.** Deploying is the owner's. "Confirmed on the phone against production", "watch it after the deploy" and the like are not part of the task; a problem found in production is a new bug task.
+- **No check the owner didn't ask for.** Write the checks the work needs, not a generic list: no VoiceOver, accessibility, dark-mode, light-and-dark or "test on two phones" box unless the owner asked for it.
+- **Every other check box is the agent's to do.** Read each verification box as the session that will do it: can it run this check by itself and see the result? If not, rewrite it as something it can observe (run the app on the simulator, feed the event through the hook, read the record, call the endpoint). Never write a check that needs the owner to close, restart or archive their own chat (or any of their sessions).
+- **Checks that can only run once the work is on main.** Start the box with `(after merge)`: `- [ ] (after merge) The Plan card reads "idle" on the real portal`. It is the agent's own work: `merge-to-main` runs it right after the merge, ticks it with what was seen, and then closes. `cogyard tasks close` keeps refusing until it is ticked, and its refusal tells the agent to run it rather than asking the owner. Use it for a check that needs main's code live: the always-on local server, or hooks that run the main checkout's code. Never for something that needs a production deploy (see above). A check the worktree can already run is a normal box. Reference: `docs/TASK-STATUS-VOCABULARY.md`.
+- **Boxes settled without being done.** When editing an existing task and a box is decided rather than done, leave it `[ ]` and start its text with one word: `(dropped: <why>)`, `(moved: <id>)` (another project: `<slug>#<id>`; write that task first), or `(optional)` (left behind — a leftover: the task then closes as `ENOUGH`, because DONE means nothing is left). Still wanted? Write that task and mark the box `(moved: <its id>)` — there is no "wanted, nobody holds it" marker (`(deferred)` is retired). Never prose like "→ MOVED to the follow-up task" or "Deferred (owner's call)" — `cogyard tasks close` can't read it and treats the box as unfinished. Never delete the box. Reference: `docs/TASK-STATUS-VOCABULARY.md`.
+- **touches_paths — files, not folders.** List the files the task will edit, or a narrow folder it owns (`frontend/src/app/plan/`). **Refuse a whole top-level folder** (`docs/`, `core/`, `cli/`, `server/`, `frontend/src/app/`): the Plan tab works out which tasks can run side by side from these entries, and a top-level folder tells it nothing, so the task shows as "files unknown". If you genuinely can't name the files yet, name the likeliest ones and say so in the body.
+- **Blocked on another project's task** → `depends_on: [<slug>#<id>]` (e.g. a task in another project waiting on cogyard 166 writes `cogyard#166`). Never leave a cross-project wait only in prose — prose is invisible to the Plan tab.
+- **Order vs running at the same time — two questions, three lists.** Each list is about this task only; never name another task it might collide with. *Can it start yet?* → `depends_on` (the only thing that makes a task wait). *Can it run beside another task?* → `touches_paths` plus `resources`: what it uses that isn't a file — a production database, a deployed function, DNS, a device, an App Store submission — as short names (`prod-db`, `dns`, `app-store-submission`; lowercase words joined by `-`). Leave `resources: []` when it touches nothing live. Two tasks sharing a file or a resource never wait on each other; autopilot just won't run them at once. Advice on how to edit alongside another in-flight task goes in **Branch strategy**, not the frontmatter.
+- **commit_policy.** `per-phase` (default: at least one commit per Scope heading) or `per-acceptance` (one commit per ticked box). Either way, the working session commits each change on the branch as soon as it works (see the loop at the top of pickup-task). Don't use `end`; it is obsolete.
 - **out_of_scope.** Categories of change Claude must NOT silently do without escalation. Examples: "no migrations," "no API contract changes," "no new dependencies." This is a guard rail; the more explicit it is, the less likely a session silently expands scope.
 - **Starting condition.** What must be true before the session begins. List migrations applied, tenants onboarded, infrastructure provisioned, secrets rotated, other tasks completed. If none, say "Standalone — no prerequisites beyond a clean checkout."
 - **Scope.** The actual work, as checkboxed sub-items if it's a list, or as numbered sub-tasks if they're meant to be done sequentially.
@@ -115,27 +127,18 @@ created_at_commit: <short SHA>
 last_reviewed_at_commit: <short SHA>
 last_touched_commit: <short SHA>
 done_date: null
-depends_on: []          # array of other task ids that must be DONE first
+depends_on: []          # task ids that must be DONE first; another project's task is `<slug>#<id>` (e.g. cogyard#166)
 related: []             # soft links, not blockers
-touches_paths:          # file/dir globs the task affects (relative to repo root)
+touches_paths:          # the FILES the task edits (relative to repo root) — never a whole top-level folder like docs/ or core/
   - <path>
 commit_policy: per-phase
 out_of_scope:
   - <category of change Claude must escalate before doing>
-parallel_safe: true     # set false if this task can't safely run alongside others
-coordination: []        # array of {with: <id>, hazard: <path>, rule: <coordination rule>}
-env:
-  planet: null          # populated by Pickup checklist via `cogyard env detect`
-  ports:
-    backend: null
-    frontend: null
-  hostname: null
-  worktree: null
+resources: []           # live things it uses that aren't files (prod-db, dns, a device) — tasks sharing one don't run at once
+env:                    # the shared claim; `cogyard env claim` fills it. The worktree and the chat id are this machine's (~/.cogyard/claims.json) — never in the file
   branch: null
-  db: development
   claimed_at: null
   claimed_by: null
-  claimed_by_session: null
 ---
 
 # NNN: <title>
@@ -168,7 +171,7 @@ A session picking this up has only this file and the project's auto-loaded docs.
 
 1. <path/to/doc> — <why>.
 2. <path/to/doc> — <why>.
-3. <any _tasks/ dependencies> — <why>.
+3. <any task dependencies> — <why>.
 
 **Relevant conventions** (from the project's decision/architecture docs and `CLAUDE.md`):
 - <durable rule that governs the change area>
@@ -178,22 +181,22 @@ A session picking this up has only this file and the project's auto-loaded docs.
 
 **Deploy verify:** <platform-specific — e.g. poll the deployed `/health` for a commit SHA matching HEAD>.
 
-**Branch strategy:** <branch name suggestion; coordination hazards with other in-flight branches, if any>.
+**Branch strategy:** <branch name suggestion; how to edit alongside other in-flight branches that touch the same files, if any>.
 
 ## Pickup checklist
 
 Run these in order before reading anything else.
 
-1. **Sync (optional, cross-machine only).** `cogyard tasks sync pull` — pulls from the canonical's git remote. For symlinked `_tasks/` shared between sibling clones on the same machine, no sync is needed (same files on disk).
-2. **If this file lacks frontmatter, generate it first.** Infer status from prose context, depends_on from prose mentions of other task numbers, touches_paths from file paths in the body. Confirm with user before bumping the HEAD anchors. Then `sync push "backfill frontmatter for NNN"`.
-3. **Detect environment.** `cogyard env detect` — populates planet / ports / hostname / worktree / branch in `env:`.
-4. **Check claim.** If `env.claimed_at` is set and `env.claimed_by_session` is not this session's id, STOP. Tell user: "Task N is claimed by <env.claimed_by, else session X> on planet Y, worktree Z since DATE. Continue (re-claim), pick a different task, or coordinate with the other session?" (`claimed_by` is the human holder — on team stores it may be a teammate, not another of your own sessions.)
-5. **Verify dev servers match the worktree.** For each port in `env.ports`: `cogyard env port-owner <port>`. If `matches: false`, surface to user: "backend on <port> is from worktree X, not this one — smoke-test results may not reflect your code."
+1. **Sync (optional, cross-machine only).** `cogyard tasks sync pull` — pulls from the canonical's git remote. For a symlinked shared store on the same machine, no sync is needed (same files on disk).
+2. **If this file lacks frontmatter, generate it first** — edit it at the path `cogyard tasks find NNN` prints, never `<repo>/.cogyard/tasks/…` (through a shared-store link that edit prompts, or is refused in a worktree). Infer status from prose context, depends_on from prose mentions of other task numbers, touches_paths from file paths in the body. Confirm with user before bumping the HEAD anchors. Then `cogyard tasks sync push "backfill frontmatter for NNN" -- <path from cogyard tasks find NNN>`.
+3. **Detect environment.** `cogyard env detect` — reports worktree / branch / ports / hostname for `env:`.
+4. **Check claim.** `cogyard env where <path from cogyard tasks find NNN>` prints the claim with this machine's session. If `claimed_at` is set and `session` is not this session's id, STOP. Tell user: "Task N is claimed by <env.claimed_by, else session X> in worktree Z since DATE. Continue (re-claim), pick a different task, or coordinate with the other session?" (`claimed_by` is the human holder — on team stores it may be a teammate, not another of your own sessions.)
+5. **Verify dev servers match the worktree.** For each port `cogyard env detect` reports: `cogyard env port-owner <port>`. If `matches: false`, surface to user: "backend on <port> is from worktree X, not this one — smoke-test results may not reflect your code."
 6. **Drift check.** `cogyard tasks drift <task-id-or-file>` — resolves the default branch (main/master), fetches it, and lists commits on `origin/<base>` that touched `touches_paths` since `last_reviewed_at_commit` (against origin, never the checkout's own HEAD, so a teammate's push counts before you pull). Read each commit message + diff over those paths.
 7. **Verify assumptions.** Walk through the body and confirm each stated assumption still holds.
 8. **For UI work:** write a 1-sentence sketch of where the page/component will appear (sidebar group, route path, parent component) and ask the user to confirm placement BEFORE implementing. UI placement decisions are the highest-risk class — catch the disagreement at minute 5, not minute 90.
-9. **Claim the task.** `cogyard env claim _tasks/NNN-*.md <session-id>`, bump `last_reviewed_at_commit` to current HEAD, then `cogyard tasks sync push "claim NNN from <planet>/<worktree>"`.
-10. **Claim lifecycle.** Claims persist until MERGE — `/merge-to-main` closes the task (DONE + done_date) and releases. Finishing work does NOT release; keep the claim while awaiting merge. Release only when returning the task to the pool (switch/abandon): `cogyard env release _tasks/NNN-*.md` then `cogyard tasks sync push "release NNN — back in the pool"`.
+9. **Claim the task.** `cogyard env claim <path from cogyard tasks find NNN> <session-id>`, which commits the claim itself; then bump `last_reviewed_at_commit` to current HEAD (editing the file at the path `cogyard tasks find NNN` prints, as in step 2) and commit that with `cogyard tasks sync push "bump review point NNN" -- <path from cogyard tasks find NNN>`.
+10. **Claim lifecycle.** Claims persist until MERGE — `merge-to-main` closes the task (DONE + done_date) and releases. Finishing work does NOT release; keep the claim while awaiting merge. Release only when returning the task to the pool (switch/abandon): `cogyard env release <path from cogyard tasks find NNN>`, which commits itself.
 
 ## Starting condition
 
@@ -227,9 +230,9 @@ Show the user the section headings you'll use and ask: "Anything missing? Anythi
 
 ### 6. Push the new task
 
-After saving the file: `cogyard tasks sync push "add task NNN: <title>"`. For symlinked `_tasks/`, this commits + pushes in the canonical dir. For normal `_tasks/` dirs (single-clone projects), it commits + pushes the project repo's main branch.
+After saving the file: `cogyard tasks sync push "add task NNN: <title>" -- <the file next-id printed> [files/NNN/…]` — the new task file, plus any attachment you wrote for it. It commits (and pushes, when the store has a remote) in the store's own git repo.
 
-For the symlink case, sibling clones (e.g., other planets) see the new file immediately via the filesystem — no git pull between clones needed.
+Every worktree sees the new file immediately through the link — no git pull needed.
 
 ## Pickup behavior is in `pickup-task`
 
@@ -250,7 +253,7 @@ Rules around what to do *while executing* a task — continuous execution, scope
 
 ## Backfill paths for pre-frontmatter task files
 
-Older `_tasks/*.md` files (written before this v2 spec) have no YAML frontmatter. They show up in the index's "Unknown" bucket. Three sanctioned paths to migrate them:
+Older task files (written before this v2 spec) have no YAML frontmatter. They show up in the index's "Unknown" bucket. Three sanctioned paths to migrate them:
 
 1. **On-pickup (primary).** When Claude picks up an older task, the Pickup checklist's first step backfills frontmatter inferred from the body. This handles every active task naturally; the dead tail stays unmigrated indefinitely with no cost.
 2. **Heuristic bulk.** `cogyard tasks analyze` classifies unknown-frontmatter tasks (dry-run by default; `--apply` writes the inferred frontmatter).
@@ -267,4 +270,4 @@ Do NOT write a one-shot bulk-migration script that touches all old files at once
 
 ## Worked examples (for reference)
 
-Good task files to study are whichever existing `_tasks/NNN-*.md` files in the current project score well against the template: a filled "What this is", explicit starting conditions, checkboxed scope, runnable acceptance. Read one or two recent ones before writing, if any exist.
+Good task files to study are whichever existing `NNN-*.md` task files in the current project score well against the template: a filled "What this is", explicit starting conditions, checkboxed scope, runnable acceptance. Read one or two recent ones before writing, if any exist.

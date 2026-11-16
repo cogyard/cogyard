@@ -7,8 +7,11 @@
     "start": "ng serve --proxy-config proxy.conf.mjs",
     "prebuild": "node ../scripts/generate-version.mjs && node scripts/copy-material-icons.mjs",
     "build": "ng build",
+    "pretypecheck": "node ../scripts/generate-version.mjs",
+    "typecheck": "ngc -p tsconfig.app.json --noEmit",
     "postbuild": "node -e \"require('node:fs').writeFileSync('dist/.build-complete', String(Date.now()))\"",
     "watch": "ng build --watch --configuration development",
+    "pretest": "node ../scripts/generate-version.mjs",
     "test": "ng test"
   },
   "private": true,

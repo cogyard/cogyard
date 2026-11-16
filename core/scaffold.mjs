@@ -3,8 +3,9 @@
 // The SINGLE source of truth both the CLI (`cogyard init` / `cogyard onboard`)
 // and the portal (Phase 4 POST through the requireSameOrigin seam) call to turn a
 // directory into a first-class cogyard project. Agent-agnostic: no
-// `/.claude/` literals beyond the worktree-config path that the port hook itself
-// keys on — that path is the documented opt-in, not a Claude-specific behaviour.
+// `/.claude/` literals. The worktree config — the opt-in the port hook keys on —
+// is written to `.cogyard/worktree.json` (task 159); core/worktree-config.mjs
+// owns both that path and the old `.claude/` one it replaced.
 //
 // Two guarantees this module must keep:
 //   * IDEMPOTENT — safe to re-run on a half-set-up project; a second run reports
@@ -14,7 +15,11 @@
 //     original content is preserved as a prefix). The whole reason this task
 //     exists is to make project creation safe, so clobbering is a hard no.
 //
-// `ensureProjectWiring()` orchestrates the eight wiring steps; `convertToSharedStore()`
+// The one sanctioned edit of existing files is step 9 (task 133): a process
+// document — a merge or commit process beside cogyard's skill — is reduced to a
+// pointer, and only on the owner's explicit choice. See core/process-docs.mjs.
+//
+// `ensureProjectWiring()` orchestrates the nine wiring steps; `convertToSharedStore()`
 // is the extracted, reusable core of the old cli/tasks.mjs `cmdConvert` (which now
 // calls it). Skeleton generators are init-only (onboard adopts what's there).
 
@@ -22,11 +27,14 @@ import {
   existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync,
   lstatSync, realpathSync, readlinkSync, symlinkSync, rmSync, cpSync,
 } from 'node:fs';
-import { join, dirname, basename, resolve } from 'node:path';
+import { join, dirname, basename, resolve, relative } from 'node:path';
 import { PROJECTS_ROOT } from './paths.mjs';
-import { tryExec, execLoud } from './exec.mjs';
+import { tryExec, execLoud, gitIdentityFlags } from './exec.mjs';
 import { readRegistry, registerProject } from './registry.mjs';
-import { KINDS, scaffoldFor } from './scaffolds/index.mjs';
+import { KINDS, scaffoldFor, platformWarnings } from './scaffolds/index.mjs';
+import { WORKTREE_CONFIG } from './worktree-config.mjs';
+import { TASKS_DIR, IN_REPO_TASKS_DIR, TASKS_IGNORE, locateTasksDir, tasksDirOf, ensureTasksLinkIgnored } from './tasks-dir.mjs';
+import { auditProcess, describeAudit, reconcileProcess } from './process-docs.mjs';
 
 // Kinds come from the scaffold registry: built-ins ship in
 // core/scaffolds/builtins.mjs, community kinds drop into ~/.cogyard/scaffolds/.
@@ -55,28 +63,47 @@ function inventoryDir(root) {
   return out;
 }
 
-// A `git commit` needs a resolvable author identity. Fresh machines often have
-// none configured, which would break `init`/`convert` (the OSS clean-machine
-// gate hit exactly this). Fall back to a neutral cogyard identity ONLY when the
-// user has none — otherwise their configured identity is used.
-function gitIdentityFlags(cwd) {
-  const name = tryExec('git config user.name', { cwd });
-  const email = tryExec('git config user.email', { cwd });
-  return (name && email) ? '' : '-c user.name=cogyard -c user.email=cogyard@localhost ';
-}
-
+// Gives a project its shared task store and the `.cogyard/tasks` link to it,
+// ignored by `.cogyard/.gitignore` (the root `.gitignore` is untouched).
+// An existing in-repo `_tasks/` folder (IN_REPO_TASKS_DIR) is ADOPTED: copied
+// into the new store, verified, then removed from the repo. With nothing to
+// adopt, the store starts empty. An old-style `_tasks` LINK is refused with the
+// steps to replace it — cogyard no longer reads that name (task 183).
 export function convertToSharedStore({ repoRoot, store, remote, log = () => {} }) {
-  const tasksDir = join(repoRoot, '_tasks');
-  let l = null;
-  try { l = lstatSync(tasksDir); } catch {}
-  if (!l) throw new Error('no _tasks/ to convert — create it first');
-  if (l.isSymbolicLink()) {
-    return { converted: false, reason: 'already-symlink', store: readlinkSync(tasksDir) };
+  const found = locateTasksDir(repoRoot);
+  if (found) {
+    if (lstatSync(found.path).isSymbolicLink()) {
+      const target = readlinkSync(found.path);
+      // A link to a store that no longer exists (moved or deleted) is not a
+      // store: say so instead of "nothing to do" (task 169). Where the store
+      // went is unknowable, so this never repoints the link itself.
+      if (!existsSync(found.path)) {
+        const reg = readRegistry().find((p) => resolve(p.path) === repoRoot);
+        const usual = join(PROJECTS_ROOT, '_tasks', reg ? reg.slug : basename(repoRoot));
+        const fix = existsSync(usual)
+          ? `A store exists at the usual place, ${usual} — if it is this project's, point the link at it: ln -sfn ${JSON.stringify(usual)} ${TASKS_DIR}`
+          : `Point the link at the store where it is now (ln -sfn <store path> ${TASKS_DIR}), or remove the link (rm ${TASKS_DIR}) and re-run to start an empty store`;
+        throw new Error(`${TASKS_DIR} is a link to ${target}, which does not exist — the store was moved or deleted. ${fix}`);
+      }
+      return { converted: false, reason: 'already-symlink', store: target };
+    }
+    throw new Error(`${TASKS_DIR} is a folder, not a link to a task store — rename it to ${IN_REPO_TASKS_DIR}/ (which convert adopts) and re-run`);
   }
+  const linkPath = join(repoRoot, TASKS_DIR);
+  const srcRel = IN_REPO_TASKS_DIR;
+  const srcDir = join(repoRoot, srcRel);
+  let srcL = null;
+  try { srcL = lstatSync(srcDir); } catch {}
+  if (srcL?.isSymbolicLink()) {
+    throw new Error(`${srcRel} is an old-style link to a task store (→ ${readlinkSync(srcDir)}), a name cogyard no longer reads. Replace it: link ${TASKS_DIR} to the same target, add /tasks to ${TASKS_IGNORE}, then remove ${srcRel}`);
+  }
+  const adopt = !!srcL;
 
   // Clean gate: the conversion commit must contain ONLY the conversion.
-  const dirty = tryExec('git status --porcelain -- _tasks', { cwd: repoRoot });
-  if (dirty) throw new Error(`_tasks/ has uncommitted/untracked changes — commit or stash them first:\n${dirty}`);
+  if (adopt) {
+    const dirty = tryExec(`git status --porcelain -- ${JSON.stringify(srcRel)}`, { cwd: repoRoot });
+    if (dirty) throw new Error(`${srcRel}/ has uncommitted/untracked changes — commit or stash them first:\n${dirty}`);
+  }
 
   // Default store: every project's store lives under ONE parent folder,
   // <PROJECTS_ROOT>/_tasks/<slug> (registry slug when registered, else basename).
@@ -86,25 +113,32 @@ export function convertToSharedStore({ repoRoot, store, remote, log = () => {} }
   if (existsSync(resolvedStore)) throw new Error(`store path already exists: ${resolvedStore} — refusing to merge into an existing directory`);
   for (const p of readRegistry()) {
     let canon = null;
-    try { canon = realpathSync(join(p.path, '_tasks')); } catch { continue; }
-    if (canon === resolvedStore) throw new Error(`${resolvedStore} is already the canonical _tasks of registered project "${p.slug}" (${p.path}) — pick a different store`);
+    try { canon = realpathSync(tasksDirOf(p.path)); } catch { continue; }
+    if (canon === resolvedStore) throw new Error(`${resolvedStore} is already the task store of registered project "${p.slug}" (${p.path}) — pick a different store`);
   }
 
-  // 1. Copy-first. Never copy a nested .git — the store gets a fresh `git init`.
-  cpSync(tasksDir, resolvedStore, { recursive: true, filter: (src) => basename(src) !== '.git' });
-  // 2. Verify before touching the originals.
-  const src = inventoryDir(tasksDir);
-  const dst = inventoryDir(resolvedStore);
-  if (JSON.stringify(src) !== JSON.stringify(dst)) {
-    try { rmSync(resolvedStore, { recursive: true, force: true }); } catch {}
-    throw new Error('copy verification FAILED (file list/sizes differ) — originals untouched, bad copy removed');
+  if (adopt) {
+    // 1. Copy-first. Never copy a nested .git — the store gets a fresh `git init`.
+    cpSync(srcDir, resolvedStore, { recursive: true, filter: (src) => basename(src) !== '.git' });
+    // 2. Verify before touching the originals.
+    const src = inventoryDir(srcDir);
+    const dst = inventoryDir(resolvedStore);
+    if (JSON.stringify(src) !== JSON.stringify(dst)) {
+      try { rmSync(resolvedStore, { recursive: true, force: true }); } catch {}
+      throw new Error('copy verification FAILED (file list/sizes differ) — originals untouched, bad copy removed');
+    }
+    log(`Copied ${Object.keys(src).length} files → ${resolvedStore} (verified).`);
+  } else {
+    mkdirSync(resolvedStore, { recursive: true });
+    writeFileSync(join(resolvedStore, '.gitkeep'), '');
+    log(`Created an empty task store at ${resolvedStore}.`);
   }
-  log(`Copied ${Object.keys(src).length} files → ${resolvedStore} (verified).`);
 
   // 3. The store becomes its own git repo on branch `tasks`.
   execLoud('git init -b tasks', { cwd: resolvedStore });
   execLoud('git add .', { cwd: resolvedStore });
-  execLoud(`git ${gitIdentityFlags(resolvedStore)}commit -m ${JSON.stringify(`convert: import _tasks from ${basename(repoRoot)}`)}`, { cwd: resolvedStore });
+  const storeMsg = adopt ? `convert: import ${srcRel} from ${basename(repoRoot)}` : `init: task store for ${basename(repoRoot)}`;
+  execLoud(`git ${gitIdentityFlags(resolvedStore)}commit -m ${JSON.stringify(storeMsg)}`, { cwd: resolvedStore });
   if (remote && typeof remote === 'string') {
     execLoud(`git remote add origin ${JSON.stringify(remote)}`, { cwd: resolvedStore });
     try { execLoud('git push -u origin tasks', { cwd: resolvedStore }); }
@@ -113,40 +147,46 @@ export function convertToSharedStore({ repoRoot, store, remote, log = () => {} }
     log('Local-only store (no remote). `sync push` will commit locally and skip pushing.');
   }
 
-  // 4. Only now remove the (verified-copied) originals and mount the symlink.
-  execLoud('git rm -r -q _tasks', { cwd: repoRoot });
-  if (existsSync(tasksDir)) rmSync(tasksDir, { recursive: true, force: true });
-  symlinkSync(resolvedStore, tasksDir); // ABSOLUTE on purpose — worktrees mount the same target
-  const giPath = join(repoRoot, '.gitignore');
-  const gi = existsSync(giPath) ? readFileSync(giPath, 'utf8') : '';
-  if (!gi.split('\n').some((x) => x.trim() === '_tasks' || x.trim() === '_tasks/')) {
-    writeFileSync(giPath, gi + (gi === '' || gi.endsWith('\n') ? '' : '\n') + '# task system: _tasks is a symlink to the shared store (cogyard convert)\n_tasks\n');
+  // 4. Only now remove the (verified-copied) originals and mount the link.
+  // The commit names its paths, so nothing the owner had staged rides along.
+  const paths = [];
+  if (adopt) {
+    execLoud(`git rm -r -q -- ${JSON.stringify(srcRel)}`, { cwd: repoRoot });
+    if (existsSync(srcDir)) rmSync(srcDir, { recursive: true, force: true });
+    paths.push(srcRel);
   }
-  execLoud('git add .gitignore', { cwd: repoRoot });
-  execLoud(`git ${gitIdentityFlags(repoRoot)}commit -m ${JSON.stringify(`convert _tasks/ to shared store at ${resolvedStore}`)}`, { cwd: repoRoot });
+  mkdirSync(dirname(linkPath), { recursive: true });
+  symlinkSync(resolvedStore, linkPath); // ABSOLUTE on purpose — worktrees mount the same target
+  if (ensureTasksLinkIgnored(repoRoot)) {
+    execLoud(`git add -- ${JSON.stringify(TASKS_IGNORE)}`, { cwd: repoRoot });
+    paths.push(TASKS_IGNORE);
+  }
+  if (paths.length) {
+    const msg = adopt ? `convert ${srcRel}/ to shared store at ${resolvedStore}` : `link ${TASKS_DIR} to the shared task store at ${resolvedStore}`;
+    execLoud(`git ${gitIdentityFlags(repoRoot)}commit -m ${JSON.stringify(msg)} -- ${paths.map((x) => JSON.stringify(x)).join(' ')}`, { cwd: repoRoot });
+  }
 
   return { converted: true, store: resolvedStore };
 }
 
 // --- Join an EXISTING team store -----------------------------------
 // Member-#2 onboarding: the team lead ran `convert --remote <url>`; a new member
-// clones the project repo and gets a gitignored (dangling) _tasks symlink and no
+// clones the project repo and gets no link to the store (it is gitignored) and no
 // store. `join` closes that gap in one command: clone the store (branch tasks) to
-// <PROJECTS_ROOT>/_tasks/<slug>, mount the absolute symlink, register the project.
+// <PROJECTS_ROOT>/_tasks/<slug>, mount the absolute link (.cogyard/tasks), register the project.
 // Same guarantees as the rest of this module: idempotent (healthy setup → no-op
 // messages) and additive-only (never repoints a symlink at a DIFFERENT store).
 export function joinSharedStore({ repoRoot, remote, store, slug, log = () => {} }) {
   if (!remote || typeof remote !== 'string') throw new Error('join needs the store remote URL');
-  const tasksDir = join(repoRoot, '_tasks');
   const reg = readRegistry().find((p) => resolve(p.path) === repoRoot);
   const storeName = slug || (reg ? reg.slug : basename(repoRoot));
   const resolvedStore = resolve(String(store || join(PROJECTS_ROOT, '_tasks', storeName)));
   if (resolvedStore === repoRoot || resolvedStore.startsWith(repoRoot + '/')) throw new Error('store must live OUTSIDE the repo (default: <COGYARD_PROJECTS_ROOT>/_tasks/<slug>)');
 
-  let l = null;
-  try { l = lstatSync(tasksDir); } catch {}
+  const found = locateTasksDir(repoRoot);
+  const l = found ? lstatSync(found.path) : null;
   if (l && !l.isSymbolicLink()) {
-    throw new Error('_tasks exists as a normal directory — this project already has a local store. Use `cogyard tasks convert --remote <url>` to publish it, or move it aside before joining.');
+    throw new Error(`${relative(repoRoot, found.path)} is a folder, not a link to a task store. To publish its tasks, rename it to ${IN_REPO_TASKS_DIR}/ and run "cogyard tasks convert --remote <url>"; otherwise move it aside before joining.`);
   }
 
   // Store: reuse an existing clone of the SAME remote; clone fresh otherwise.
@@ -163,29 +203,30 @@ export function joinSharedStore({ repoRoot, remote, store, slug, log = () => {} 
   const branch = tryExec('git branch --show-current', { cwd: resolvedStore });
   if (branch !== 'tasks') throw new Error(`store is on branch ${branch || '?'} (expected tasks)`);
 
-  // Mount the ABSOLUTE symlink (worktrees resolve the same target via `mount`).
-  if (l && l.isSymbolicLink()) {
+  // Mount the ABSOLUTE link `.cogyard/tasks` (worktrees resolve the same target
+  // via `mount`). An existing one is kept.
+  const tasksDir = l ? found.path : join(repoRoot, TASKS_DIR);
+  const name = relative(repoRoot, tasksDir);
+  if (l) {
     if (existsSync(tasksDir)) {
       const current = realpathSync(tasksDir);
-      if (current === realpathSync(resolvedStore)) log(`_tasks already → ${resolvedStore}. Nothing to mount.`);
-      else throw new Error(`_tasks is a symlink to a DIFFERENT store (${current}) — refusing to repoint; remove it first if that is intended`);
+      if (current === realpathSync(resolvedStore)) log(`${name} already → ${resolvedStore}. Nothing to mount.`);
+      else throw new Error(`${name} is a link to a DIFFERENT store (${current}) — refusing to repoint; remove it first if that is intended`);
     } else {
       const old = readlinkSync(tasksDir);
       rmSync(tasksDir);
       symlinkSync(resolvedStore, tasksDir);
-      log(`Replaced broken symlink (was → ${old}) with _tasks → ${resolvedStore}`);
+      log(`Replaced broken link (was → ${old}) with ${name} → ${resolvedStore}`);
     }
   } else {
+    mkdirSync(dirname(tasksDir), { recursive: true });
     symlinkSync(resolvedStore, tasksDir);
-    log(`Mounted _tasks → ${resolvedStore}`);
+    log(`Mounted ${name} → ${resolvedStore}`);
   }
 
-  // .gitignore: normally already committed by the lead's convert; append only if missing.
-  const giPath = join(repoRoot, '.gitignore');
-  const gi = existsSync(giPath) ? readFileSync(giPath, 'utf8') : '';
-  if (!gi.split('\n').some((x) => x.trim() === '_tasks' || x.trim() === '_tasks/')) {
-    writeFileSync(giPath, gi + (gi === '' || gi.endsWith('\n') ? '' : '\n') + '# task system: _tasks is a symlink to the shared store (cogyard join)\n_tasks\n');
-    log('Added _tasks to .gitignore (uncommitted — the lead\'s convert usually ships this; commit if yours lacked it).');
+  // Ignore the link: normally already committed by the lead's convert; add only if missing.
+  if (ensureTasksLinkIgnored(repoRoot)) {
+    log(`Added /tasks to ${TASKS_IGNORE} (uncommitted — the lead's convert usually ships this; commit if yours lacked it).`);
   }
 
   const entry = registerProject(repoRoot);
@@ -226,37 +267,72 @@ process.stdout.write(\`generate-version: v\${version} (\${commit || 'no-git'}) �
 `;
 }
 
-function worktreeConfig(slug, kind) {
+// The descriptor's dev command (task 162): omitted = 'npm run dev', null = the
+// kind has no dev server.
+const DEFAULT_DEV_SCRIPT = 'npm run dev';
+function devScriptFor(desc) {
+  return desc.devScript === undefined ? DEFAULT_DEV_SCRIPT : desc.devScript;
+}
+
+// `devScript` null writes a config with NO dev_script and no preview fields:
+// the worktree still gets its ports, and every reader (the session hook, the
+// Stop-hook server check — core/worktree-config.mjs devScriptOf) reads the
+// missing field as "no dev server here", never as a broken config.
+function worktreeConfig(slug, devScript) {
+  if (!devScript) {
+    return JSON.stringify({
+      _comment: "Worktree port wiring (cogyard). This project has no dev server, so no dev_script is named and no preview entry is registered. Every worktree still gets its own reserved ports, and ~/.cogyard/ports.json is the ONLY place they exist; anything that binds one asks for it at runtime — eval \"$(cogyard env ports --shell || echo 'exit 1')\". See docs/PROJECT-INIT.md.",
+      project_name: slug,
+      port_vars: { PORT: 'backend', FRONTEND_PORT: 'frontend' },
+    }, null, 2) + '\n';
+  }
   return JSON.stringify({
-    _comment: "Worktree port wiring (cogyard). The SessionStart hook merges this worktree's reserved PORT/FRONTEND_PORT into .env.worktree. Your `npm run dev` MUST read those — source .env.worktree and bind $FRONTEND_PORT (and $PORT) — never hardcode a port, or the preview lands on the wrong one. See docs/PROJECT-INIT.md.",
+    _comment: `Worktree port wiring (cogyard). Every worktree gets its own reserved ports, and ~/.cogyard/ports.json is the ONLY place they exist. Your \`${devScript}\` MUST ask for them at runtime — eval "$(cogyard env ports --shell || echo 'exit 1')" — and must never read a copy out of a file: a copy rots, and a rotted copy is how two worktrees silently bind one port. The \`|| echo 'exit 1'\` is load-bearing, because eval reports its own status and not the command's. See docs/PROJECT-INIT.md.`,
     project_name: slug,
-    kind,
-    dev_script: 'npm run dev',
+    dev_script: devScript,
     launch_name: 'dev',
     port_vars: { PORT: 'backend', FRONTEND_PORT: 'frontend' },
     preview_port_var: 'FRONTEND_PORT',
-    // Merge the reserved ports into .env.worktree so the dev script can source
-    // them (the cogyard dev.sh pattern). The hook skips a merge whose source is
-    // missing, so ensureProjectWiring also seeds .env.worktree.defaults.
-    env_files: [{ source: '.env.worktree.defaults', target: '.env.worktree', strategy: 'merge' }],
+    // No env_files. The ports are asked for at runtime, so there is no copy to
+    // merge into a file — which is the whole point. A project that later wants
+    // SHARED, non-port dev env vars in its worktrees can add an env_files entry
+    // then; it must never carry a port.
   }, null, 2) + '\n';
 }
 
-// Base env merged per-worktree into the (gitignored) .env.worktree; committed.
-function envWorktreeDefaults(slug) {
-  return `# .env.worktree.defaults — base dev env for ${slug}.
-# The cogyard SessionStart hook copies this to .env.worktree in each worktree and
-# appends that worktree's reserved ports (PORT, FRONTEND_PORT). Add shared dev env
-# vars here. Your dev script should: \`. ./.env.worktree\` then bind $FRONTEND_PORT.
-# .env.worktree itself is generated per-worktree and gitignored — never commit it.
-`;
+// The git repo a not-yet-created (or empty) init target would land inside, or
+// null. Asks git from the target itself when it exists, else from its nearest
+// existing ancestor — the folder the target would be created under. An empty
+// target that is its OWN repo (a fresh `git init`) is not "inside" anything.
+function enclosingRepo(target) {
+  let probe = target;
+  while (!existsSync(probe)) {
+    const parent = dirname(probe);
+    if (parent === probe) return null;
+    probe = parent;
+  }
+  const top = tryExec('git rev-parse --show-toplevel', { cwd: probe });
+  if (!top) return null;
+  if (probe === target && realpathSync(top) === realpathSync(target)) return null;
+  return top;
 }
 
 // prepareInitDir — the greenfield precondition for `init`: create the target dir
 // if absent, or accept an empty one; refuse a non-empty dir (that's onboard's
 // job). Shared by the CLI and the portal route so both behave identically.
+//
+// It also refuses a target inside an existing git repo (task 182), BEFORE
+// creating anything: the wiring canonicalises to the git toplevel, so it would
+// register, gitignore-append and commit into the ENCLOSING repo instead of
+// giving the new folder a repo of its own.
 export function prepareInitDir(targetPath) {
   const target = resolve(targetPath);
+  const outer = enclosingRepo(target);
+  if (outer) {
+    throw new Error(`${target} is inside the git repo at ${outer} — init creates a project in a folder of its own, ` +
+      `and here it would wire that repo instead. Choose a folder outside ${outer}, ` +
+      `or adopt that repo itself with \`cogyard onboard ${outer}\` (in the portal: Add existing).`);
+  }
   if (existsSync(target)) {
     const entries = readdirSync(target).filter((f) => f !== '.git');
     if (entries.length) throw new Error(`${target} already exists and is non-empty — use onboard to adopt it`);
@@ -283,8 +359,14 @@ const GITIGNORE_ESSENTIALS = [
 //
 // `scaffold` (default false) gates the per-kind app skeleton: init passes true,
 // onboard false (it adopts what's there). The shared wiring runs for both.
+//
+// `reconcile` ({ <cogyard skill>: 'adopt' | 'keep' | 'facts' }) is the owner's
+// choice for a process doc that sits beside one of cogyard's skills (step 9).
+// Without one, a collision is reported in `warnings` and left for the owner —
+// never guessed. The report's `process` is the audit after step 9, so a caller
+// that can ask (the CLI, in a terminal) asks about what is left.
 export function ensureProjectWiring({
-  path: projPath, kind, wiring, remote, scaffold = false, log = () => {},
+  path: projPath, kind, wiring, remote, scaffold = false, reconcile = {}, log = () => {},
 }) {
   if (!projPath) throw new Error('ensureProjectWiring: path is required');
   const desc = scaffoldFor(kind); // throws with the registry's kind list on an unknown kind
@@ -368,31 +450,47 @@ export function ensureProjectWiring({
   }
 
   // 6. version + commit stamping (descriptor-gated; library stamps via package.json).
-  if (desc.versionStamp !== false) ensureFile('scripts/generate-version.mjs', generateVersionScript());
+  // A function is the kind's own way to stamp (task 162) — an Xcode build phase,
+  // a firmware header — and replaces the npm stamper rather than adding to it.
+  if (typeof desc.versionStamp === 'function') {
+    const files = Object.entries(desc.versionStamp(slug) || {});
+    for (const [rel, content] of files) ensureFile(rel, content);
+    if (!files.length) rec('version stamp', 'skipped', `kind=${kind} seeds no stamping files`);
+  } else if (desc.versionStamp !== false) ensureFile('scripts/generate-version.mjs', generateVersionScript());
   else rec('scripts/generate-version.mjs', 'skipped', `kind=${kind} stamps via package.json`);
 
-  // 7. worktree wiring — the REAL opt-in the port hook keys on. Pair it with a
-  // committed .env.worktree.defaults so the hook's env_files merge has a source
-  // to write the reserved ports into (a dev script sources .env.worktree).
-  if (wantWiring) {
-    ensureFile('.claude/worktree-config.json', worktreeConfig(slug, kind));
-    ensureFile('.env.worktree.defaults', envWorktreeDefaults(slug));
+  // 7. worktree wiring — the REAL opt-in the port hook keys on. Nothing else is
+  // seeded: a dev script asks `cogyard env ports` at runtime, so there is no
+  // port copy in any file and therefore nothing that can rot out of date.
+  if (!wantWiring) {
+    rec(WORKTREE_CONFIG, 'skipped', `kind=${kind} opts out of worktree ports`);
   } else {
-    rec('.claude/worktree-config.json', 'skipped', `kind=${kind} opts out of worktree ports`);
+    ensureFile(WORKTREE_CONFIG, worktreeConfig(slug, devScriptFor(desc)));
   }
 
-  // 8a. ensure _tasks/ exists (so the store step has something to convert / mount).
-  const tasksDir = join(repoRoot, '_tasks');
-  let tl = null;
-  try { tl = lstatSync(tasksDir); } catch {}
-  if (!tl) {
-    mkdirSync(tasksDir, { recursive: true });
-    writeFileSync(join(tasksDir, '.gitkeep'), '');
-    rec('_tasks/', 'created', 'empty store seeded');
-  } else if (tl.isSymbolicLink()) {
-    rec('_tasks/', 'present', `symlink → ${readlinkSync(tasksDir)}`);
-  } else {
-    rec('_tasks/', 'present', 'normal directory');
+  // 7b. onboard only: does what we are adopting look like an npm web app at
+  // all? An Xcode project or firmware says the defaults just seeded are wrong;
+  // warn and carry on (task 162). init starts from an empty folder — nothing to see.
+  if (!scaffold) {
+    const seeded = [];
+    if (wantWiring && devScriptFor(desc) && created.includes(WORKTREE_CONFIG)) seeded.push(`dev_script "${devScriptFor(desc)}" in ${WORKTREE_CONFIG}`);
+    if (desc.versionStamp === true && created.includes('scripts/generate-version.mjs')) seeded.push('scripts/generate-version.mjs');
+    warnings.push(...platformWarnings(repoRoot, kind, { seeded }));
+  }
+
+  // 8a. what the store step below starts from: an existing `.cogyard/tasks`
+  // link (kept), an in-repo `_tasks/` folder the repo already had (adopted into
+  // the new store), or nothing (the store starts empty).
+  const foundTasks = locateTasksDir(repoRoot);
+  const inRepoDir = join(repoRoot, IN_REPO_TASKS_DIR);
+  let inRepoL = null;
+  try { inRepoL = lstatSync(inRepoDir); } catch {}
+  const adoptInRepo = !foundTasks && inRepoL && !inRepoL.isSymbolicLink();
+  if (foundTasks) {
+    const fl = lstatSync(foundTasks.path);
+    rec(`${TASKS_DIR}/`, 'present', fl.isSymbolicLink() ? `symlink → ${readlinkSync(foundTasks.path)}` : 'a folder, not a link to a task store — refused at the store step below');
+  } else if (adoptInRepo) {
+    rec(`${IN_REPO_TASKS_DIR}/`, 'present', 'in-repo folder — adopted into the shared store below');
   }
 
   // 8b. commit our additions so the store step (convert) sees a clean, tracked _tasks.
@@ -404,7 +502,7 @@ export function ensureProjectWiring({
     }
   } else {
     for (const rel of created) execLoud(`git add ${JSON.stringify(rel)}`, { cwd: repoRoot });
-    if (existsSync(tasksDir) && !(tl && tl.isSymbolicLink())) execLoud('git add _tasks', { cwd: repoRoot });
+    if (adoptInRepo) execLoud(`git add -- ${JSON.stringify(IN_REPO_TASKS_DIR)}`, { cwd: repoRoot });
     if (tryExec('git diff --cached --name-only', { cwd: repoRoot })) {
       execLoud(`git ${gitIdentityFlags(repoRoot)}commit -m ${JSON.stringify('chore: cogyard project wiring')}`, { cwd: repoRoot });
       rec('commit', 'created', 'wiring commit');
@@ -413,14 +511,37 @@ export function ensureProjectWiring({
     }
   }
 
-  // 8c. task store — always shared (`normal` is no longer a choice). convert
-  // is the single source of truth; it no-ops when already a symlink (idempotent),
-  // and converts a pre-existing in-repo _tasks/ dir to shared (that IS the fix
-  // doctor previously only named for a legacy normal-dir project).
-  let storePath = realpathSync(tasksDir);
+  // 8c. the task store — the only model. convert is the single source of
+  // truth; it no-ops when already a symlink (idempotent), refuses a folder at
+  // .cogyard/tasks,
+  // adopts a pre-existing in-repo _tasks/ folder, or creates an empty store.
+  let storePath;
   const r = convertToSharedStore({ repoRoot, remote, log });
   if (r.converted) { storePath = r.store; rec('store', 'created', `shared → ${r.store}`); }
-  else { storePath = realpathSync(tasksDir); rec('store', 'present', `already shared → ${storePath}`); }
+  else { storePath = realpathSync(tasksDirOf(repoRoot)); rec('store', 'present', `already shared → ${storePath}`); }
 
-  return { repoRoot, slug, kind, store: 'shared', storePath, steps, warnings };
+  // 9. one process, one place (task 133). A merge or commit process in a doc
+  // beside cogyard's skill is moved into one place, but only on the owner's
+  // choice (`reconcile`); otherwise it is reported and `tasks doctor` keeps
+  // flagging it.
+  const reconciled = [];
+  let audit = auditProcess(repoRoot, { slug });
+  for (const skill of [...new Set(audit.collisions.map((c) => c.skill))]) {
+    const outcome = reconcile[skill];
+    if (!outcome) continue;
+    const r = reconcileProcess(repoRoot, { skill, outcome, collisions: audit.collisions, slug });
+    reconciled.push({ skill, outcome, ...r });
+    rec('process docs', 'created', `${skill}: ${outcome} → ${r.changed.join(', ')} (commit ${r.commit})`);
+    for (const n of r.notes) log(`      ${n}`);
+  }
+  if (reconciled.length) audit = auditProcess(repoRoot, { slug });
+  if (!reconciled.length) {
+    const left = audit.collisions.length + audit.shadowed.length + audit.stale.length;
+    if (left) rec('process docs', 'skipped', `${left} finding(s) — see warnings; nothing changed`);
+    else if (audit.reconciled.length) rec('process docs', 'present', `already reconciled (${[...new Set(audit.reconciled.map((x) => `${x.skill}: ${x.outcome}`))].join(', ')})`);
+    else rec('process docs', 'present', 'no process doc beside cogyard\'s skills');
+  }
+  warnings.push(...describeAudit(audit));
+
+  return { repoRoot, slug, kind, storePath, steps, warnings, process: audit, reconciled };
 }

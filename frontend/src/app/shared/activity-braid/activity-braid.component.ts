@@ -12,7 +12,7 @@ type Metric = 'attention' | 'cost';
 const MAX_LANES = 10;
 
 interface BraidCell { date: string; level: number; approx: boolean; title: string; }
-interface Lane { slug: string; color: string; cells: BraidCell[]; }
+interface Lane { slug: string; title: string; color: string; cells: BraidCell[]; }
 
 function dayKey(d: Date): string {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -106,8 +106,16 @@ export class ActivityBraidComponent {
     const laneDefs = top.map((x) => ({ slug: x, members: [x], color: colors[x] }));
     if (rest.length) laneDefs.push({ slug: `(${rest.length} more)`, members: rest, color: 'var(--app-fg-muted)' });
 
+    // A folded lane (task 130) says on hover what it is made of.
+    const folded = (slug: string) => {
+      const l = a.lanes?.[slug];
+      if (!l) return slug;
+      const what = l.kind === 'jobs' ? "cogyard's own scheduled agent calls — cost only, never attention" : 'sessions run outside every registered project';
+      return `${slug}: ${what}\n${l.members.join(', ')}`;
+    };
     return laneDefs.map((def) => ({
       slug: def.slug,
+      title: folded(def.slug),
       color: def.color,
       cells: days.map((date) => {
         let attentionMin = 0, prompts = 0, costUSD = 0, costApproxUSD = 0;

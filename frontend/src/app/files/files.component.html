@@ -18,27 +18,23 @@
 
 <div class="layout">
   <aside class="tree">
-    <div class="tree-bar">
-      <span class="tree-toggles">
-        <button class="btn-toggle" [class.on]="changedOnly()" (click)="changedOnly.set(!changedOnly())" [disabled]="!changedCount()">
-          changed only @if (vsRef()) { <span class="cnt">{{ changedCount() }}</span> }
-        </button>
-        <button class="btn-toggle" [class.on]="showIgnored()" (click)="toggleShowIgnored()"
-                pTooltip="also list gitignored files (node_modules, dist, .env…) — can take a while on big repos">
-          show gitignored
-          @if (loadingIgnored()) {
-            <svg class="ig-spin" viewBox="0 0 24 24" width="11" height="11" fill="none"
-                 stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
-              <path d="M21 12a9 9 0 1 1-9-9" />
-            </svg>
-          }
-        </button>
-      </span>
+    <!-- Above the tree: only what changes the tree's listing (task 224). -->
+    <div class="bar">
+      <label class="swl" pTooltip="also list gitignored files (node_modules, dist, .env…) — can take a while on big repos" tooltipPosition="bottom">
+        <p-toggleswitch [ngModel]="showIgnored()" (ngModelChange)="toggleShowIgnored()" />
+        show gitignored
+        @if (loadingIgnored()) {
+          <svg class="ig-spin" viewBox="0 0 24 24" width="11" height="11" fill="none"
+               stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true">
+            <path d="M21 12a9 9 0 1 1-9-9" />
+          </svg>
+        }
+      </label>
     </div>
     @if (loadingTree()) {
       <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
     } @else if (!treeNodes().length) {
-      <div class="empty">{{ changedOnly() ? 'No changes vs ' + (vsRef() || 'main') : 'No files.' }}</div>
+      <div class="empty">{{ !hideUnchanged() ? 'No files.' : base() === 'head' ? 'Nothing uncommitted. Every change is in a commit.' : onCommitSide() ? 'No changes since ' + baseLabel() : 'No changes vs ' + baseLabel() }}</div>
     } @else {
       <div class="rows">
         <p-tree styleClass="ftree" [value]="treeNodes()" selectionMode="single" [selection]="selectedNode()"
@@ -51,10 +47,10 @@
               @if (n.data.kind === 'dir') {
                 <span class="dirname" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
                 @if (n.data.hasChanges) { <span class="chdot" pTooltip="contains changes">●</span> }
-                @if (n.data.untracked) { <p-tag styleClass="badge mono st st-u" value="?" pTooltip="untracked, not gitignored" /> }
+                @if (n.data.untracked) { <app-git-status code="?" pTooltip="untracked, not gitignored" /> }
               } @else {
                 <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
-                @if (n.data.status) { <p-tag styleClass="badge mono st st-{{ stCls(n.data.status) }}" [value]="n.data.status" /> }
+                @if (n.data.status) { <app-git-status [code]="n.data.status" /> }
               }
             </span>
           </ng-template>
@@ -64,27 +60,66 @@
   </aside>
 
   <section class="pane">
-    <div class="pane-bar">
-      @if (file()) {
+    <!-- Above the file (task 224): what every status compares against, the
+         unchanged-files filter and the dark switch; the legend on its own
+         line below — it does not fit beside them at a 1280-px window. -->
+    <div class="bar">
+      <!-- What every status compares against: main (top, with the git graph's
+           main tag), or one of the branch's newest 10 commits. -->
+      <span class="cmp-label">compare to</span>
+      <p-select size="small" class="commit-pick" [options]="compareOptions()" optionValue="value" [ngModel]="base()"
+                (ngModelChange)="setBase($event)" appendTo="body" [loading]="loadingTree()">
+        <ng-template #selectedItem let-o>
+          @if (o) {
+            <!-- short: the bar has to hold this, the count, two switches and
+                 the dark switch on one line; the list carries the rest -->
+            @if (o.main) { <span class="c-sel"><app-ref-chip kind="main">{{ o.name }}</app-ref-chip><span class="mono">{{ o.short }}</span></span> }
+            @else if (o.last) { last commit }
+            @else { <span class="mono">{{ o.short }}</span> }
+          }
+        </ng-template>
+        <!-- Every row reads the same: sha, subject, age. main's row is main's
+             tip commit with the git graph's main tag in front of the subject. -->
+        <ng-template #item let-o>
+          <span class="c-opt"><span class="mono c-sha">{{ o.short }}</span>
+            <span class="c-subj">@if (o.main) { <app-ref-chip kind="main">{{ o.name }}</app-ref-chip> }{{ o.subject }}</span>
+            <span class="c-when">{{ o.last ? 'last commit' : o.relDate }}</span></span>
+        </ng-template>
+      </p-select>
+      @if (!loadingTree()) { <span class="cmp-count"><span class="cnt">{{ changedCount() }}</span> changed</span> }
+      <label class="swl">
+        <p-toggleswitch [ngModel]="hideUnchanged()" (ngModelChange)="hideUnchanged.set($event)" [disabled]="!changedCount()" />
+        hide unchanged files
+      </label>
+      <span class="spacer"></span>
+      <!-- left: the switch sits at the window's right edge, where a right-hand
+           tooltip has no room (task 224). -->
+      <span class="mode-switch" pTooltip="dark/light viewing area" tooltipPosition="left">
+        <span class="ms-ico">{{ dark() ? '☾' : '☀' }}</span>
+        <p-toggleswitch [ngModel]="dark()" (ngModelChange)="toggleDark()" />
+      </span>
+    </div>
+    <div class="legend">
+      <span class="item"><app-git-status code="A" />added</span>
+      <span class="item"><app-git-status code="M" />modified</span>
+      <span class="item"><app-git-status code="D" />deleted</span>
+      <span class="item"><app-git-status code="R" />renamed / moved</span>
+      <span class="item"><app-git-status code="?" />not in git yet</span>
+    </div>
+    <!-- The open file's own bar — only when a file is open. -->
+    @if (file()) {
+      <div class="pane-bar">
         <span class="fpath mono">{{ file() }}</span>
-        @if (selected()?.status) { <p-tag styleClass="badge mono st st-{{ stCls(selected()!.status!) }}" [value]="selected()!.status!" /> }
+        @if (selectedStatus()) { <app-git-status [code]="selectedStatus()" /> }
         @if (size()) { <span class="meta hint sm">{{ fmtSize(size()) }}</span> }
         @if (truncated()) { <span class="meta warn hint sm">truncated at 1 MB</span> }
-      }
-      <span class="spacer"></span>
-      @if (file()) {
+        <span class="spacer"></span>
         @if (!editing()) {
-          @if (isMd() && !binary()) {
-            <button class="btn-toggle" [class.on]="view() === 'rendered'" (click)="setView('rendered')">rendered</button>
-          }
-          <!-- raw is only worth a toggle when there's an alternative to switch
-               to (a rendered markdown view, or a diff); otherwise it's the sole
-               view and the button is noise. -->
-          @if (!isImage() && !binary() && (isMd() || selected()?.status)) {
-            <button class="btn-toggle" [class.on]="view() === 'raw'" (click)="setView('raw')">raw</button>
-          }
-          @if (selected()?.status) {
-            <button class="btn-toggle" [class.on]="view() === 'diff'" (click)="setView('diff')">diff vs {{ vsRef() || 'main' }}</button>
+          <!-- One select button for how the file is shown (task 224). Only when
+               there is a choice: a file with one view needs no control. -->
+          @if (viewOptions().length > 1) {
+            <p-selectbutton size="small" [options]="viewOptions()" optionLabel="label" optionValue="value" [allowEmpty]="false"
+                            [ngModel]="view()" (ngModelChange)="setView($event)" />
           }
           @if (canEdit()) {
             <button class="btn-toggle" (click)="startEdit()" [disabled]="loadingEditor()">{{ loadingEditor() ? 'edit…' : 'edit' }}</button>
@@ -97,12 +132,8 @@
         }
         <app-file-actions [slug]="slug()" [path]="file()" [worktree]="selectedWtPath()"
                           [worktreeName]="selectedWt()" />
-      }
-      <span class="mode-switch" pTooltip="dark/light viewing area">
-        <span class="ms-ico">{{ dark() ? '☾' : '☀' }}</span>
-        <p-toggleswitch [ngModel]="dark()" (ngModelChange)="toggleDark()" />
-      </span>
-    </div>
+      </div>
+    }
     @if (!file()) {
       <div class="body" [class.dark]="dark()"><div class="empty">Select a file.</div></div>
     } @else if (editing()) {
@@ -130,8 +161,8 @@
           <div class="skel pad"><p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" /></div>
         } @else if (missing()) {
           <div class="empty">
-            Not on disk in this worktree{{ selected() && !selected()!.onDisk ? ' — deleted vs ' + (vsRef() || 'main') : '' }}.
-            @if (selected()?.status) { <div class="hint sm">Use the diff toggle to see what was removed.</div> }
+            Not on disk in this worktree{{ selected() && !selected()!.onDisk && selectedStatus() ? ' — deleted vs ' + baseLabel() : '' }}.
+            @if (selectedStatus()) { <div class="hint sm">Use the diff toggle to see what was removed.</div> }
           </div>
         } @else if (binary()) {
           <div class="empty">Binary file ({{ fmtSize(size()) }}) — no text view.</div>

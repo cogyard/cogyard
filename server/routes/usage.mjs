@@ -18,7 +18,8 @@ export async function handlePost(path, req, res) {
 
 export async function handle(path, u, projects, res) {
   if (path === '/api/usage') {
-    return json(res, 200, { projects: core.usageRollup() });
+    // { projects, jobs, outside } — see core/usage.mjs usageRollup (task 130).
+    return json(res, 200, core.usageRollup());
   }
   let m = path.match(/^\/api\/usage\/project\/([^/]+)$/);
   if (m) {
@@ -33,9 +34,11 @@ export async function handle(path, u, projects, res) {
   // ledger-sourced so it survives archiving + worktree removal. Lazy per-task
   // (the created-side spawns git), loaded when a row expands — not folded into
   // the bulk projectUsage. Read-only, like everything else on this surface.
-  m = path.match(/^\/api\/usage\/task\/([^/]+)\/(\d+)\/chats$/);
+  // Ids are text: 40, 40.1, 40e (core/validate.mjs normalizeTaskId) — a digits-only
+  // match 404'd another project's 040e (task 179).
+  m = path.match(/^\/api\/usage\/task\/([^/]+)\/(\d+(?:[._]\d+)?[a-z]?)\/chats$/);
   if (m) {
-    return json(res, 200, core.chatsForTask(decodeURIComponent(m[1]), Number(m[2])));
+    return json(res, 200, core.chatsForTask(decodeURIComponent(m[1]), /^\d+$/.test(m[2]) ? Number(m[2]) : m[2]));
   }
   // One chat's readable transcript (task 30 follow-up — the in-portal viewer).
   // Read-only. The sessionId is used to glob the transcript dir for

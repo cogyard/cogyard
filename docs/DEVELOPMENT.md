@@ -16,7 +16,7 @@ cli/         the command surface (what skills and humans call):
                tunnel.mjs  expose a worktree's dev server at a stable hostname
 server/      read-only HTTP /api over core/ (transport + guards + portal views)
 frontend/    Angular + PrimeNG SPA, consumes /api/*
-hooks/       worktree session setup — _tasks auto-mount + port allocation
+hooks/       worktree session setup — task-store link auto-mount + port allocation
 ```
 
 The rule that keeps it honest: **`server/` owns no task or git logic — it imports
@@ -42,7 +42,8 @@ Open http://localhost:4200 for the portal.
 
 ## Task files
 
-Each project keeps a `_tasks/` directory of markdown files, `NNN-<slug>.md`: a
+Each project keeps its markdown task files, `NNN-<slug>.md`, in a task store
+reached through the project's `.cogyard/tasks` link: a
 YAML frontmatter block (id, status, deps, scope, claims) over a markdown body.
 That file is the source of truth for a unit of work. `core/` parses them; the
 portal renders them; the CLI claims and syncs them. Parallel agents in different

@@ -1,0 +1,51 @@
+:host { display: block; }
+
+/* Admin's inner tabs are the header of the box that holds their page (owner's
+   pick, option C, 2026-11-16): one bordered box, the tab row its white header
+   band, the active tab's cards in its body. The shared box is what ties a tab
+   to its page — before this the row floated above the cards with nothing
+   joining them. PrimeNG's own p-tabs supplies the behaviour (keyboard, focus,
+   ARIA); only its look is replaced here, the way app.component.scss replaces
+   it for the top row. The cards inside keep the shared .settings-card recipe
+   from styles.scss. */
+:host ::ng-deep .admin-tabs {
+  display: block;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border); border-bottom: none;
+  border-radius: 10px 10px 0 0; overflow: hidden;
+
+  p-tablist, .p-tablist, .p-tablist-content, .p-tablist-viewport { background: transparent; }
+  .p-tablist-active-bar { display: none; }
+  /* The header's bottom rule is drawn ON the tab row, as an inset line —
+     PrimeNG's tab viewport clips anything that bleeds past it — and the active
+     tab's underline paints over it. */
+  .p-tablist-tab-list {
+    border: none; background: transparent;
+    padding: 0 var(--app-space-3);
+    box-shadow: inset 0 -1px 0 var(--app-border);
+  }
+  .p-tab {
+    /* Transparent 3px underline in both states, so switching tab changes
+       colours only, never geometry. */
+    border: none; border-bottom: 3px solid transparent; border-radius: 0;
+    padding: 12px 18px; margin: 0;
+    font-size: 14px; font-weight: 600;
+    background: transparent; color: var(--app-fg-dim);
+    transition: none;
+  }
+  .p-tab:not(.p-tab-active):hover { background: transparent; color: var(--app-page-fg-strong); }
+  .p-tab-active { background: transparent; color: var(--app-page-fg-strong); border-bottom-color: var(--app-accent); }
+}
+
+/* The box's body: the active tab's cards, stacked with the gap the project
+   settings page used between them. Its top edge is the header's rule. The
+   hover grey (owner's pick, 2026-11-16) is a visible step down from the white
+   header and the white cards; the near-white surface-2 it replaced let the
+   cards and their table headers wash into it. */
+.admin-pane {
+  display: flex; flex-direction: column; gap: var(--app-space-5);
+  background: var(--app-hover);
+  border: 1px solid var(--app-border); border-top: none;
+  border-radius: 0 0 10px 10px;
+  padding: 20px;
+}

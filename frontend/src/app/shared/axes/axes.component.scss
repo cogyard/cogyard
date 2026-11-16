@@ -1,0 +1,24 @@
+/* .ax-lbl → shared .eyebrow; loading/empty keep their italic one-off. */
+.ax-loading, .ax-empty { font-style: italic; margin: 8px 0; }
+
+.axis-row {
+  display: flex; align-items: flex-start; gap: var(--app-space-4);
+  padding: 10px 0; border-bottom: 1px solid var(--app-border-soft);
+}
+.ax-color {
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border: 1px solid var(--app-border);
+  border-radius: 6px; background: none; cursor: pointer;
+}
+.ax-name { flex: 0 0 160px; }
+
+/* labels editor — chips that flow, with an inline add field trailing them */
+.ax-labels { flex: 1 1 auto; display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-3); min-width: 0; }
+/* the label chips are app-label-chip (task 155), the same one the Tasks tab uses */
+.ax-add { flex: 0 0 90px; }
+
+/* The axis delete control is the shared `button.row-del` one-off (styles.scss) —
+   the same control the Open-in targets rows use, so the two adjacent cards do
+   the identical job identically. Nothing local left to declare. */
+
+/* .ax-warn rides on .hint for size; this only carries the semantic danger color. */
+.ax-warn { color: var(--app-danger, #d9534f); align-self: center; }

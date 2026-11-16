@@ -1,0 +1,24 @@
+<p-tabs [value]="section()" (valueChange)="sectionChange.emit($any($event))" class="admin-tabs">
+  <p-tablist>
+    @for (s of sections; track s.id) {
+      <p-tab [value]="s.id">{{ s.label }}</p-tab>
+    }
+  </p-tablist>
+</p-tabs>
+
+<div class="admin-pane">
+  @switch (section()) {
+    @case ('settings') {
+      <app-project-switches [slug]="slug()" />
+      <app-project-icon [slug]="slug()" />
+      <!-- This project's own axis layer; the shared one stays on the global page. -->
+      <app-settings-axes [slug]="slug()" />
+    }
+    @case ('stats') { <app-stats [slug]="slug()" (jumpTask)="jumpTask.emit($event)" /> }
+    @case ('cleanup') { <app-cleanup [slug]="slug()" (jumpTask)="jumpTask.emit($event)" (jumpWorktree)="jumpWorktree.emit($event)" /> }
+    @default {
+      <app-project-settings [slug]="slug()" />
+      <app-project-publishing [slug]="slug()" />
+    }
+  }
+</div>

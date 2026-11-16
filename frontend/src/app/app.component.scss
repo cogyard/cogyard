@@ -34,9 +34,29 @@
 .nav-list::-webkit-scrollbar { width: 7px; }
 .nav-divider { height: 1px; margin: 5px 4px; background: color-mix(in srgb, var(--app-topbar-fg) 14%, transparent); }
 
-/* Project rows: label truncates, unmerged-worktree count badge pinned right.
-   Badges across the rail sum to the app/dock badge (same /api/overview data). */
+/* Project rows: leading icon slot, label truncates, unmerged-worktree count badge
+   pinned right. Badges across the rail sum to the app/dock badge (same
+   /api/overview data). */
 .sidebar-item .si-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Icon slot (task 114) — ALWAYS rendered, even when the project has no icon, so
+   every label in the rail starts at the same x. That's the whole job: the icon is
+   optional, the column it sits in is not. `All` gets an empty one and the
+   settings cog IS one, so the rail reads as a single text column top to bottom. */
+.sidebar-item .si-icon {
+  flex: 0 0 auto; width: 20px; height: 20px; display: block;
+}
+/* Each project's icon shows as-is — its own artwork, bare on the rail.
+   object-fit:contain: never stretch art that isn't square. */
+.sidebar-item .si-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* White border behind the icon, for artwork drawn for white browser chrome that
+   would otherwise sink into the indigo. Two ways it turns on, both explicit:
+   the owner ticks "white border" for that project in /settings (.bordered), or
+   the row is SELECTED — on the accent fill every icon needs the separation, so
+   that one isn't a preference. */
+.sidebar-item .si-icon img.bordered,
+.sidebar-item.active .si-icon img {
+  background: #fff; border-radius: 4px; padding: 1.5px; box-sizing: border-box;
+}
 .sidebar-item .si-badge {
   flex: 0 0 auto; margin-left: 4px;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
@@ -47,24 +67,43 @@
 /* On the active row (accent-filled), invert so the badge stays legible. */
 .sidebar-item.active .si-badge { background: var(--app-accent-contrast); color: var(--app-accent); }
 
+/* Horizontal padding matches .nav-list (8px), not the old 14px: the settings row
+   wears the same .sidebar-item recipe as the project rows, so a different inset
+   put its label 6px right of every project name. The version row takes the extra
+   6px back locally so it sits where it always has. */
 .sidebar-foot {
-  flex: 0 0 auto; padding: 10px 14px; border-top: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
+  flex: 0 0 auto; padding: 10px 8px; border-top: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
   display: flex; flex-direction: column; gap: var(--app-space-3);
 }
 /* The freshness pie + full version stamp share the top row. */
-.sidebar-foot .foot-row { display: flex; align-items: center; gap: var(--app-space-3); }
+.sidebar-foot .foot-row { display: flex; align-items: center; gap: var(--app-space-3); padding: 0 6px; }
 
 /* Settings link — its own line ABOVE the version row. Wears the shared
    .sidebar-item recipe (styles.scss) so resting/hover/active render exactly like a
-   project row — including the full-width accent fill on /settings. Only the gear
-   icon needs a local rule. */
-.sidebar-foot .settings-link .settings-cog { flex: 0 0 auto; display: block; }
+   project row — including the full-width accent fill on /settings. The cog sits
+   in the same .si-icon slot the project rows use, so "Settings" lines up with the
+   project names; it's drawn smaller than the slot (a 15px glyph in an 18px box)
+   because a full-bleed gear reads heavier than a project's icon. */
+.sidebar-foot .settings-link .settings-cog { padding: 1.5px; }
 
 /* Build version + commit, muted, beside the freshness pie — shown in full. */
 .sidebar-foot .version {
   font-family: ui-monospace, "SF Mono", monospace; font-size: 11px;
   color: color-mix(in srgb, var(--app-topbar-fg) 60%, transparent);
   white-space: nowrap;
+}
+
+/* A newer build is being served (see app.component.ts newBuild): a solid
+   accent "Update" pill at the right end of the version row. Clicking reloads.
+   It replaced a bare 16px arrow that was too easy to miss (task 231). */
+.sidebar-foot .new-build {
+  display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto;
+  margin-left: auto; padding: 2px 8px 2px 6px;
+  border: 0; border-radius: 10px; cursor: pointer;
+  font: inherit; font-size: 11.5px; font-weight: 600; line-height: 1.4;
+  background: var(--app-accent); color: var(--app-accent-contrast);
+  svg { width: 13px; height: 13px; }
+  &:hover { background: var(--app-accent-hover); }
 }
 
 /* ---- Main column: view-tab header + scrolling content ---- */
@@ -81,7 +120,23 @@
    bottom edge. Inactive tabs are plain text; ONLY the active tab gets a shape —
    filled with the page background so it flows seamlessly into the content
    below (no line under the topbar). Colors derive from the theme knobs. */
-.bar-tabs { padding-top: 4px; padding-bottom: 0; justify-content: center; }
+/* `safe center`, not plain `center`: when the strip is wider than the column, a
+   centered row overflows equally on BOTH sides and the left overflow is clipped
+   — it disappears under the sidebar with no way to reach it. `safe` falls back
+   to start-alignment exactly when that would happen, so the first tab stays
+   reachable at any width. */
+.bar-tabs { padding-top: 4px; padding-bottom: 0; justify-content: safe center; }
+/* The named strip takes the row's spare width and scrolls inside it (PrimeNG's
+   viewport already has overflow-x:auto — it just never had a width to be
+   narrower than). min-width:0 is what lets a flex item shrink below its content;
+   without it the strip stays wider than its column and pushes the Admin tab
+   beside it off-screen, which is the whole failure this layout fixes. */
+.bar-tabs { align-items: stretch; }
+.bar-tabs > p-tabs { flex: 0 1 auto; min-width: 0; }
+/* The Admin tab's own one-tab list (task 249; the settings cog of task 135)
+   never shrinks and never scrolls — it has to be reachable at every width. */
+.bar-tabs > p-tabs.cog-tabs { flex: 0 0 auto; }
+
 :host ::ng-deep .bar-tabs {
   p-tabs, p-tablist, .p-tablist, .p-tablist-content, .p-tablist-viewport { background: transparent; }
   p-tabs { width: auto; }
@@ -100,6 +155,10 @@
     transition: none;
     display: inline-flex; align-items: center; gap: 7px;
   }
+  /* The tab row centers itself while it fits and scrolls from the start once it
+     doesn't — min-width:100% is what makes centering possible inside a
+     scrollable viewport that is narrower than the list. */
+  .p-tablist-tab-list { min-width: 100%; justify-content: safe center; }
   /* Leading tab icon — mask-tinted to the tab's own text color so it follows
      the light (inactive, on indigo) → dark (active, on page bg) state change.
      The SVGs live in public/assets like the table glyphs; mask ignores their

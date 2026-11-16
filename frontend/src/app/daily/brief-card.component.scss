@@ -1,0 +1,95 @@
+/* One brief. Many of these stack down the Brief tab, newest first, so a closed
+   one has to be a scannable single line. Card recipe matched to .settings-card
+   (border, radius, surface) so it belongs to the same page as everything else. */
+.brief {
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  background: var(--app-surface);
+  margin: 0 0 var(--app-space-5);
+  overflow: hidden;
+}
+
+/* Failed = the alarm state. Same red the worktrees table already uses for
+   stale/dirty, so the page has one language for "wrong", plus a left bar so it
+   is unmistakable at a glance and not merely a slightly different white card. */
+.brief.failed {
+  border-color: #f3c6c6;
+  border-left: 4px solid #b91c1c;
+  background: #fef6f6;
+}
+
+.brief-head {
+  display: flex; align-items: baseline; gap: var(--app-space-3);
+  padding: 10px var(--app-space-5);
+  cursor: pointer;
+  border-bottom: 1px solid var(--app-border-soft);
+}
+.brief.failed .brief-head { border-bottom-color: #f3c6c6; }
+.brief-head:hover { background: var(--app-hover); }
+.brief.failed .brief-head:hover { background: #fdeeee; }
+
+.brief-icon { font-size: 13px; line-height: 1; }
+.brief-title { font-weight: 700; color: var(--app-page-fg-strong); }
+.brief.failed .brief-title { color: #b91c1c; }
+.brief-when { font-weight: 700; color: var(--app-page-fg-strong); }
+.brief.closed .brief-when { font-weight: 600; }
+
+/* The closed state: one line of the opening paragraph, clipped. Enough to
+   recognise the day without opening it. */
+.brief-peek {
+  margin: 0; padding: 0 var(--app-space-5) 12px;
+  color: var(--app-fg-dim); font-size: 13px; line-height: 1.5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.brief-cost { color: var(--app-fg-muted); }
+.row-gap { flex: 1 1 auto; }
+
+.brief-toggle {
+  border: 0; background: none; padding: 0;
+  font: inherit; font-size: 12px; color: var(--app-accent); cursor: pointer;
+}
+.brief-toggle:hover { color: var(--app-accent-hover); text-decoration: underline; }
+
+/* The prose. Measure capped because a paragraph read across 1400px is not read
+   at all — this is the one thing on the page meant to be READ rather than
+   scanned. */
+.brief-body {
+  padding: var(--app-space-5);
+  color: var(--app-fg);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.brief-body ::ng-deep p { margin: 0 0 12px; max-width: 82ch; }
+.brief-body ::ng-deep p:last-child { margin-bottom: 0; }
+.brief-body ::ng-deep h2 { font-size: 13px; font-weight: 700; margin: 18px 0 8px; color: var(--app-page-fg-strong); }
+.brief-body ::ng-deep blockquote {
+  margin: 0 0 12px; padding: 2px 0 2px 14px;
+  border-left: 3px solid #b91c1c; color: var(--app-fg);
+}
+.brief-body ::ng-deep blockquote h3 { font-size: 13.5px; margin: 0 0 8px; color: #b91c1c; }
+.brief-body ::ng-deep code {
+  font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px;
+  background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 4px; padding: 0 4px;
+}
+.brief-body ::ng-deep pre {
+  background: var(--app-surface-2); border: 1px solid var(--app-border); border-radius: 6px;
+  padding: 10px 12px; overflow-x: auto; margin: 0 0 12px;
+}
+.brief-body ::ng-deep pre code { background: none; border: 0; padding: 0; }
+
+/* The evidence block: collapsed by default (it is markdown <details>), and
+   visibly secondary when open — counts live here so the paragraphs don't
+   have to carry them. */
+.brief-body ::ng-deep details { margin-top: 14px; border-top: 1px solid var(--app-border-soft); padding-top: 12px; }
+.brief-body ::ng-deep summary { cursor: pointer; font-size: 12px; color: var(--app-fg-dim); }
+.brief-body ::ng-deep details p,
+.brief-body ::ng-deep details li { font-size: 12.5px; color: var(--app-fg-dim); }
+.brief-body ::ng-deep details ul { margin: 4px 0 12px; padding-left: 18px; }
+
+/* The cost footer the file carries — small, last, and not something to read. */
+.brief-body ::ng-deep hr { border: 0; border-top: 1px solid var(--app-border-soft); margin: 16px 0 10px; }
+.brief-body ::ng-deep em { color: var(--app-fg-muted); font-size: 12px; }
+
+/* A closed card has nothing under its header, so the divider would be a stray
+   rule across the bottom of it. */
+.brief.closed .brief-head { border-bottom-color: transparent; }

@@ -1,0 +1,54 @@
+@let c = t();
+<div class="pcard" [class.dim]="dim()" [class.missing]="c.worktreeMissing" (click)="select.emit()"
+  [pTooltip]="dim() && dimWhy() ? dimWhy() : undefined" tooltipPosition="top">
+  <div class="pc-head">
+    @if (typeIcon(); as icon) { <span class="type-icon" [pTooltip]="c.type ?? undefined" tooltipPosition="top">{{ icon }}</span> }
+    <app-task-chip [id]="c.id" [slug]="slug()" (open)="openTask.emit($event)" />
+    @if (c.worktreeMissing) { <app-flag tone="caution" pTooltip="Still claimed, but the worktree the claim names was removed" tooltipPosition="top">worktree missing</app-flag> }
+    @for (l of c.labels; track l) { <app-label-chip [label]="l" [color]="colorOf(l)" /> }
+  </div>
+  <div class="pc-title">{{ c.title }}</div>
+  @if (c.claimedBy && (c.agent || c.claimedByOther)) {
+    <div class="pc-line"><app-agent-state layout="card" [live]="c.agent" [claimedBy]="c.claimedBy" [claimedAt]="c.claimedAt" [other]="c.claimedByOther" /></div>
+  }
+  @if (c.status === 'PARKED' && c.unmet.length) {
+    <div class="pc-line hint"><span [pTooltip]="'Its depends_on lists ' + c.unmet.join(', ')" tooltipPosition="top">waiting on</span>
+      @for (a of c.unmet; track a) {
+        @if (isCross(a)) { <app-flag tone="info" face="mono">{{ crossRef(a) }}</app-flag> }
+        @else { <app-task-chip [id]="a" [slug]="slug()" (open)="openTask.emit($event)" /> }
+      }
+    </div>
+  }
+  @if (c.waitedOnBy.length) {
+    <div class="pc-line hint">frees
+      @for (w of c.waitedOnBy.slice(0, 6); track w) { <app-task-chip [id]="w" [slug]="slug()" (open)="openTask.emit($event)" /> }
+      @if (c.waitedOnBy.length > 6) { <span>+{{ c.waitedOnBy.length - 6 }}</span> }
+    </div>
+  }
+  @if (c.blocksOther.length) {
+    <div class="pc-line hint">blocks
+      @for (b of c.blocksOther; track b.project + b.id) { <app-flag tone="info" face="mono" [pTooltip]="b.title" tooltipPosition="top">{{ crossLabel(b.project, b.id) }}</app-flag> }
+    </div>
+  }
+  @if (c.filesUnknown) {
+    <div class="pc-line"><app-flag tone="neutral" pTooltip="It lists only whole folders, so there is no telling what code it shares" tooltipPosition="top">files unknown</app-flag></div>
+  }
+  @if (c.youNext) {
+    <div class="pc-flag"><app-flag tone="warn" [wrap]="true" [pTooltip]="stepsText()" tooltipPosition="top">next: {{ c.youNext.join(', ') }}</app-flag></div>
+  } @else if (c.youLater.length) {
+    <div class="pc-flag"><app-flag tone="neutral" [wrap]="true" [pTooltip]="stepsText()" tooltipPosition="top">later: {{ c.youLater.join(', ') }}</app-flag></div>
+  }
+  @if (c.total) {
+    <div class="pc-boxes">
+      <span class="sq" [pTooltip]="c.done + ' of ' + c.total + ' checkboxes ticked'" tooltipPosition="bottom">
+        @for (b of c.boxes; track $index) { <i [class.on]="b.done" [class.main]="b.onMain === true" [class.branch]="b.onMain === false"></i> }
+      </span>
+      @if (codeText(); as k) {
+        <span class="code mono" [pTooltip]="codeTip()" tooltipPosition="bottom">
+          @if (k.kind === 'main') { <span class="on-main">on main</span> }
+          @else { <span class="up">↑{{ k.ahead }}</span>@if (k.behind) { <span class="down">↓{{ k.behind }}</span> } }
+        </span>
+      }
+    </div>
+  }
+</div>

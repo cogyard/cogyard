@@ -85,7 +85,7 @@ export class NewProjectComponent {
         this.toast.add({
           severity: 'success',
           summary: isInit ? 'Project created' : 'Project added',
-          detail: `${r.slug} → ${r.store}`,
+          detail: `${r.slug} → ${r.storePath}`,
         });
         if (r.warnings?.length) {
           for (const w of r.warnings) this.toast.add({ severity: 'warn', summary: 'Heads up', detail: w });

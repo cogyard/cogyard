@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Chat (task 117). A speech bubble: the Cleanup tab's archive list is rows
+       of CHATS, which is what distinguishes them from the worktree rows above.
+
+       Same wrapper as the glyphs beside it (git-worktree.svg, git-branch.svg) —
+       a drawing space scaled to 512 by translate(-15.1) scale(27.11). NOTE the
+       usable range that leaves: (512 + 15.1) / 27.11 = 19.4 units. Anything
+       drawn past that is CLIPPED, which is what happened to the first version
+       of this file — it was drawn on 0-24 like an inline icon, so the bubble's
+       right edge and its tail were cut and it rendered as a part-rectangle.
+       Keep every coordinate below ~19. -->
+  <g transform="translate(-15.1,-15.1) scale(27.11)">
+    <g fill="none" stroke="#1f2328" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M3 3h12.5a1.8 1.8 0 0 1 1.8 1.8v6.4a1.8 1.8 0 0 1-1.8 1.8H9l-4.4 3.5V13H3a1.8 1.8 0 0 1-1.8-1.8V4.8A1.8 1.8 0 0 1 3 3z"/>
+    </g>
+  </g>
+</svg>

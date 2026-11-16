@@ -1,0 +1,216 @@
+<section class="settings-card">
+  <h3 class="card-title">Publishing</h3>
+  <p class="card-hint">
+    How this project goes live, and what is live now. Read-only — you publish from a terminal.
+  </p>
+
+  @if (loading()) {
+    <p class="hint">Loading…</p>
+  } @else if (failed() || !status()) {
+    <p class="hint">Could not read how this project publishes.</p>
+  } @else if (status(); as s) {
+    @if (!s.declaration.declared) {
+      <div class="pub-rows">
+        <div class="pub-row">
+          <span class="eyebrow">Declared</span>
+          <span class="pub-val">
+            <app-flag plain tone="warn">undeclared</app-flag>
+            <span class="dim">No <code>.cogyard/publish.json</code> in this repo, so cogyard doesn't know whether a push deploys it.</span>
+          </span>
+        </div>
+      </div>
+    } @else if (s.declaration.error) {
+      <div class="pub-rows">
+        <div class="pub-row">
+          <span class="eyebrow">Declared</span>
+          <span class="pub-val">
+            <app-flag plain tone="bad">invalid</app-flag>
+            <span class="pub-warn">{{ s.declaration.error }}</span>
+          </span>
+        </div>
+      </div>
+    } @else {
+      <div class="pub-rows">
+        <!-- First: the question this whole task exists to answer. -->
+        <div class="pub-row">
+          <span class="eyebrow">Push to main</span>
+          <span class="pub-val">
+            @if (s.declaration.deploysOnPush) {
+              <app-flag plain tone="bad">deploys</app-flag>
+              <span class="dim">every push ships to production — publish refuses until that's turned off</span>
+            } @else {
+              <app-flag plain tone="good">deploys nothing</app-flag>
+            }
+          </span>
+        </div>
+
+        <div class="pub-row">
+          <span class="eyebrow">Live</span>
+          <span class="pub-val">
+            @if (s.live; as l) {
+              @if (!l.reachable) {
+                <app-flag plain tone="bad">no answer</app-flag>
+              } @else if (!l.commit) {
+                <app-flag plain tone="warn">no commit in response</app-flag>
+              } @else {
+                <code class="ro-value plain">{{ l.commit }}</code>
+                @if (l.servesTip) {
+                  <app-flag plain tone="good">up to date</app-flag>
+                } @else {
+                  <app-flag plain tone="warn">behind main</app-flag>
+                }
+              }
+              <span class="dim">{{ l.url }}</span>
+            } @else {
+              <span class="dim">no health URL — a publish asks you to confirm it's live</span>
+            }
+          </span>
+        </div>
+
+        <div class="pub-row">
+          <span class="eyebrow">Main</span>
+          <span class="pub-val">
+            @if (s.tip; as t) {
+              <code class="ro-value plain">{{ t.short }}</code>
+              @if (t.version) { <span>v{{ t.version }}</span> }
+              <span class="dim">{{ t.ref }}, as of the last fetch</span>
+            } @else {
+              <span class="dim">no main branch</span>
+            }
+          </span>
+        </div>
+
+        <div class="pub-row">
+          <span class="eyebrow">Last release</span>
+          <span class="pub-val">
+            @if (s.lastRelease; as r) {
+              <code class="ro-value plain">{{ r.tag }}</code>
+              @if (r.short) { <code class="ro-value plain">{{ r.short }}</code> }
+              @if (r.date) { <span class="dim">{{ when(r.date) }}</span> }
+              @if (r.unreleased) {
+                <app-flag plain tone="info" face="text">{{ r.unreleased }} unreleased commit{{ r.unreleased === 1 ? '' : 's' }}</app-flag>
+              } @else {
+                <span class="dim">nothing unreleased</span>
+              }
+            } @else {
+              <span class="dim">none yet</span>
+            }
+          </span>
+        </div>
+
+        <div class="pub-row">
+          <span class="eyebrow">Checks</span>
+          <span class="pub-val">
+            @if (s.declaration.checks?.length) {
+              <ol class="pub-list">
+                @for (c of s.declaration.checks; track $index; let n = $count) {
+                  <li>@if (n > 1) { <span class="dim">{{ $index + 1 }}.</span> } <code class="ro-value plain">{{ c }}</code></li>
+                }
+              </ol>
+            } @else {
+              <span class="dim">none — nothing is tested before the deploy</span>
+            }
+          </span>
+        </div>
+
+        <div class="pub-row">
+          <span class="eyebrow">Deploy</span>
+          <span class="pub-val">
+            <ol class="pub-list">
+              @for (st of steps(); track $index; let n = $count) {
+                <li>
+                  @if (n > 1) { <span class="dim">{{ $index + 1 }}.</span> }
+                  @if (st.kind === 'command') {
+                    <span class="dim">run</span> <code class="ro-value plain">{{ st.text }}</code>
+                  } @else {
+                    <span class="dim">you:</span> {{ st.text }}
+                  }
+                </li>
+              }
+            </ol>
+          </span>
+        </div>
+
+        @if (s.credentials.length) {
+          <div class="pub-row">
+            <span class="eyebrow">Credentials</span>
+            <span class="pub-val">
+              @for (c of s.credentials; track c.name) {
+                <span class="pub-cred">
+                  <code class="ro-value plain">{{ c.name }}</code>
+                  <app-flag plain [tone]="c.set ? 'good' : 'bad'">{{ c.set ? 'set' : 'missing' }}</app-flag>
+                </span>
+              }
+            </span>
+          </div>
+        }
+
+        <!-- Only when one exists: on a converted project it is the exception. -->
+        @if (s.prePushHook) {
+          <div class="pub-row">
+            <span class="eyebrow">Pre-push hook</span>
+            <span class="pub-val">
+              <code class="ro-value plain">{{ s.prePushHook }}</code>
+              <span class="dim">git runs this on every push</span>
+            </span>
+          </div>
+        }
+
+        <div class="pub-row">
+          <span class="eyebrow">Publish</span>
+          <span class="pub-val">
+            <code class="ro-value plain">{{ publishCmd() }}</code>
+            <button type="button" class="btn-link cp" (click)="copy(publishCmd())">
+              {{ copied() === publishCmd() ? 'copied' : 'copy' }}
+            </button>
+            <span class="dim">in your own terminal — refused when an agent runs it</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- The defaults: what every publish does without being told. Same
+           constants the CLI runs with (core/publish.mjs PUBLISH_DEFAULTS). -->
+      <div class="pub-section">
+        <span class="eyebrow">Every publish</span>
+        <ol class="pub-list pub-defaults">
+          <li>Ships <code>{{ s.defaults.branch ?? 'main' }}</code> exactly as on <code>{{ s.defaults.remote }}</code> — refuses if they differ or a tracked file is changed. Untracked files don't block it.</li>
+          <li>Runs the checks on that commit, then shows every step and asks you to confirm. <code>--yes</code> answers that one question; manual steps always ask.</li>
+          @if (s.declaration.health) {
+            <li>Waits up to {{ s.defaults.verifyTimeoutMinutes }} min, checking every {{ s.defaults.verifyPollSeconds }} s, for the health URL to serve exactly that commit. If it doesn't, nothing is tagged.</li>
+          } @else {
+            <li>Has no health URL to check, so it asks you to confirm the new commit is live.</li>
+          }
+          @if (s.declaration.tag) {
+            <li>Tags <code>{{ s.defaults.tagFormat }}</code> (from <code>package.json</code>, plain x.y.z, newer than the last release) on the commit, pushes it to <code>{{ s.defaults.remote }}</code>, and reads it back.</li>
+          } @else {
+            <li>Sets no release tag (<code>"tag": false</code>).</li>
+          }
+          <li>Skips checks and deploy if the commit is already live, so re-running an interrupted publish is safe.</li>
+          <li>Runs only from your terminal, one at a time per project, and logs to <code>{{ s.defaults.logPath }}</code>.</li>
+        </ol>
+      </div>
+    }
+
+    <div class="pub-section">
+      <span class="eyebrow">Recent publishes</span>
+      @if (!s.history.length) {
+        <span class="hint">None yet.</span>
+      } @else {
+        <div class="pub-history">
+          @for (h of s.history; track h.at) {
+            <div class="pub-hrow">
+              <span class="dim">{{ when(h.at) }}</span>
+              <span>{{ h.tag ?? (h.sha ? h.sha.slice(0, 7) : '—') }}</span>
+              @if (h.ok) {
+                <app-flag tone="good">published</app-flag>
+              } @else {
+                <app-flag tone="bad" face="text">stopped at {{ h.failedAt }}</app-flag>
+                <span class="dim pub-reason">{{ h.reason }}</span>
+              }
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+</section>

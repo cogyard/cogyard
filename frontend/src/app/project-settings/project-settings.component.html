@@ -1,0 +1,149 @@
+<div class="ps-wrap">
+  <section class="settings-card">
+    <h3 class="card-title">Location on disk</h3>
+    <p class="card-hint">
+      Where this project's code and its tasks are. Read-only — a problem comes with the command that fixes it,
+      to run in a terminal.
+    </p>
+
+    @if (loading()) {
+      <p class="hint">Loading…</p>
+    } @else if (failed() || !store()) {
+      <p class="hint">Could not read this project's storage.</p>
+    } @else if (store(); as s) {
+      <!-- Code first: "where is this project?" is the question the card was built to answer. -->
+      <div class="loc-sec">
+        <div class="loc-head">
+          <span class="card-subtitle">Code</span>
+          <span class="hint">The project's git repository.</span>
+        </div>
+        <div class="ps-rows">
+          <div class="ps-row">
+            <span class="eyebrow">Folder</span>
+            <span class="ps-val">
+              <code class="ro-value plain">{{ s.path }}</code>
+              <button type="button" class="btn-link cp" (click)="copy(s.path)">
+                {{ copied() === s.path ? 'copied' : 'copy' }}
+              </button>
+            </span>
+          </div>
+          <div class="ps-row">
+            <span class="eyebrow">Worktrees</span>
+            <span class="ps-val">
+              @if (s.worktrees) {
+                <span>{{ s.worktrees.total }}</span>
+                <span class="dim">extra checkouts of this repository, each in its own folder</span>
+              } @else {
+                <span class="dim">none</span>
+              }
+            </span>
+          </div>
+        </div>
+        @if (codeProblems().length) {
+          <div class="ps-flags">
+            @for (p of codeProblems(); track p.text) { <div class="fl"><div class="ps-warn">{{ p.text }}</div></div> }
+          </div>
+        }
+      </div>
+
+      <div class="loc-sec">
+        <div class="loc-head">
+          <span class="card-subtitle">Tasks</span>
+          <span class="hint">
+            @switch (s.link.state) {
+              @case ('folder') { A folder inside the code, where the link to the task folder should be — see below. }
+              @case ('missing') { This project has no task folder. }
+              @default { Kept outside the code, in their own folder with their own git history. The code reaches them through a link. }
+            }
+          </span>
+        </div>
+        <div class="ps-rows">
+          <div class="ps-row">
+            <span class="eyebrow">Folder</span>
+            <span class="ps-val">
+              @if (s.link.state === 'broken' || s.link.state === 'missing') { <span class="ps-warn">missing —</span> }
+              <code class="ro-value plain">{{ tasksFolder(s) }}</code>
+              <button type="button" class="btn-link cp" (click)="copy(tasksFolder(s))">
+                {{ copied() === tasksFolder(s) ? 'copied' : 'copy' }}
+              </button>
+              @if (s.taskCount !== null) { <span class="dim">{{ plural(s.taskCount, 'task file') }}</span> }
+            </span>
+          </div>
+
+          @if (linked()) {
+            <div class="ps-row">
+              <span class="eyebrow">Linked from</span>
+              <span class="ps-val">
+                <code class="ro-value plain">{{ linkName(s) }}</code>
+                @if (s.link.state === 'broken') {
+                  <span class="ps-warn">points at the folder above, which doesn't exist</span>
+                } @else if (!s.worktrees) {
+                  <span class="dim">in the code folder</span>
+                } @else if (unmounted(s)) {
+                  <span class="dim">in the code folder and in</span>
+                  <span class="ps-warn">{{ s.worktrees.total - unmounted(s) }} of {{ plural(s.worktrees.total, 'worktree') }}</span>
+                } @else {
+                  <span class="dim">in the code folder and in {{ s.worktrees.total === 1 ? 'its 1 worktree' : 'all ' + s.worktrees.total + ' worktrees' }}</span>
+                }
+              </span>
+            </div>
+          }
+
+          <!-- Another PROJECT reading the same task folder. Intentional where it
+               happens, so it reads as a fact here and not as a problem below. -->
+          @if (sharedWith().length) {
+            <div class="ps-row">
+              <span class="eyebrow">Also used by</span>
+              <span class="ps-val">{{ sharedWith().join(', ') }}</span>
+            </div>
+          }
+
+          <!-- The TASK folder's own git — only when it is readable. A broken or
+               missing folder has no branch, remote or state to show. -->
+          @if (s.storeBranch) {
+            <div class="ps-row">
+              <span class="eyebrow">Git history</span>
+              <span class="ps-val">
+                <span>branch {{ s.storeBranch }}</span>
+                <span class="dim">·</span>
+                <span>{{ s.remote === 'origin' ? 'remote origin' : 'no remote — this Mac only' }}</span>
+                <span class="dim">·</span>
+                @if (s.storeDirty === null) { <span class="dim">state unknown</span> }
+                @else if (s.storeDirty) {
+                  <span class="ps-warn">{{ s.audit ? plural(s.audit.pending.count, 'change') : 'changes' }} not committed</span>
+                }
+                @else { <span class="dim">all committed</span> }
+                @if (s.unpushed) { <span class="ps-warn">· {{ plural(s.unpushed, 'commit') }} not pushed</span> }
+                @if (s.lastCommit) {
+                  <span class="dim">· last commit {{ s.lastCommit.short }}, {{ s.lastCommit.relDate }}</span>
+                }
+              </span>
+            </div>
+          }
+        </div>
+
+        <!-- Every problem the storage report raises is a task-folder problem
+             (bar "not a git repo", which sits under Code). -->
+        <div class="ps-flags">
+          @if (!taskProblems().length) {
+            <span class="hint">No problems.</span>
+          }
+          @for (p of taskProblems(); track p.text) {
+            <div class="fl">
+              <div class="ps-warn">{{ p.text }}</div>
+              @if (p.cmd) {
+                <div class="command-row">
+                  <code class="ro-value plain">{{ p.cmd }}</code>
+                  <button type="button" class="btn-link cp" (click)="copy(p.cmd)">
+                    {{ copied() === p.cmd ? 'copied' : 'copy' }}
+                  </button>
+                  @if (p.note) { <span class="dim">{{ p.note }}</span> }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </section>
+</div>

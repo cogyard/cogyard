@@ -1,0 +1,53 @@
+// Layout + semantic colour only (docs/UI-CONVENTIONS.md): type from the shared
+// recipes (.widget-title, .hint), chips from app-task-chip, the expander from
+// the global .btn-pill.
+
+// No box of its own: with nothing to show, the Plan's column gap must not open.
+:host { display: contents; }
+
+// The line, then (expanded) the boxes under it. The line never changes on
+// expand — only the expander's word does (owner, 2026-10-09: a line that turned
+// into a heading was jarring). No panel behind the whole line: a full-width
+// white strip made the page look lopsided.
+.rd { display: flex; flex-direction: column; gap: var(--app-space-3); min-width: 0; }
+
+// One line: title · chip tray (to the right edge) · expander.
+.strip { display: flex; align-items: center; gap: var(--app-space-3); min-width: 0; }
+// The title reads like the Plan's "In progress" heading (plan.component.scss
+// .band-head / .rule): the rule is the title's tooltip.
+.lead { flex: none; }
+.rule { cursor: help; }
+// The chips sit in a white tray that hugs them (owner's pick, 2026-10-09): the
+// Done chip's grey is 1.04 : 1 against the page grey, so on the bare page the
+// chips had no edge. Only the chips — the title stays on the page like the
+// Plan's other group titles, and the chip's own look is unchanged.
+// The tray always runs to the right edge, however few chips it holds, and
+// chips that don't fit are cut off with a fade — no scrollbar; "… more" shows
+// them all (owner's pick D, 2026-10-09).
+.tray {
+  flex: 1; min-width: 0;
+  padding: var(--app-space-3) var(--app-space-4); background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px;
+}
+.row {
+  display: flex; align-items: center; gap: var(--app-space-2); min-width: 0; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to right, #000 calc(100% - 48px), transparent);
+  > * { flex: none; }
+}
+.when { display: inline-flex; align-items: center; white-space: nowrap; margin-right: var(--app-space-1); }
+.sep { width: 1px; height: 16px; margin: 0 var(--app-space-3) 0 var(--app-space-2); background: var(--app-border); }
+// "… more" / "less ▲" right after the tray — the Files tab's expander
+// (files.component.scss .pills-more): the global .btn-pill, just quieter. It
+// follows the tray, like the Files tab's row; the tray is full width, so it no
+// longer sits alone past a half-full row (why it was briefly on the left).
+// One width for both words, so the tray beside it doesn't shift on a click.
+.more { flex: none; font-size: 11px; color: var(--app-fg-muted); padding-block: 2px; min-width: 6em; justify-content: center; }
+
+// Expanded: the Plan's own waiting box and card grid — the same values as
+// plan.component.scss (fieldset.wait, .cards).
+fieldset.wait {
+  margin: 0; padding: var(--app-space-2) var(--app-space-3) var(--app-space-3);
+  border: 1px solid var(--app-page-border); border-radius: 8px;
+  legend { padding: 0 var(--app-space-2); color: var(--app-fg-dim); }
+}
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 320px)); gap: var(--app-space-3); }

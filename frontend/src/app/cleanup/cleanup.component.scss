@@ -1,0 +1,154 @@
+:host { display: block; }
+
+/* LAYOUT ONLY, and every colour is a token. Text recipes (.hint / .card-title /
+   .settings-card / .badge / .mono), the three button recipes, and the shared
+   p-table chrome all live in styles.scss — this file must never restate them
+   (docs/UI-CONVENTIONS.md).
+
+   NO max-width, margin, or padding on the wrapper: the shell's .main-inner owns
+   the content column (1440px, centred, 24/32 padding) and every other tab —
+   Worktrees, Stats — declares no wrapper at all. */
+.cleanup-wrap { display: flex; flex-direction: column; gap: var(--app-space-5); }
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }
+
+/* First load failed with nothing cached. Left-aligned block, not a centred
+   empty-state: it is a fault to read and act on, not decoration. The button
+   sizes to its text rather than stretching to the card. */
+.load-error { align-items: flex-start; gap: var(--app-space-3); }
+.load-error .hint { margin: 0; max-width: 70ch; }
+
+/* Matches the Worktrees tab exactly — same class, same token. */
+.dim { color: var(--app-fg-dim); }
+/* Dates must not wrap mid-value ("2026-08-\n07"). .mono sets the family and
+   size; keeping them on one line is this page's business. */
+.nw { white-space: nowrap; }
+
+/* The page's only chrome: Refresh, right-aligned. Nothing else belongs up here —
+   what each table is now lives in that table's own heading. */
+/* Legend left, Refresh right, on one line (task 154). */
+.cleanup-head { display: flex; align-items: center; gap: var(--app-space-4); }
+/* The legend takes the room and wraps inside itself; Refresh never drops to
+   its own line under it. */
+.cleanup-head .legend { flex: 1 1 auto; min-width: 0; }
+.cleanup-head > .btn-pill { flex: none; margin-left: auto; }
+
+/* Table headings — the same layout the Worktrees tab gives .card-title, so a
+   section head reads identically on both pages. */
+.section-head {
+  display: flex; align-items: baseline; gap: var(--app-space-5); flex-wrap: wrap;
+  margin: var(--app-space-6) 0 var(--app-space-4);
+}
+.section-head:first-of-type { margin-top: 0; }
+
+/* The key: each entry is a REAL chip beside its meaning (same .badge.mono.tchip
+   classes, same data-bucket the component binds), so it is the chip explaining
+   itself rather than a picture of one. */
+/* On the Refresh line (task 154) — it decodes both tables, not one. */
+.legend { display: flex; align-items: center; gap: var(--app-space-4); flex-wrap: wrap; }
+/* Two labelled groups (task 154): status fill · action ring, split by a rule. */
+.lg-group { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; }
+/* The group title is bold and full-strength, so it reads as a heading over its
+   entries rather than one more entry. */
+.lg-label { font-size: 11.5px; font-weight: 700; color: var(--app-fg); }
+.lg-divider { width: 1px; align-self: stretch; min-height: 18px; background: color-mix(in srgb, var(--app-fg) 25%, transparent); }
+.bulk-go { margin-left: auto; align-self: center; }
+/* Hidden while selecting, but its space kept so the heading doesn't jump. */
+.bulk-go.hidden { visibility: hidden; }
+
+/* Selecting mode's bar: count · Remove selected · Cancel, between the heading
+   and the table. Right-aligned, under the button that opened it and above the
+   Action column the checkboxes sit in. Layout only — the count wears .hint and
+   the buttons their shared recipes. */
+.select-bar {
+  display: flex; align-items: center; justify-content: flex-end; gap: var(--app-space-4);
+  margin: 0 0 var(--app-space-3);
+}
+.lg {
+  display: inline-flex; align-items: center; gap: var(--app-space-2);
+  font-size: 11.5px; font-weight: 400; color: var(--app-fg-dim);
+}
+
+/* The archive how-to rides its heading's line, like the legend does — it is an
+   instruction for ANOTHER app (see the template), so it is the one piece of
+   prose on this page. Right-aligned and at .hint weight so the heading still
+   reads first. */
+.oh-how { margin-left: auto; font-weight: 400; max-width: 46ch; text-align: right; }
+
+/* Column widths — the one thing component SCSS owns on a shared p-table. */
+/* 900, not 780: at 780 the 10% Last-commit column squeezed below its own
+   header text and "LAST COMMIT" ran into "CHAT". A table's min-width has to
+   clear its widest header, not just its data. */
+:host ::ng-deep .p-datatable.cl { table-layout: fixed; min-width: 900px; }
+/* Worktree gets the widest share after Chat: the name is the row's IDENTITY,
+   and it was the thing being truncated (task-109-demo-coverage-guard-at-merge-
+   time overflowed its 302px cell by 29px) while Chat sat on 491px it didn't
+   need once the "covers" list moved to the tooltip. */
+:host ::ng-deep .p-datatable.cl .col-name { width: 26%; }
+:host ::ng-deep .p-datatable.cl .col-when { width: 12%; }
+/* ONE Tasks column — the worktree's task + its chat's (owner, 2026-09-28). */
+:host ::ng-deep .p-datatable.cl .col-wtasks { width: 20%; }
+/* Chat takes whatever is left, so the Action column can appear in selecting
+   mode (task 148) without the fixed percentages overflowing. */
+:host ::ng-deep .p-datatable.cl .col-status { width: 18%; }   /* = the Chats table's Status, so Tasks / date / Status line up */
+:host ::ng-deep .p-datatable.cl .col-act { width: 104px; }
+
+/* A row whose worktree went in this visit. Dimmed rather than dropped: it still
+   carries the "now archive this chat" instruction, the next step of the process. */
+tr.done { opacity: 0.72; }
+
+/* .covers / .o-why / .ready are gone with the prose they styled — the chips
+   carry that state now. */
+.removed { font-size: 12px; font-weight: 600; color: color-mix(in srgb, var(--app-status-ready) 62%, var(--app-fg)); }
+
+/* The one destructive control. Red edge, not a red fill: it opens a confirm
+   dialog rather than deleting on click, and a solid red button would overstate
+   what pressing it does. #b91c1c is the app's existing "stale/bad" red (see the
+   Worktrees tab's .section-head.stale), not a new colour. */
+.btn-pill.danger { border-color: #b91c1c; color: #b91c1c; }
+.btn-pill.danger:hover:not(:disabled) { background: color-mix(in srgb, #b91c1c 8%, transparent); }
+
+/* The Chats table (task 148) — the same shared p-table chrome as the worktrees
+   table, so it has real column headings. It was a hand-built grid list inside
+   a .settings-card; the rules that drew that grid went with it. Column widths
+   are the one thing this file owns on a shared p-table; Chat takes the rest. */
+/* Tasks and the date are the same widths as in the worktrees table, and the
+   columns come in the same order, so the two tables read alike (owner,
+   2026-09-28). Status is wider here: it names what a chat waits on. */
+:host ::ng-deep .p-datatable.cl.chats .col-ctasks { width: 20%; }
+:host ::ng-deep .p-datatable.cl.chats .col-cstatus { width: 18%; }
+:host ::ng-deep .p-datatable.cl.chats .col-cwhen { width: 12%; }
+/* The worktree(s) a `worktree on disk` hold names, one per line under the tag. */
+.c-held-tree { display: block; margin-top: var(--app-space-1); min-width: 0; }
+/* Glyph beside the title, on one line. On an inner span, not the <td> — a
+   flex <td> is no longer a table cell (task 150). min-width: 0 lets the title
+   still ellipsis inside the fixed-width column. */
+.o-title-line { display: flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
+/* Held rows (task 144) — not archivable yet, so the title reads at normal
+   rather than strong weight; the status chip does the rest of the telling. */
+tr.held .o-title { color: var(--app-page-fg); }
+/* assets/chat.svg — sized like the other row glyphs (git-ref's are 12px). 14px
+   here because the tail is what makes it a bubble rather than a rounded square,
+   and below that it stops reading. */
+.o-chat { width: 14px; height: 14px; flex: 0 0 auto; }
+/* The title is what you match against Claude's own list, so it gets the weight
+   and it never truncates in favour of the chips. */
+.o-title { color: var(--app-page-fg-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* EVERY task renders — no cap, no "+N". Wraps rather than clipping, because
+   hiding an id is hiding the thing you need to judge the row. Both tables give
+   the chips their own column, so they start at its left edge under the heading. */
+.c-tasks { display: flex; gap: 8px 4px; flex-wrap: wrap; }
+
+/* The task chips are app-task-chip now (task 126) — tint, ring and tooltip all
+   live there, so this page no longer owns a chip look. The rules that were here
+   coloured "not done" with --app-status-waiting, which is the app's PARKED
+   colour: an ordinary open task wore the "blocked" tint on this page and no
+   other. That is the drift the shared component exists to prevent. */
+
+/* The confirm dialog: the list of what goes, what survives, then the buttons.
+   Its consent checkbox is gone (task 148) — Delete is the consent. */
+.confirm { display: flex; flex-direction: column; gap: var(--app-space-3); }
+.confirm-list {
+  list-style: none; margin: 0; padding: 0; max-height: 40vh; overflow: auto;
+  display: flex; flex-direction: column; gap: var(--app-space-2);
+}
+.confirm-list .hint { margin: 0; }

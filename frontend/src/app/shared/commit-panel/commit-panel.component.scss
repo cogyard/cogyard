@@ -48,9 +48,6 @@ $dock-h: 46vh;
   margin: var(--app-space-4) 0 var(--app-space-2); padding-bottom: 3px; border-bottom: 1px solid var(--app-border-soft);
 }
 .grp:first-child { margin-top: 0; }
-/* p-tag — ng-deep; .p-tag.kindtag outranks the Aura .p-tag defaults */
-/* shape from the global .badge.caps recipe — colors only */
-:host ::ng-deep .p-tag.kindtag { color: var(--app-fg-dim); background: var(--app-border-soft); }
 .fhead {
   flex: 0 0 auto;
   padding: 8px 12px 6px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border-soft);
@@ -63,6 +60,16 @@ $dock-h: 46vh;
 }
 .cd-files button.frow:hover { background: var(--app-hover); }
 .cd-files button.frow.sel, .cd-files button.frow.sel:hover { background: var(--app-accent-tint2); }
+/* Task store commits (task 191): a file that should not be in the commit is
+   tinted with its flag's tone, so the bad rows read at a glance; the chip sits
+   at the row's end. Selection still wins. */
+.cd-files button.frow.st-bad:not(.sel) { background: color-mix(in srgb, var(--app-tone-bad) 30%, transparent); }
+.cd-files button.frow.st-review:not(.sel) { background: color-mix(in srgb, var(--app-tone-review) 25%, transparent); }
+/* A store row may wrap: a long task filename fills the 360px panel, and the
+   flag must drop to its own line rather than be cut off. */
+.cd-files button.frow.st-row { flex-wrap: wrap; row-gap: var(--app-space-1); }
+.cd-files .fflag { margin-left: auto; align-self: center; }
+.cd-flags { display: flex; flex-wrap: wrap; gap: var(--app-space-2); margin-bottom: var(--app-space-3); }
 button.close {
   background: none; border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer;
   font: inherit; font-size: 13px; padding: 2px 9px; color: var(--app-fg-dim);
@@ -74,11 +81,8 @@ button.close:hover { background: var(--app-hover); }
 .fdir { color: var(--app-fg-muted); }
 .fseg { white-space: nowrap; }
 .fname { font-weight: 700; color: var(--app-fg); white-space: nowrap; }
-.fstat { flex: 0 0 auto; font-family: ui-monospace, monospace; font-weight: 700; font-size: 11px; width: 16px; }
-.fstat.s-A { color: #16a34a; }
-.fstat.s-M { color: #d97706; }
-.fstat.s-D { color: #dc2626; }
-.fstat.s-R { color: var(--app-accent); }
+/* A rename's old path, on its own grey line under the new one (task 224). */
+.from { display: block; font-size: 11px; color: var(--app-fg-muted); }
 
 .cdock {
   flex: 1 1 auto; min-height: 0;

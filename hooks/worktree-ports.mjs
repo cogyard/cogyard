@@ -15,6 +15,7 @@ import { join, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { adapter } from '../core/drivers.mjs';
+import { findWorktreeConfig, WORKTREE_CONFIG } from '../core/worktree-config.mjs';
 
 // Config home: $COGYARD_HOME overrides, default ~/.cogyard/ — same resolution
 // rule as core/paths.mjs (keep in sync).
@@ -113,19 +114,9 @@ function withLock(fn) {
   try { return fn(); } finally { releaseLock(); }
 }
 
-function parsePlanet(planetPath) {
-  const env = {};
-  for (const line of readFileSync(planetPath, 'utf8').split('\n')) {
-    const m = line.match(/^([A-Z_]+)=(.*)$/);
-    if (m) env[m[1]] = m[2].trim();
-  }
-  return env;
-}
-
 // Walk up from worktreePath until we find a parent identifier:
-//   1) a .planet file (planet-style multi-clone projects), OR
-//   2) a .claude/worktree-config.json (projects with full env wiring), OR
-//   3) the active driver's worktree layout — allocation is universal, no
+//   1) a worktree config (projects with full env wiring) — .cogyard/worktree.json, OR
+//   2) the active driver's worktree layout — allocation is universal, no
 //      opt-in; the repo root is identity enough. The agent-specific positional
 //      fallback (the path regex) lives in the adapter's worktree.detect
 //      (drivers/<agent>/adapter.mjs), not here.
@@ -137,16 +128,11 @@ export function findParentMarker(worktreePath) {
   let dir = worktreePath;
   while (dir && dir !== '/' && dir !== dirname(dir)) {
     if (dir !== worktreePath) {
-      const planetPath = join(dir, '.planet');
-      if (existsSync(planetPath)) {
-        const env = parsePlanet(planetPath);
-        return { parentDir: dir, parentName: env.PLANET_NAME || basename(dir) };
-      }
-      const cfgPath = join(dir, '.claude', 'worktree-config.json');
-      if (existsSync(cfgPath)) {
+      const found = findWorktreeConfig(dir);
+      if (found) {
         let projectName = basename(dir);
         try {
-          const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'));
+          const cfg = JSON.parse(readFileSync(found.path, 'utf8'));
           if (cfg.project_name) projectName = cfg.project_name;
         } catch { /* fall through with basename */ }
         return { parentDir: dir, parentName: projectName };
@@ -214,7 +200,7 @@ function cmdAllocate(worktreePath) {
     gcInternal(data);
 
     const parent = findParentMarker(worktreePath);
-    if (!parent) fail(`could not find a parent .planet or .claude/worktree-config.json by walking up from ${worktreePath}`);
+    if (!parent) fail(`could not find a parent worktree config (${WORKTREE_CONFIG}) or agent worktree layout by walking up from ${worktreePath}`);
     const parentName = parent.parentName;
 
     const taken = new Set();
@@ -230,6 +216,10 @@ function cmdAllocate(worktreePath) {
     if (frontend === null) fail(`no free frontend port in range ${data.ranges.frontend.join('-')}`);
 
     const worktreeName = basename(worktreePath);
+    // `parent_planet` is the parent PROJECT's name. The key keeps its old spelling
+    // because it is a field of every existing ~/.cogyard/ports.json allocation and
+    // extras/desktop/main.mjs reads it; renaming it would be a ports.json schema
+    // change (task 136 kept it deliberately).
     const entry = {
       parent_planet: parentName,
       worktree_name: worktreeName,

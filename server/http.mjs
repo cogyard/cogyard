@@ -9,11 +9,32 @@
 import { readFileSync, existsSync, statSync, realpathSync } from 'node:fs';
 import { join, extname, normalize, sep, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { tasksDirOf } from '../core/tasks-dir.mjs';
 
 // Built Angular SPA (after `npm run build -w frontend`). Served at root with an
 // SPA fallback, so this one server delivers both the UI and /api in production.
 const DIST = join(fileURLToPath(new URL('.', import.meta.url)), '..', 'frontend', 'dist', 'frontend', 'browser');
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.ico': 'image/x-icon', '.png': 'image/png', '.svg': 'image/svg+xml', '.woff2': 'font/woff2', '.woff': 'font/woff', '.map': 'application/json' };
+
+// The SPA build this server serves NOW, named by its main script
+// (main-<hash>.js — the hash changes with any code change). An open page
+// compares it with the script it is running to know a newer build is out.
+// Re-read only when the build's completion marker (written by the frontend's
+// postbuild) moves, so a build still being written is never reported. null
+// when there is no finished build.
+const BUILD_DONE = join(DIST, '..', '..', '.build-complete');
+let served = { stamp: null, name: null };
+export function servedBuild() {
+  let stamp;
+  try { stamp = statSync(BUILD_DONE).mtimeMs; } catch { return null; }
+  if (stamp !== served.stamp) {
+    let name = null;
+    try { name = readFileSync(join(DIST, 'index.html'), 'utf8').match(/src="(main-[A-Za-z0-9]+\.js)"/)?.[1] ?? null; }
+    catch { /* no index.html — no build to name */ }
+    served = { stamp, name };
+  }
+  return served.name;
+}
 
 export function json(res, code, data) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' });
@@ -64,15 +85,18 @@ export function badKind(k) {
 
 // Origin gate for non-GET endpoints. Everything is same-origin by design
 // (prod http://cogyard via Caddy; dev via ng-serve proxies on arbitrary
-// worktree-allocated localhost ports), so allow http://cogyard and any
-// localhost/127.0.0.1 origin. Returns null when acceptable, an error message
-// otherwise. Browsers always send Origin on POST; a missing header means a
-// non-browser caller on this machine (curl), which is fine for a local tool.
+// worktree-allocated localhost ports), so allow cogyard (http or https — the
+// proxy's `tls internal` setup in docs/DEPLOY.md), localhost, 127.0.0.1, and any
+// name under .localhost (cogyard.localhost: browsers and macOS resolve it to this
+// machine with no proxy or hosts entry, so it is as local as localhost). Returns
+// null when acceptable, an error message otherwise. Browsers always send Origin
+// on POST; a missing header means a non-browser caller on this machine (curl),
+// which is fine for a local tool.
+const LOCAL_ORIGIN = /^https?:\/\/(cogyard|localhost|127\.0\.0\.1|[a-z0-9-]+(\.[a-z0-9-]+)*\.localhost)(:\d+)?$/;
 export function requireSameOrigin(req) {
   const origin = req.headers.origin;
   if (!origin) return null;
-  if (origin === 'http://cogyard') return null;
-  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return null;
+  if (LOCAL_ORIGIN.test(origin)) return null;
   return 'cross-origin request rejected';
 }
 export function readBody(req) {
@@ -98,7 +122,7 @@ export async function parseGuarded(req, res) {
 // caller cwd); `rel` is the project-relative path the action targets. Returns
 // the contained absolute path, or null if `rel` escapes baseDir via traversal,
 // an absolute path, or a symlink that resolves outside. realpathSync collapses
-// symlinks on both sides so e.g. a `_tasks` shared-store symlink that points
+// symlinks on both sides so e.g. a `.cogyard/tasks` shared-store symlink that points
 // outside the project is correctly rejected (the v1 posture).
 export function assertInProject(baseDir, rel) {
   if (!rel || typeof rel !== 'string' || rel.includes('\0')) return null;
@@ -127,15 +151,24 @@ export function assertInProject(baseDir, rel) {
   return resolved;
 }
 
-// The ONE write that legitimately lives outside the project repo: the project's
-// label-axis map (task 096), which moved into the task store at <repo>/_tasks/
-// axes.json. For shared-store projects `_tasks` is a symlink pointing OUTSIDE the
-// repo, so assertInProject deliberately rejects it — this is its store-scoped
-// sibling. The written filename is fixed (`axes.json`, no user input), so the only
-// job here is to confirm the project actually has a resolvable task store and to
-// return the realpath'd target under it. Returns null if there's no store.
-export function assertInStore(projectPath) {
+// The store-scoped sibling of assertInProject, for the paths that legitimately
+// live OUTSIDE the project repo: everything in the task store. For shared-store
+// projects the task link is a symlink pointing outside the repo, so assertInProject
+// deliberately rejects it. Two callers: the label-axis map (task 096, fixed
+// filename) and opening a task file in an editor (task 132, caller-supplied).
+//
+// `name` is a BASENAME, never a path — the store is flat (NNN-slug.md, axes.json),
+// so anything carrying a separator or a `..` segment is rejected outright rather
+// than normalized. That, plus the realpath of the store itself, is the whole
+// containment. Returns null if there's no resolvable store or the name is unsafe.
+//
+// `.` names the store folder itself (task 191 — the Graph tab's store view
+// reveals it in Finder). That is the realpath'd store root, so it stays inside
+// the containment; `..` and anything with a separator are still refused.
+export function assertInStore(projectPath, name = 'axes.json') {
+  if (!name || typeof name !== 'string' || name.includes('\0')) return null;
+  if (name === '..' || /[\\/]/.test(name)) return null;
   let storeReal;
-  try { storeReal = realpathSync(join(projectPath, '_tasks')); } catch { return null; }
-  return join(storeReal, 'axes.json');
+  try { storeReal = realpathSync(tasksDirOf(projectPath)); } catch { return null; }
+  return name === '.' ? storeReal : join(storeReal, name);
 }

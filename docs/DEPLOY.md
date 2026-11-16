@@ -38,11 +38,35 @@ keep it alive."
 - **Linux:** a `systemd` user service (or `pm2`) running `bin/serve` is the
   equivalent.
 
-## Optional: a nice hostname (reverse proxy)
+## Optional: a nice hostname
 
-The self-serve URL is `http://localhost:7437`. If you want a clean hostname like
+### Without a proxy: `cogyard.localhost`
+
+Any name ending in `.localhost` already points at your own machine — macOS and
+most Linux resolvers answer it, and Chrome, Firefox and Edge do so on every OS —
+so there is nothing to install and no hosts file to edit:
+
+```bash
+cogyard serve                # → http://cogyard.localhost:7440
+```
+
+To drop the port too, serve on port 80. macOS lets an ordinary user do that, so
+on a Mac this is the whole setup (on Linux, port 80 needs root; use the proxy
+below instead):
+
+```bash
+cogyard serve --port 80      # → http://cogyard.localhost
+```
+
+Port 80 must be free: if another web server (Caddy, nginx, a Docker container)
+already holds it, use a proxy rule for `cogyard.localhost` there instead.
+
+### With a reverse proxy: `http://cogyard`
+
+The self-serve URL is `http://localhost:7437`. If you want a bare hostname like
 `http://cogyard` (or to terminate TLS — see the next section), put a reverse
-proxy in front. An example Caddy config ships as
+proxy in front, and add `127.0.0.1 cogyard` to `/etc/hosts` (a bare name
+doesn't resolve on its own, unlike `.localhost`). An example Caddy config ships as
 [`Caddyfile.example`](../Caddyfile.example):
 
 ```

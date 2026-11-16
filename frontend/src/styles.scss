@@ -18,7 +18,11 @@
 
   /* Left project rail width. The app-shell grid + the commit diff
      dock (which must stop at the rail's right edge) both read this. */
-  --app-sidebar-w: 210px;
+  /* Wide enough for a project's icon + its full name without truncating
+     (task 114 — the icon slot costs the label ~26px of the old 210px). Measured
+     against the longest registered label WITH its claimed-count badge (a
+     24-character "project/subfolder" name), which still ellipsized at 250px. */
+  --app-sidebar-w: 260px;
 
   /* ---- Spacing scale (task 104) --------------------------------------------
      The ONE ramp for gaps, stack margins, and box padding. Component SCSS picks
@@ -109,14 +113,165 @@
   /* Task status colors (task 096). ONE place to recolor every status: the Tasks
      Status-column badges AND the grouped-by-status section-header dots both read
      these. Edit here — nothing hardcodes a status color anymore. */
-  --app-status-ready:   #22c55e;   /* Ready — grabbable */
-  --app-status-claimed: #4f8cff;   /* Claimed — someone's on it */
-  --app-status-waiting: #eab308;   /* Waiting — parked / blocked on a dep */
-  --app-status-done:    #8a8f98;   /* Done · Enough · Obsolete — closed (neutral) */
+  /* Task 154: SOLID fills, each paired with the text colour that sits on it.
+     Chosen to stay apart under red-green colour blindness — the green is
+     DARKER and the yellow BRIGHT so they separate by lightness when hue is
+     lost, and Done stays LIGHT grey (a mid grey collides with the green for
+     protan and deutan viewers). Closest pair, CIELAB ΔE: 63 normal · 39
+     protan · 43 deutan. Mid-tones by owner choice (the first, darker set read
+     too heavy): white on idle/claimed is 3.0 / 3.3:1 — under the 4.5 guideline
+     for small text, accepted for short bold chip text. Recolour here and
+     nowhere else. */
+  --app-status-ready:      #2faa5c;   /* Idle — open, unclaimed, deps met (key stays `ready`) */
+  --app-status-ready-fg:   #ffffff;
+  --app-status-claimed:    #4a8ef0;   /* Claimed — someone's on it */
+  --app-status-claimed-fg: #ffffff;
+  --app-status-waiting:    #fcd34d;   /* Waiting — parked / blocked on a dep */
+  --app-status-waiting-fg: #422006;
+  --app-status-done:       #e5e7eb;   /* Done · Enough · Obsolete — closed (neutral) */
+  --app-status-done-fg:    #4b5563;
+  /* Task 155: the three closed statuses, told apart ONLY where the status WORD
+     is shown (app-task-chip show="status" — the Tasks Status column and its
+     grouped headings). The #NN chip keeps the single done grey above. One grey
+     family, stepped by fill: DONE darkest, ENOUGH lighter, OBSOLETE no fill and
+     an outline. Contrast 8.3 · 6.9 · 4.8. Greys look the same to every
+     viewer, so ΔE is identical normal / protan / deutan, fill · text: DONE vs
+     ENOUGH 5 · 9, DONE vs OBSOLETE 9 · 21, ENOUGH vs OBSOLETE 4 · 12 — the
+     fill step is small by design; the WORD and OBSOLETE's outline do the work. */
+  --app-status-done-strong-fg:  #374151;   /* DONE word on the done grey */
+  --app-status-enough:          #f3f4f6;
+  --app-status-enough-fg:       #4b5563;
+  --app-status-obsolete-fg:     #6b7280;   /* OBSOLETE: no fill … */
+  --app-status-obsolete-edge:   #d1d5db;   /* … a 1px inset outline instead */
+
+  /* Live agent state (task 202) — the dot on a claimed task's status line
+     (shared/agent-state): what the agent working it is doing right now. NOT
+     task status: a dot, never a chip fill. Follows the Claude Desktop sidebar
+     dot (owner, 2026-10-13) except for running, which the owner wants blue:
+       running   filled BLUE, blinking   (Desktop: grey — owner's change; the
+                                          Claimed blue, the agent is the claim
+                                          at work)
+       waiting   amber                   (Desktop "awaiting")
+       idle, chat archived / deleted  grey ring  (Desktop "idle")
+       error     red — Desktop has an "error" dot but its colour is not
+                 published, so this is cogyard's own (the bad-tone red)
+     Desktop's dots are not in Anthropic's docs. Amber is a pixel read
+     (utori7/ctxtray PR #2, Desktop 2.1.286); the blink is from the dot code
+     quoted in anthropics/claude-code#86768. Desktop's grey follows its theme
+     and no hex is published — this one is read off the owner's light-theme
+     sidebar. Amber vs grey separate by hue AND lightness, so they stay apart
+     for every colour-vision type, and the word always says which. */
+  --app-live-working: var(--app-status-claimed);
+  --app-live-needs:   #fab219;
+  --app-live-ring:    #9a9a9a;
+  --app-live-error:   #dc2626;
+
+  /* Flag tones (task 155) — app-flag, the CONDITION chips (stale, unpushed,
+     removable, on/off …). Pale tints: a flag is secondary to status and must
+     never pass for a solid status fill (every tone vs idle / claimed / waiting
+     is ΔE ≥ 47 normal). The WORD carries the meaning; colour must still separate
+     good from bad when hue is lost, so bad is a DEEPER pink than good's
+     near-white green — they part by lightness. Machado 2009 (severity 1.0),
+     CIELAB ΔE76, fill · text:
+       good vs bad   normal 46 · 77   protan 26 · 20   deutan 25 · 12
+       good vs warn  normal 21 · 59   protan 20 · 17   deutan 21 · 25
+       warn vs bad   normal 41 · 30   protan 27 · 29   deutan 19 · 17
+     (Today's pages had bad #fde8e8 — protan ΔE 8 from good: indistinguishable.)
+     Neutral sits ΔE 7 from the done grey; allowed, the two never share a
+     legend and the word differs. Every text/fill pair ≥ 5.3:1. */
+  --app-tone-good:       #ecfdf5;
+  --app-tone-good-fg:    #166534;
+  --app-tone-warn:       #fef3c7;
+  --app-tone-warn-fg:    #854d0e;
+  --app-tone-bad:        #fca5a5;
+  --app-tone-bad-fg:     #7f1d1d;
+  /* Review — wants a decision, not broken: STALE (worktrees heading, branches,
+     the Overview count) and Cleanup's DIRTY. Its own PINK, not the red, which
+     is kept for real breakage (BROKEN / MISSING storage) and a deleted file's
+     D. Owner's call, 2026-09-28. ΔE fill · text vs bad: normal 24 · 24,
+     protan 24 · 25, deutan 24 · 22; vs good: normal 49 · 85, protan 30 · 38,
+     deutan 20 · 12. Contrast 5.3:1. */
+  --app-tone-review:     #f9a8d4;
+  --app-tone-review-fg:  #831843;
+  /* Caution — construction tape: work that is held but has nowhere to happen
+     (a claimed task whose worktree was removed, task 189). The Plan card's
+     striped border is drawn in the SAME two colours, so flag and border read
+     as one sign. Owner's pick, 2026-10-07. Contrast 8.5:1.
+     THE ONE SOLID TONE: it breaks this block's pale-tint rule on purpose — it
+     is ΔE 18 (normal vision) from the Waiting yellow --app-status-waiting, so
+     the WORD and the black stripes are what keep it apart from a status. */
+  --app-tone-caution:    #f5b301;
+  --app-tone-caution-fg: #1f2328;
+  --app-tone-neutral:    var(--app-surface-2);
+  --app-tone-neutral-fg: var(--app-fg-dim);
+  --app-tone-info:       var(--app-accent-tint2);
+  --app-tone-info-fg:    var(--app-accent-tint-fg);
+
+  /* Git ref chips (task 155) — app-ref-chip, Graph's ref column and the
+     main-branch chip on Worktrees / Branches. Fill · text · edge. Main is the
+     trunk black; a release tag is GOLD ON BLACK and TAG-SHAPED (pointed left):
+     black fill, gold text, a 1.5px gold edge that follows the point.
+     Task 243, owner's pick 2026-11-05: the tag was green (#16a34a), ΔE 7 from
+     the Idle green, and on the Graph the shape alone did not keep the two
+     apart. A purple tried next read too close to the Claimed blue. Releases
+     are rare, so the tag is meant to stand out: it does by BRIGHTNESS, not
+     hue — dark fill, bright gold — so it looks the same to every viewer.
+     Machado 2009 (severity 1.0), CIELAB ΔE76, normal · protan · deutan: fill
+     from the Claimed blue 68 · 68 · 68, from the Idle green 86 · 74 · 65. The
+     fill IS the main-branch black (ΔE 0); the gold text and edge and the
+     point are what tell a release from the main label beside it. The gold is
+     near the Waiting yellow as a colour (edge 27 · 16 · 14, text 13 · 9 · 9),
+     but here it is a line and lettering on black, never a fill. Gold on
+     black 10.6:1. */
+  --app-ref-main:        #111827;
+  --app-ref-main-fg:     #ffffff;
+  --app-ref-main-edge:   #111827;
+  --app-ref-local:       var(--app-accent-tint1);
+  --app-ref-local-fg:    var(--app-accent-tint-fg);
+  --app-ref-local-edge:  var(--app-accent-tint3);
+  --app-ref-remote:      #eef4ff;
+  --app-ref-remote-fg:   #1e40af;
+  --app-ref-remote-edge: #c7dbff;
+  --app-ref-tag:         #111827;
+  --app-ref-tag-fg:      #fbbf24;
+  --app-ref-tag-edge:    #f59e0b;
+  --app-ref-synced:      #f1f5f9;
+  --app-ref-synced-fg:   #334155;
+  --app-ref-synced-edge: #cbd5e1;
+  /* A Plan card square whose box's code is only on the task's branch, not on
+     main yet (task 251) — the Git Graph's first branch-lane colour (COLORS[0]
+     in graph.component.ts), so the card speaks the graph's language. Its
+     on-main squares reuse --app-ref-main. */
+  --app-ref-branch-lane: #60a5fa;
+
+  /* A file's git status letter (task 155) — app-git-status, Files tab AND the
+     commit panel (they disagreed before). Their OWN colours, one hue family
+     each, owner-chosen 2026-09-28: added BLUE, modified YELLOW, deleted RED,
+     renamed / copied / type-changed VIOLET, untracked GREY. (Borrowing the pale
+     flag tones made A near-white and M / R near-identical yellow and orange.)
+     Machado 2009 (severity 1.0) ΔE fill, worst of normal / protan / deutan:
+     A–M 94, A–D 45, A–R 71, A–? 17, M–D 47, M–R ≥ 149, D–R ≥ 87, R–? ≥ 80.
+     The pale blue sits ≥ 43 from the solid Claimed task fill and the violet ≥ 25,
+     so a letter never reads as a task chip. Contrast ≥ 5.7:1 (R is white on
+     violet). */
+  --app-git-a:    #bfdbfe;
+  --app-git-a-fg: #1e3a8a;
+  --app-git-m:    #fde047;
+  --app-git-m-fg: #713f12;
+  --app-git-d:    #f87171;
+  --app-git-d-fg: #450a0a;
+  --app-git-r:    #7c3aed;
+  --app-git-r-fg: #ffffff;
+  --app-git-u:    #e5e7eb;
+  --app-git-u-fg: #374151;
 
   /* Segmented toggles (Flat/Grouped · group-by · Type) — every color surfaced
      here and bound to PrimeNG's tokens below, so nothing is hardcoded. */
-  --app-toggle-track: #f1f5f9;                     /* track + unselected segment bg + dividers */
+  /* SEE-THROUGH (task 224): select buttons sit on the grey page, white cards and
+     off-white bars. A solid grey read differently on each (#f1f5f9 was lighter
+     than the grey page and near-invisible on #fafafa); 8% slate over whatever
+     is behind is always one step darker than its host. */
+  --app-toggle-track: rgba(15, 23, 42, 0.08);      /* track + unselected segment bg */
   --app-toggle-text: #000000;                      /* unselected segment text (--p-togglebutton-color) */
   --app-toggle-selected-bg: #ffffff;               /* the selected segment's chip fill */
   --app-toggle-selected-text: var(--app-accent);   /* selected segment text (accent = obvious, no ring) */
@@ -140,11 +295,17 @@
      the whole app's toggles recolor from one place (styles.scss). The selected
      segment = white chip (content-checked-background) + accent text; the outer
      checked box stays the track color, so there's NO peach ring. */
+  /* Borders transparent: a see-through border over the see-through fill would
+     stack into a darker edge ring. */
   --p-togglebutton-background: var(--app-toggle-track);
-  --p-togglebutton-border-color: var(--app-toggle-track);
+  /* Aura's hover is a solid #f1f5f9 — it equalled the old solid track, so hover
+     changed nothing; over the see-through track it would paint a LIGHTER patch
+     on the grey page. Keep hover = the track, as before. */
+  --p-togglebutton-hover-background: var(--app-toggle-track);
+  --p-togglebutton-border-color: transparent;
   --p-togglebutton-color: var(--app-toggle-text);
   --p-togglebutton-checked-background: var(--app-toggle-track);
-  --p-togglebutton-checked-border-color: var(--app-toggle-track);
+  --p-togglebutton-checked-border-color: transparent;
   --p-togglebutton-content-checked-background: var(--app-toggle-selected-bg);
   --p-togglebutton-checked-color: var(--app-toggle-selected-text);
 
@@ -230,8 +391,24 @@ p-table .p-datatable-thead > tr > th {
                   modifier .mono = monospace id-ish label
 
    Sanctioned one-offs (composite row/panel controls, local by design):
-   button.commit (Branches), button.frow + button.close (commit panel).
+   button.commit (Branches), button.frow + button.close (commit panel),
+   button.row-del (below — remove-this-row in the Settings list editors).
    ============================================================================ */
+
+/* .row-del — the "remove this row" control in a list editor (Settings: Open-in
+   targets, Label axes). Not one of the recipes: it's an icon-only destructive
+   affordance sitting INSIDE a row, quiet until hovered. Defined once here rather
+   than per-card because the two editors sit one above the other on /settings and
+   had drifted into a ✕-in-a-pill and a 🗑 emoji for the identical job. Icon is an
+   inline SVG — a unicode glyph renders as a blob at this size. */
+button.row-del {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 28px; height: 28px; padding: 0;
+  background: none; border: none; border-radius: 6px;
+  color: var(--app-fg-dim); cursor: pointer;
+}
+button.row-del:hover:not(:disabled) { background: var(--app-hover); color: var(--app-fg); }
+button.row-del:disabled { opacity: 0.5; cursor: default; }
 button.btn-pill {
   display: inline-flex; align-items: center; gap: var(--app-space-3); flex: 0 0 auto;
   background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 14px;
@@ -323,6 +500,16 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
 .card-title { margin: 0; font-size: 16px; font-weight: 700; color: var(--app-page-fg-strong); }
 .card-hint { margin: -8px 0 0; font-size: 12px; color: var(--app-fg-dim); }
 .card-hint code { font-size: 11.5px; }
+/* A titled section inside one card (task 217: Location on disk's Code and Tasks). */
+.card-subtitle { font-size: 13px; font-weight: 700; color: var(--app-page-fg-strong); }
+
+/* A card's action row (its Save, plus any secondary action) and its full-width
+   input. GLOBAL for the same reason .settings-card is: both were scoped to
+   settings.component, so the child panels using them (<app-settings-axes>,
+   <app-project-icon>) got NOTHING — which is why the axes card's buttons sat
+   left-aligned while every other card's Save sat right. */
+.set-actions { display: flex; justify-content: flex-end; gap: var(--app-space-3); margin-top: var(--app-space-2); }
+.set-input { width: 100%; box-sizing: border-box; }
 
 /* ----------------------------------------------------------------------------
    Text + form-field recipes (task 099). Shared so component SCSS stays
@@ -366,6 +553,30 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
 .field { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .field > input, .field > .p-select, .field > .p-inputtext, .field > .p-selectbutton { width: 100%; box-sizing: border-box; }
 
+/* Read-only value chip — a value in a tinted box, beside its label. Global for
+   the same reason .command-row below is: the global Settings page's Machine card
+   and the per-project settings tab (task 135) both render it, and a scoped copy
+   in each is how two surfaces that must look identical begin to drift. */
+.ro-value {
+  font-size: 12.5px; padding: 4px 8px; border-radius: 6px;
+  background: var(--app-surface-2); color: var(--app-page-fg-strong);
+}
+/* The same value without its box, for label-beside-value rows (task 217): a
+   boxed value starts its text 8px right of a plain one, so in a column of
+   facts the values stop lining up and the boxed rows stand taller. */
+.ro-value.plain { padding: 0; border-radius: 0; background: none; }
+
+/* A command the user runs themselves, with a Copy button beside it. Used by the
+   add-on dialog's manual-tier actions and by the Machine card's credential
+   (task 127). ONE definition: it started as a copy in the second card, which is
+   how two surfaces that must look identical begin to drift. */
+.command-row { display: flex; align-items: center; gap: var(--app-space-4); }
+.command {
+  flex: 1; font-size: 12.5px; padding: 8px 10px; border-radius: 6px;
+  background: var(--app-surface-2); color: var(--app-page-fg-strong);
+  overflow-x: auto; white-space: nowrap;
+}
+
 /* ----------------------------------------------------------------------------
    Widget + mono recipes (task 100). The portal-wide convergence pass: the
    activity/stats widgets all headline at 13/600, and inline id/hash/count
@@ -378,22 +589,125 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
 .mono { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 
 /* ----------------------------------------------------------------------------
-   .badge (task 100) — the small status/label pill, ONE definition. Before this
+   .badge (task 100) — the small status/label CHIP, ONE definition. Before this
    there were 11 of them across the portal at 10/10.5px and weight 500/600/700.
-   The pill's SHAPE lives here; its COLOR is semantic and stays in the component
-   (status green, stale red, axis tint, …). Also matches `.p-tag.badge` so a
-   PrimeNG p-tag wearing styleClass="badge" outranks the Aura tag defaults
-   without needing ::ng-deep in every component.
-     .badge        base pill
+   The chip's SHAPE lives here: SQUARE, 3px corners (task 155) — buttons are
+   rounded pills, so a square chip never reads as a control. COLOUR comes from
+   the shared chip component's --app-* theme values. No page sets a chip's
+   corners, padding, font or colour: a chip is always one of the six shared
+   components (docs/UI-CONVENTIONS.md, "Chips"), and there is no ad-hoc chip.
+   No PrimeNG <p-tag> either (task 155) — every chip is plain markup.
+     .badge        base chip
      .badge.caps   uppercase variant (status words: STALE, LOCKED, ORIGIN)
      .badge.mono   monospace variant (ref chips, ids, counts)
    -------------------------------------------------------------------------- */
-.badge, .p-tag.badge {
+.badge {
   display: inline-block; font-size: 10.5px; font-weight: 600; line-height: 1.5;
-  padding: 1px 7px; border-radius: 10px; white-space: nowrap; border: none;
+  padding: 1px 7px; border-radius: 3px; white-space: nowrap; border: none;
 }
-.badge.caps, .p-tag.badge.caps { text-transform: uppercase; letter-spacing: 0.04em; }
-.badge.mono, .p-tag.badge.mono { font-family: ui-monospace, monospace; }
+.badge.caps { text-transform: uppercase; letter-spacing: 0.04em; }
+.badge.mono { font-family: ui-monospace, monospace; }
+
+/* .lnk (task 104, shared in task 126) — a labelled "this thing also lives over
+   there" link: small icon + WORD, in a table's Links column. The label carries
+   the meaning; the icon is recognition, not the affordance, because a bare
+   glyph does not read as a control. Worn by the Worktrees and Branches tabs, so
+   it lives here rather than in either one's scoped stylesheet. */
+button.btn-link.lnk { font-size: 11.5px; }
+.lnk-ico { width: 11px; height: 11px; vertical-align: -1px; margin-right: 3px; }
+
+/* .repo-pill (task 191) — "where this repo lives": LABEL → value in a white
+   pill. ONE look for the origin link (app-origin-link: ORIGIN → owner/repo, or
+   ORIGIN → none) and the Graph action bar's folder link (FOLDER → ~/path), so
+   the bar reads as a row of the same kind of thing. Was the origin link's own
+   scoped style until the folder link needed to match it. .none = a pill that
+   states an absence and is not a control. */
+.repo-pill {
+  display: inline-flex; align-items: center; gap: var(--app-space-3);
+  padding: 6px 12px; border: 1px solid var(--app-border); border-radius: 8px;
+  background: var(--app-surface); color: var(--app-page-fg-strong);
+  font: inherit; font-size: 13px; font-weight: 600; text-decoration: none;
+  cursor: pointer; transition: border-color .12s;
+}
+a.repo-pill:hover, button.repo-pill:hover { border-color: var(--app-accent); }
+.repo-pill.none { cursor: default; }
+.repo-pill .txt { font-family: ui-monospace, 'SF Mono', monospace; }
+.repo-pill.none .txt { color: var(--app-fg-muted); font-weight: 500; }
+.repo-pill .ext { color: var(--app-fg-dim); font-weight: 400; }
+.repo-pill .ico { width: 16px; height: 16px; flex: none; background-color: currentColor; }
+
+/* ----------------------------------------------------------------------------
+   .tchip (task 126, renamed from .tref in task 155) — the TASK chip, worn by
+   app-task-chip everywhere a #NN or a task's status word appears (Tasks,
+   Cleanup, Graph, Worktrees, Branches, the Stats calendar). Global rather than
+   scoped to that component because Cleanup's colour key renders the same
+   swatches to explain them: one definition, so the key cannot drift from the
+   rows it decodes.
+
+   Shape comes from .badge above. What's here is what a task chip owns:
+
+     data-bucket  show="id": the task's server-computed bucket (ready · claimed ·
+                  waiting · done), bound by the component. It picks a SOLID fill
+                  and the text colour paired with it, both --app-status-* theme
+                  tokens. ABSENT when the id resolves to no task, and the
+                  fallback is neutral — an unknown task must never borrow a
+                  status colour it may not have.
+     data-state   show="status": the same three active colours, plus the three
+                  closed statuses as three greys of one family (DONE filled
+                  darker, ENOUGH lighter, OBSOLETE no fill + an outline). Only
+                  the WORD splits the closed bucket; the #NN keeps one grey.
+     .tchip-primary  a RING, never a colour: the ring is the ACTION (worked on
+                  vs looked up) and the fill is the STATUS. They have to stay
+                  independent axes or a worked-on Idle task and a looked-up Done
+                  one become the same chip. The action chip (.act-chip.worked)
+                  wears the SAME rule, so the ring means one thing wherever it
+                  appears. A white line just INSIDE the edge
+                  (shows on the green/blue fills) plus a 1px dark line just
+                  OUTSIDE it (shows on the light grey/yellow ones), and bold.
+                  Deliberately thin: a 2px white gap + 1.5px outer ring was tried
+                  in task 154 and read as too aggressive, and the old inset line
+                  in the text colour vanished on the dark fills.
+   -------------------------------------------------------------------------- */
+.tchip {
+  /* Unresolved: no fill, a hairline outline — must not pass for Done's grey. */
+  --tint: transparent;
+  --tint-fg: var(--app-fg-dim);
+  --edge: var(--app-border);
+  background: var(--tint);
+  color: var(--tint-fg);
+  box-shadow: inset 0 0 0 1px var(--edge);
+  cursor: pointer;
+  vertical-align: baseline;
+}
+.tchip:is([data-bucket], [data-state]) { box-shadow: none; }
+.tchip:is([data-bucket='ready'],   [data-state='ready'])   { --tint: var(--app-status-ready);   --tint-fg: var(--app-status-ready-fg); }
+.tchip:is([data-bucket='claimed'], [data-state='claimed']) { --tint: var(--app-status-claimed); --tint-fg: var(--app-status-claimed-fg); }
+.tchip:is([data-bucket='waiting'], [data-state='waiting']) { --tint: var(--app-status-waiting); --tint-fg: var(--app-status-waiting-fg); }
+.tchip[data-bucket='done']   { --tint: var(--app-status-done);   --tint-fg: var(--app-status-done-fg); }
+.tchip[data-state='done']    { --tint: var(--app-status-done);   --tint-fg: var(--app-status-done-strong-fg); }
+.tchip[data-state='enough']  { --tint: var(--app-status-enough); --tint-fg: var(--app-status-enough-fg); }
+.tchip[data-state='obsolete'] {
+  --tint: transparent; --tint-fg: var(--app-status-obsolete-fg);
+  box-shadow: inset 0 0 0 1px var(--app-status-obsolete-edge);
+}
+button.tchip:hover { background: var(--app-border); }
+button.tchip[data-bucket]:hover { background: color-mix(in srgb, var(--tint) 82%, #000); }
+.tchip.tchip-primary, .act-chip.worked { box-shadow: inset 0 0 0 1.5px var(--app-surface), 0 0 0 1px var(--app-fg); font-weight: 700; }
+/* The #NN face is a button. A .tchip on a SPAN is the status word, or
+   Cleanup's colour key — a label, not a control. */
+span.tchip { cursor: default; }
+/* .task-ico — a task id leads with the Tasks tab's icon, never a "#": on the
+   chip's id face, the Cleanup key, the Tasks ID column and Plan cards. A mask,
+   so the icon is drawn in the surrounding text colour (white on the green / blue
+   chip fills, dark on the yellow / grey ones, the text colour in plain text).
+   Root-relative so the url resolves the same from every route; the file ships
+   in public/assets. */
+.task-ico {
+  display: inline-block; width: 11px; height: 11px; margin-right: 2px; vertical-align: -2px;
+  background-color: currentColor;
+  mask: url('/assets/tasks.svg') center / contain no-repeat;
+  -webkit-mask: url('/assets/tasks.svg') center / contain no-repeat;
+}
 
 /* Topbar data-freshness pie: the Web Animations API (in the
    freshness-pie component) interpolates --pie-p, which only animates if
@@ -403,28 +717,27 @@ button.sidebar-item:disabled { opacity: 0.5; cursor: default; }
 /* Tooltips: cap width + wrap at word boundaries. Without this, a long single-line
    tooltip (e.g. the claim holder "name · since <date> · session <id>") pinned
    against a viewport edge collapses to a ~1-char-wide vertical column, breaking
-   mid-word. Belt-and-suspenders with tooltipPosition on edge-column triggers. */
+   mid-word. Belt-and-suspenders with tooltipPosition on edge-column triggers.
+   break-word, not anywhere (task 224): `anywhere` also lets the box SIZE itself
+   as if it could break between any two letters, so a tooltip squeezed against
+   an edge shrank to one letter wide; break-word only splits a word too long for
+   the line and never narrows the box below its longest word. */
 .p-tooltip .p-tooltip-text {
   max-width: min(90vw, 26rem);
   white-space: normal;
   word-break: normal;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
-/* chat role chips + flags (task 30) — shared by the Tasks-tab CHATS box rows
-   and the transcript modal header, so they live here (one source of truth). */
-.chat-role {
-  flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-  padding: 1px 6px; border-radius: 3px; border: 1px solid var(--role, var(--app-status-done));
-  background: color-mix(in srgb, var(--role, var(--app-status-done)) 15%, transparent);
-  color: color-mix(in srgb, var(--role, var(--app-status-done)) 65%, var(--app-fg));
-}
-.chat-role.role-created   { --role: var(--app-accent); }
-.chat-role.role-claimed   { --role: var(--app-status-claimed); }
-.chat-role.role-committed { --role: var(--app-status-ready); }
-.chat-role.role-mentioned { --role: var(--app-status-done); }
+/* .act-chip (task 155) — app-action-chip, "how a chat touched a task", in the
+   Tasks-tab CHATS box rows and the transcript modal header. NO hue: the four
+   status colours mean task status only. Neutral grey; .worked adds the #NN
+   chip's worked-on ring (the rule shared with .tchip-primary above), plain =
+   looked up. */
+.act-chip { background: var(--app-tone-neutral); color: var(--app-tone-neutral-fg); }
+/* "inferred" / "archived" beside a chat (task 30): small grey NOTES, not chips —
+   no status colour (archived used to borrow the Waiting yellow). */
 .chat-flag {
   flex-shrink: 0; font-size: 10px; font-style: italic; color: var(--app-fg-muted);
   padding: 0 5px; border-radius: 3px; background: var(--app-surface-2);
 }
-.chat-flag.arch { color: var(--app-status-waiting); }

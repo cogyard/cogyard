@@ -32,7 +32,7 @@ export async function gitBranches(repo) {
   // checked out (the hasWorktree flag, which can change without a ref moving).
   // Both go in the signal, so a poll with no ref/worktree change reuses the
   // cached result instead of re-running a `rev-list --count` per branch.
-  return core.memoize('branches', repo,
+  const inventory = await core.memoize('branches', repo,
     async () => {
       const [refs, wts] = await Promise.all([
         core.gitP(['rev-parse', '--branches', '--remotes'], repo),
@@ -41,6 +41,19 @@ export async function gitBranches(repo) {
       return refs == null ? null : (refs || '') + '\x1e' + (wts || '');
     },
     () => computeBranches(repo));
+  // Branch → task association is a domain fact: computed here (via the core
+  // matcher) and served as `taskId`, so the SPA consumes it instead of
+  // re-deriving the tag/prefix/slug rules client-side. It is applied on EVERY
+  // request, outside the cache (task 181): the matcher's slug / recorded-branch
+  // rule reads the task files, which are not in the signal above, so a cached
+  // link stayed stale until some ref moved — e.g. a claim's recorded branch did
+  // not show until the first commit. Task files only, no git; the cached value
+  // is copied, never mutated.
+  const tasks = core.loadTasks(core.tasksDirOf(repo));
+  return {
+    ...inventory,
+    branches: inventory.branches.map((b) => ({ ...b, taskId: core.matchBranchTask(b.name, b.subject, inventory.main, tasks) })),
+  };
 }
 
 async function computeBranches(repo) {
@@ -64,10 +77,6 @@ async function computeBranches(repo) {
     if (m && curWtPath) wtBranches.set(m[1], basename(curWtPath));
   }
   const nowS = Date.now() / 1000;
-  // Branch → task association is a domain fact: compute it here (via the core
-  // matcher) and serve `taskId`, so the SPA consumes it instead of re-deriving
-  // the tag/prefix/slug rules client-side.
-  const tasks = core.loadTasks(join(repo, '_tasks'));
 
   const rows = (refsRaw || '').split('\n').filter(Boolean).map((line) => {
     const [name, hash, iso, unix, rel, author, subject, upstream, track, head] = line.split(SEP);
@@ -92,7 +101,7 @@ async function computeBranches(repo) {
       hasWorktree: wtBranches.has(r.name), worktreeName: wtBranches.get(r.name) || null,
       isHead: r.head === '*', upstream: r.upstream || null,
       onOrigin: isRemote ? true : remoteNames.has(r.name),
-      taskId: core.matchBranchTask(r.name, r.subject, mainName, tasks),
+      // taskId is added per request by gitBranches — not cached (task 181).
     };
   }));
   return { main: mainName, originUrl, branches };
@@ -107,18 +116,10 @@ export async function gitStatus(repo) {
   let out = '';
   try { out = execFileSync('git', ['status', '--porcelain=v1', '-z'], { cwd: repo, maxBuffer: 1 << 24 }).toString(); } catch { out = ''; }
   const staged = [], unstaged = [], untracked = [];
-  if (out) {
-    const toks = out.split('\0');
-    for (let i = 0; i < toks.length; i++) {
-      const e = toks[i];
-      if (!e) continue;
-      if (e.startsWith('??')) { untracked.push({ path: e.slice(3) }); continue; }
-      const X = e[0], Y = e[1], p = e.slice(3);
-      let oldPath;
-      if (X === 'R' || X === 'C') { oldPath = toks[i + 1]; i++; } // rename/copy: old path follows
-      if (X !== ' ' && X !== '?') staged.push({ path: p, status: X, oldPath });
-      if (Y !== ' ' && Y !== '?') unstaged.push({ path: p, status: Y });
-    }
+  for (const e of core.parsePorcelainZ(out)) {
+    if (e.untracked) { untracked.push({ path: e.path }); continue; }
+    if (e.x !== ' ') staged.push({ path: e.path, status: e.x, oldPath: e.oldPath });
+    if (e.y !== ' ') unstaged.push({ path: e.path, status: e.y });
   }
   return { branch, staged, unstaged, untracked, clean: !staged.length && !unstaged.length && !untracked.length };
 }
@@ -126,7 +127,7 @@ export async function gitStatus(repo) {
 // Per-file working-tree diff. Staged = `git diff --cached`, unstaged = `git diff`.
 // Untracked has no git diff (gitP swallows --no-index's exit 1), so synthesize an
 // all-added patch from the file content (flag binary).
-export async function workDiff(repo, p, kind, ignoreWs) {
+export async function workDiff(repo, p, kind, ignoreWs, from = null) {
   if (kind === 'untracked') {
     const fp = join(repo, p);
     if (!existsSync(fp)) return '';
@@ -136,10 +137,11 @@ export async function workDiff(repo, p, kind, ignoreWs) {
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
     return `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n');
   }
-  const args = ['diff', '--no-color'];
+  const args = ['diff', '--no-color', '-M'];
   if (kind === 'staged') args.push('--cached');
   if (ignoreWs) args.push('-w');
-  args.push('--', p);
+  // A staged rename: both paths in the pathspec so git pairs them (task 224).
+  args.push('--', ...(from ? [from] : []), p);
   return (await core.gitP(args, repo)) || '';
 }
 
@@ -182,19 +184,18 @@ export async function stashFileDiff(repo, h, f, w) {
 export async function commitDetail(repo, h) {
   const stash = await isStashCommit(repo, h);
   const meta = await core.gitP(['show', '-s', '--date=format:%Y-%m-%d %H:%M', '--format=%H' + SEP + '%an' + SEP + '%ad' + SEP + '%s' + SEP + '%b', h], repo);
-  let filesRaw;
+  // -z so a rename splits into its old and new path (core.parseNameStatusZ):
+  // each file is { status: one letter, path: where it is now, oldPath? }.
+  let files;
   if (stash) {
     // tracked stashed changes (base → stash) + untracked files from the ^3 tree
-    const tracked = await core.gitP(['diff', '--name-status', '--no-color', h + '^1', h], repo);
+    const tracked = await core.gitP(['diff', '--name-status', '-z', '--no-color', h + '^1', h], repo);
     const uref = await stashUntrackedRef(repo, h);
-    const untracked = uref ? await core.gitP(['show', '--name-status', '--format=', '--no-color', uref], repo) : null;
-    filesRaw = [tracked, untracked].filter(Boolean).join('\n');
+    const untracked = uref ? await core.gitP(['show', '--name-status', '-z', '--format=', '--no-color', uref], repo) : null;
+    files = [...core.parseNameStatusZ(tracked), ...core.parseNameStatusZ(untracked)];
   } else {
-    filesRaw = await core.gitP(['show', '--name-status', '--format=', '--no-color', h], repo);
+    files = core.parseNameStatusZ(await core.gitP(['show', '--name-status', '-z', '--format=', '--no-color', h], repo));
   }
   const [hash, author, date, subject, body] = (meta || '').split(SEP);
-  const files = (filesRaw || '').split('\n').filter(Boolean)
-    .map((l) => { const m = l.match(/^([A-Z]\d*)\t(.+)$/); return m ? { status: m[1], path: m[2] } : null; })
-    .filter(Boolean);
   return { hash, author, date, subject, body: body || '', files };
 }

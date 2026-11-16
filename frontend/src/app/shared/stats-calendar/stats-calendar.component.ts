@@ -1,5 +1,6 @@
 import { Component, input, output, computed, signal } from '@angular/core';
 import { WeekStart, ActivityDayCell } from '../../services/models';
+import { TaskChipComponent } from '../task-chip/task-chip.component';
 
 // Month-grid calendar for the Stats tab — a real month view rendered
 // ALONGSIDE the commits heatmap (not replacing it). Each day cell mixes three
@@ -25,11 +26,13 @@ function dayKey(y: number, m: number, d: number): string {
 
 @Component({
   selector: 'app-stats-calendar',
-  imports: [],
+  imports: [TaskChipComponent],
   templateUrl: './stats-calendar.component.html',
   styleUrl: './stats-calendar.component.scss',
 })
 export class StatsCalendarComponent {
+  /** The project these days belong to — the #NN chips resolve against it. */
+  slug = input.required<string>();
   cost = input<Record<string, ActivityDayCell>>({});
   commits = input<Record<string, number>>({});
   merges = input<Record<string, string[]>>({});

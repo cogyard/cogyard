@@ -1,0 +1,64 @@
+// Layout + semantic colour only (docs/UI-CONVENTIONS.md): type sizes come from
+// the shared text recipes, chips from app-task-chip / app-flag.
+
+// The host is the grid item in the Plan's .cards grid; the card fills it, so a
+// row of cards keeps one height.
+:host { display: flex; min-width: 0; }
+
+.pcard {
+  position: relative; flex: 1; display: flex; flex-direction: column; gap: var(--app-space-2); min-width: 0;
+  padding: var(--app-space-3) var(--app-space-3) var(--app-space-4);
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px;
+  cursor: pointer; transition: opacity 0.15s, box-shadow 0.15s;
+  &:hover { box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12); }
+  &.dim { opacity: 0.18; }
+  // Claimed, worktree missing (task 189): construction tape round the card, in the
+  // caution flag's own two colours.
+  &.missing {
+    border: 4px solid transparent;
+    background:
+      linear-gradient(var(--app-surface), var(--app-surface)) padding-box,
+      repeating-linear-gradient(-45deg, var(--app-tone-caution) 0 10px, var(--app-tone-caution-fg) 10px 20px) border-box;
+  }
+}
+// Top line (task 227): type icon, task chip (+ "worktree missing", task 189),
+// then the category tags — wrapping onto more rows when there are many.
+.pc-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); }
+// The Tasks tab's type glyph size (tasks.component.scss .type-icon).
+.type-icon { font-size: 15px; line-height: 1; cursor: default; }
+.pc-title {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  line-height: 1.3; min-height: 2.6em;
+}
+.pc-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2); }
+// The owner-step flag sits on its own line just above the squares (task 227):
+// it takes the push to the bottom, and the squares follow right under it.
+.pc-flag { display: flex; margin-top: auto; padding-top: var(--app-space-2); min-width: 0; }
+.pc-flag + .pc-boxes { margin-top: 0; }
+// One square per checkbox, in file order; a big task wraps to more rows. A
+// ticked square: black = on main, light blue = only on the branch, grey = no
+// code state (task 251). No "all ticked → green" any more: it hid where a
+// finished task's code is, and full squares already say every box is done
+// (owner, 2026-11-15).
+// The squares are INLINE so the code text after them sits on their last row
+// (it wraps to a row of its own only when that row is full) while the squares
+// and the text each keep their own tooltip. font-size 0 on the row (it holds
+// no text of its own) so the squares and the text are both centred on the SAME
+// baseline: `vertical-align: middle` measures from the parent's baseline plus
+// half ITS x-height, and the text's parent had the card's 14px font while the
+// squares' had none — the text sat 3.7px high. The text's own size is `mono`'s.
+.pc-boxes {
+  margin-top: auto; padding-top: var(--app-space-2); line-height: 10px; font-size: 0; cursor: help;
+  i { display: inline-block; vertical-align: middle; width: 8px; height: 8px; margin-right: 2px; border-radius: 2px; background: var(--app-border); }
+  i.on { background: var(--app-fg-muted); opacity: 0.6; }
+  i.on.main { background: var(--app-ref-main); opacity: 1; }
+  i.on.branch { background: var(--app-ref-branch-lane); opacity: 1; }
+}
+// `on main` / `↑a ↓b` (task 251), the `mono` count recipe, after the last square.
+.code {
+  display: inline-flex; gap: var(--app-space-1); vertical-align: middle; margin-left: var(--app-space-1);
+  line-height: 1; white-space: nowrap;
+  .on-main { color: var(--app-tone-good-fg); }
+  .up { color: var(--app-tone-warn-fg); }
+  .down { color: var(--app-fg-muted); }
+}

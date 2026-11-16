@@ -66,6 +66,9 @@ test('buckets by strongest signal: claimed > committed > mentioned, with dedup',
 
   // claimed ranks before committed in the implemented list.
   assert.equal(r.implemented[0].role, 'claimed');
+  // every entry carries a title field (task 165) — null when the agent app has
+  // no record of the chat, never the first-prompt label copied over.
+  for (const c of r.implemented) assert.equal(c.title, null);
 });
 
 test('recency orders sessions within a rank (most-recent lastActiveAt first)', () => {

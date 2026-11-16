@@ -1,10 +1,11 @@
 // routes/files.mjs — Files-tab endpoints: worktree pills (last activity), file
-// tree with status-vs-main, file content (text JSON / raw images), diff vs main,
+// tree with status vs main AND vs the last commit, file content (text JSON /
+// raw images), diff vs main or the last commit,
 // and the one write: POST /api/file (the edit → save), gated by the
 // http.mjs seam (origin + containment) with a baseHash concurrency check.
 
-import { json, errJson, badRelPath, parseGuarded } from '../http.mjs';
-import { findWorktree, worktreeActivity, fileTree, readWorkFile, writeWorkFile, vsMainDiff } from '../files.mjs';
+import { json, errJson, badRelPath, badHash, parseGuarded } from '../http.mjs';
+import { findWorktree, worktreeActivity, fileTree, readWorkFile, writeWorkFile, wtDiff } from '../files.mjs';
 
 // Worktree pill param: a directory basename, never a path. '' = main checkout.
 function badWtName(w) {
@@ -23,7 +24,10 @@ export async function handle(path, u, proj, res) {
 
   if (path === '/api/tree') {
     const ignored = u.searchParams.get('ig') === '1';
-    return json(res, 200, { worktree: wt.name, ...(await fileTree(wt.path, { ignored })) });
+    // commit = the commit the second comparison is against (default: the last one)
+    const commit = u.searchParams.get('commit') || null;
+    if (commit && badHash(commit)) return errJson(res, 400, badHash(commit));
+    return json(res, 200, { worktree: wt.name, ...(await fileTree(wt.path, { ignored, commit })) });
   }
 
   const f = u.searchParams.get('path') || '';
@@ -40,8 +44,14 @@ export async function handle(path, u, proj, res) {
     }
     return json(res, 200, r.meta);
   }
+  // base=head → against the last commit instead of main (task 224);
+  // from = a renamed file's old path.
   if (path === '/api/wtdiff') {
-    const patch = await vsMainDiff(wt.path, f, u.searchParams.get('w') === '1');
+    const base = u.searchParams.get('base') || 'main';
+    if (base !== 'main' && base !== 'head' && badHash(base)) return errJson(res, 400, 'bad base');
+    const from = u.searchParams.get('from') || '';
+    if (from && badRelPath(from)) return errJson(res, 400, badRelPath(from));
+    const patch = await wtDiff(wt.path, f, { ignoreWs: u.searchParams.get('w') === '1', base, from: from || null });
     return json(res, 200, { patch });
   }
   return false;

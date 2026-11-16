@@ -1,10 +1,9 @@
-// Task bucketing for the Tasks list and the Board view. The categorization
+// Task bucketing for the Tasks list and the task chips. The categorization
 // itself ("which group does this task fall into") is a domain fact computed once
 // server-side (core/status.mjs bucketOf) and served as `task.bucket` on
-// /api/tasks — the SPA does NOT re-derive it. This file is pure
-// presentation: it maps each canonical bucket key to a display title and a
-// column order, so the list and board can't diverge from each other or from the
-// server's grouping.
+// /api/tasks — the SPA does NOT re-derive it. This file is pure presentation:
+// each canonical bucket key's display word, and the status word a chip shows.
+// (buildBuckets, the column grouping, went with the Board tab — task 179.)
 //
 // Four buckets, four questions (task 091): Ready (can I grab it), Claimed
 // (who's on it — the Who column), Waiting (why not — the derived `waitingWhy`
@@ -14,8 +13,10 @@
 // Canonical bucket keys, in display order. Mirrors core/status.mjs BUCKET_KEYS.
 const BUCKET_KEY_ORDER = ['ready', 'claimed', 'waiting', 'done'];
 
-const BUCKET_TITLES: Record<string, string> = {
-  ready: 'Ready',
+// The DISPLAYED word. The `ready` key stays (it is the wire value); the word
+// shown for it is "Idle" (task 154) — "Ready" read as "ready to clean up".
+export const BUCKET_TITLES: Record<string, string> = {
+  ready: 'Idle',
   claimed: 'Claimed',
   waiting: 'Waiting',
   done: 'Done',
@@ -29,13 +30,6 @@ const LEGACY_KEY_FOLD: Record<string, string> = {
   blocked: 'waiting', parked: 'waiting', unknown: 'waiting',
   enough: 'done', obsolete: 'done',
 };
-
-// Done sub-groups, in display order — the sub-group header IS the status.
-const DONE_SUBGROUPS: { status: string; title: string }[] = [
-  { status: 'ENOUGH', title: 'Enough' },
-  { status: 'DONE', title: 'Done' },
-  { status: 'OBSOLETE', title: 'Obsolete' },
-];
 
 // Bucket filter (replaces the old status filter — status only meaningfully
 // split Done's sub-groups once the buckets became the grouping).
@@ -51,37 +45,23 @@ export const TYPE_ICONS: Record<string, string> = {
   feature: '⭐', maintenance: '🔧', bug: '🐞', docs: '📖',
 };
 
-export interface BucketSub { title: string; list: any[]; }
-export interface Bucket {
-  key: string;                 // canonical bucket key — drives per-bucket columns
-  title: string;
-  list: any[];                 // every task in the bucket (done: all sub-groups, in sub-group order)
-  subs: BucketSub[] | null;    // done only: non-empty ENOUGH · DONE · OBSOLETE groups
-  separatorAbove: boolean;     // done only: the visual line dividing closed lifecycle from active
-}
-
-const byId = (a: any, c: any) =>
-  String(a.id ?? '').localeCompare(String(c.id ?? ''), undefined, { numeric: true });
-
 export function bucketKeyOf(t: any): string {
   const b = t.bucket || 'waiting';
   return LEGACY_KEY_FOLD[b] || b;
 }
 
-// Group tasks by their server-computed `bucket` key, in BUCKET_KEY_ORDER, each
-// list sorted by id (numeric). The done bucket carries its status sub-groups.
-export function buildBuckets(tasks: any[]): Bucket[] {
-  const map = new Map<string, any[]>();
-  for (const t of tasks) { const b = bucketKeyOf(t); if (!map.has(b)) map.set(b, []); map.get(b)!.push(t); }
-  return BUCKET_KEY_ORDER.filter((b) => map.has(b)).map((b) => {
-    const list = map.get(b)!.sort(byId);
-    if (b !== 'done') return { key: b, title: BUCKET_TITLES[b], list, subs: null, separatorAbove: false };
-    const subs = DONE_SUBGROUPS
-      .map((g) => ({ title: g.title, list: list.filter((t) => t.status === g.status) }))
-      .filter((g) => g.list.length);
-    // Closed rows whose status matches no sub-group (shouldn't happen) still render.
-    const leftovers = list.filter((t) => !DONE_SUBGROUPS.some((g) => g.status === t.status));
-    if (leftovers.length) subs.push({ title: 'Closed', list: leftovers });
-    return { key: b, title: BUCKET_TITLES[b], list: subs.flatMap((s) => s.list), subs, separatorAbove: true };
-  });
+// The SIX-way state a status WORD shows (task 155): the four buckets, with the
+// closed bucket split back into the status that closed it. The #NN chip shows
+// only the four buckets (one done grey); the word — app-task-chip show="status"
+// on the Tasks tab — tells DONE, ENOUGH and OBSOLETE apart.
+export type TaskState = 'ready' | 'claimed' | 'waiting' | 'done' | 'enough' | 'obsolete';
+export function taskStateOf(t: any): TaskState {
+  const b = bucketKeyOf(t);
+  if (b !== 'done') return b as TaskState;
+  const s = String(t.status || '').toLowerCase();
+  return s === 'enough' || s === 'obsolete' ? s : 'done';
+}
+// The displayed word for a state (shown uppercase). `ready` shows as Idle.
+export function taskStateWord(s: TaskState): string {
+  return BUCKET_TITLES[s] ?? s.charAt(0).toUpperCase() + s.slice(1);
 }

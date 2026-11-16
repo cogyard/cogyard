@@ -1,10 +1,10 @@
 // core/registry.mjs — the project registry (projects.json): read/write,
-// register/unregister, and discovery (with multi-clone "planet" collapse and
-// broken-symlink surfacing).
+// register/unregister, and discovery (with broken-symlink surfacing).
 
-import { readFileSync, writeFileSync, existsSync, realpathSync, lstatSync, readlinkSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, lstatSync, readlinkSync, mkdirSync } from 'node:fs';
 import { join, dirname, relative, basename } from 'node:path';
 import { HOME, PROJECTS_ROOT, REGISTRY_PATH } from './paths.mjs';
+import { tasksDirOf, oldTasksDir, oldTasksDirProblem } from './tasks-dir.mjs';
 
 function readRegistry() {
   if (!existsSync(REGISTRY_PATH)) return [];
@@ -61,54 +61,61 @@ function unregisterProject(slugOrPath) {
   return projects.length - filtered.length;
 }
 function discoverProjects() {
-  // Read the registry, filter to entries whose `_tasks/` exists, then collapse
-  // multi-clone projects (e.g. clones a/b/c) that share the same canonical
-  // _tasks dir into a single dashboard entry. The collapsed entry's label is the
-  // parent dir of the canonical _tasks (e.g. the clones' parent dir), and its `path`
-  // points at any one of the clones (the first registered) so loadProject still
-  // works.
+  // Read the registry and keep entries whose task directory exists (core/tasks-dir.mjs) — one portal
+  // project per registry entry. (Several checkouts sharing one store used to be
+  // collapsed into one entry with `clones: [...]`; that served the multi-clone
+  // "planet" layout, retired by task 136. Two entries sharing a store now show as
+  // two projects, and the storage report flags the sharing.)
   const live = [];
   const broken = [];
   for (const p of readRegistry()) {
-    const td = join(p.path, '_tasks');
+    const td = tasksDirOf(p.path);
     if (existsSync(td)) { live.push(p); continue; }
-    // A BROKEN _tasks symlink is a project with a problem, not a non-project:
+    // A BROKEN .cogyard/tasks link is a project with a problem, not a non-project:
     // surface it as an error row instead of silently dropping it.
     let l = null;
     try { l = lstatSync(td); } catch {}
     if (l && l.isSymbolicLink()) {
       let target = '';
       try { target = readlinkSync(td); } catch {}
-      broken.push({ slug: p.slug, path: p.path, label: p.label, error: `broken _tasks symlink → ${target}` });
+      broken.push({ slug: p.slug, path: p.path, label: p.label, error: `broken task-store link ${td.slice(p.path.length + 1)} → ${target}` });
+      continue;
     }
-    // No _tasks at all → dropped, as before.
+    // So is a project an older release set up, still on a top-level `_tasks`:
+    // dropping it made `cogyard doctor` report "no projects registered".
+    const old = oldTasksDir(p.path);
+    if (old) broken.push({ slug: p.slug, path: p.path, label: p.label, error: oldTasksDirProblem(old) });
+    // No task directory at all → dropped, as before.
   }
-  const groups = new Map();
-  for (const p of live) {
-    let canonical;
-    try { canonical = realpathSync(join(p.path, '_tasks')); }
-    catch { canonical = join(p.path, '_tasks'); }
-    if (!groups.has(canonical)) groups.set(canonical, []);
-    groups.get(canonical).push(p);
-  }
-  const out = [];
-  for (const [canonical, entries] of groups) {
-    if (entries.length === 1) { out.push(entries[0]); continue; }
-    // Multi-clone collapse. Label = the canonical _tasks parent, relative to
-    // PROJECTS_ROOT (then HOME) when applicable, else absolute.
-    const parent = dirname(canonical);
-    const label = parent.startsWith(PROJECTS_ROOT + '/') ? relative(PROJECTS_ROOT, parent) : parent.startsWith(HOME + '/') ? relative(HOME, parent) : parent;
-    out.push({
-      slug: label.replace(/[^a-zA-Z0-9_-]/g, '__'),
-      path: entries[0].path,
-      label,
-      clones: entries.map((e) => e.path),
-    });
-  }
-  out.push(...broken);
+  const out = [...live, ...broken];
   out.sort((a, b) => a.label.localeCompare(b.label));
   return out;
 }
 function findProject(slug) { return discoverProjects().find((p) => p.slug === slug) || null; }
 
-export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject };
+// The slugs a project was registered under before its current one. A project
+// that moved or merged checkouts keeps its old locations as `aliases` (paths),
+// and each alias's slug is the one anything written back then is keyed by —
+// ledger rows, and the nightly jobs' output (task 195).
+function formerSlugs(entry) {
+  const out = [];
+  for (const path of entry?.aliases || []) {
+    const old = makeProjectEntry(path).slug;
+    if (old !== entry.slug && !out.includes(old)) out.push(old);
+  }
+  return out;
+}
+
+// Ledger slug → the project that owns it now. Usage, activity and claim rows
+// carry the registry slug in force when they were written (formerSlugs above).
+// Everything else passes through unchanged. Build once per read — it reads the
+// registry.
+function ledgerSlugResolver() {
+  const map = new Map();
+  for (const entry of readRegistry()) {
+    for (const old of formerSlugs(entry)) if (!map.has(old)) map.set(old, entry.slug);
+  }
+  return (slug) => (slug != null && map.has(slug) ? map.get(slug) : slug);
+}
+
+export { readRegistry, writeRegistry, makeProjectEntry, registerProject, unregisterProject, discoverProjects, findProject, formerSlugs, ledgerSlugResolver };

@@ -15,7 +15,7 @@
 
 **cogyard** takes you from AI chats to shipped products. The LLM is the new
 compiler: you think at product level, not code level, and direct a fleet of
-agents across all your projects at once. Each project gets a `_tasks/` directory
+agents across all your projects at once. Each project gets a task store
 of markdown task files; a Node engine parses them, tracks git/worktree state,
 allocates ports, and enforces atomic claims; an Angular portal shows every task,
 worktree, and merge across every project in one place. (Claude Code first, but
@@ -37,6 +37,11 @@ The agent is the worker; you are the reviewer. Tasks in, checkmarks out.
   (another agent, a script, a human) works the same way.
 
 ---
+
+**New to cogyard? Start with the [quick start guide](docs/QUICKSTART.md).** It
+takes you from install to a first project, a first task, and an agent picking it
+up while you watch in the portal, in about fifteen minutes. The rest of this
+README is reference.
 
 ## Install
 
@@ -90,19 +95,48 @@ var, state file, default port, and tool requirement is listed in
 
 ### 2. The Claude driver (optional)
 
-The Claude Code driver ships in-repo as a plugin; the repo is its own
-marketplace.
+With the engine installed (step 1), one command adds the Claude Code driver:
 
-- **Plugin marketplace** — add this repo as a marketplace and install the
-  `cogyard` plugin (`/plugin` flow in Claude Code).
-- **Manual install** — for environments without the marketplace flow:
-  ```sh
-  cogyard claude install          # symlink skills + commands into ~/.claude
-  cogyard claude install --rules  # also write cogyard's operating rules into CLAUDE.md
-  cogyard claude uninstall        # remove what install added
-  ```
-  This prints the `settings.json` SessionStart-hook block to paste in (a plugin
-  can't deliver always-on rules itself).
+```sh
+cogyard claude install          # symlink skills + commands into ~/.claude
+cogyard claude install --rules  # also write cogyard's operating rules into CLAUDE.md
+cogyard claude uninstall        # remove what install added
+```
+
+This prints the `settings.json` hooks block to paste in — worktree wiring,
+frontmatter validation, the branch-switch and dev-server guards, and the
+live-state hook. It never edits your settings for you.
+Afterwards run `cogyard doctor`: it reports which of those hooks are actually
+wired, so "did that block land?" has an answer. Skills and commands are
+installed as `/cogyard-<name>` (`/cogyard-pickup-task`, `/cogyard-merge-to-main`;
+the `/cogyard` command keeps its name), and any one of them can be switched off
+in a single project (see [`drivers/claude/README.md`](drivers/claude/README.md)).
+You rarely type them: asking in your own words ("pick up 37", "merge it") runs
+the right skill.
+
+The `cogyard-` prefix is there because these are personal skills, and in Claude
+Code a personal skill hides a project's skill or command of the same name in
+every repo, and replaces a built-in command of the same name. With the prefix,
+cogyard never takes a name your own skills, a project's, or Claude Code's use —
+add whatever skills you like beside it. Re-running install moves links an older
+install made under the bare names. If a `cogyard-` name is in use anyway, install
+does not link it and says why; get it from the plugin instead (below), or link
+it regardless with `cogyard claude install --link-anyway <name>`. `cogyard tasks
+doctor` lists every clash on an existing install.
+
+**Or as a Claude Code plugin.** The same driver also ships as a plugin, and this
+repo is its own marketplace. In Claude Code:
+
+```
+/plugin marketplace add cogyard/cogyard
+/plugin install cogyard@cogyard
+```
+
+The plugin wires the hooks for you and updates through `/plugin`, but its skills
+are namespaced (`/cogyard:pickup-task`) and can only be turned on or off as a
+whole. Namespacing means a plugin name never clashes either: its bare
+`/pickup-task` works only while nothing else uses the name. It still needs the
+engine from step 1 on your PATH.
 
 Other agents (or a human) drive the same engine by calling the CLI directly —
 see [Driving cogyard with any agent](#driving-cogyard-with-any-agent).
@@ -123,7 +157,10 @@ is purely a convenience wrapper over it.
 
 ---
 
-## Quick start
+## Setting up a project
+
+The short form, for when you know what you want. A first time through, follow
+the [quick start guide](docs/QUICKSTART.md) instead.
 
 ```sh
 # Turn a directory into a cogyard project (creates it + git + skeleton + wiring):
@@ -164,6 +201,7 @@ cogyard <command> [...]
   doctor            install preflight — is this machine wired to run cogyard?
   claude <install|uninstall>  install the Claude driver (skills/commands) into ~/.claude
   hook   <name>     engine hook entrypoint (session-start | validate-frontmatter)
+  --version, -v     print the installed version
 ```
 
 Run `cogyard <command> --help` for a subcommand's own options.
@@ -173,22 +211,21 @@ Run `cogyard <command> --help` for a subcommand's own options.
 | Flag | Default | Notes |
 |---|---|---|
 | `--kind` | *(required)* | `single` · `fullstack` · `static` · `library` — drives the skeleton + version stamping. |
-| `--store` | `shared` | `shared` moves `_tasks/` to the shared store (`<COGYARD_PROJECTS_ROOT>/_tasks/<slug>`, default `~/gitroot`); `normal` keeps `_tasks/` tracked in the repo. |
 | `--remote` | none | git remote for the shared task store. |
-| `--no-wiring` | off | skip `.claude/worktree-config.json` (auto-skipped for `kind=library`). |
+| `--no-wiring` | off | skip `.cogyard/worktree.json` (auto-skipped for `kind=library`). |
 
 ### `cogyard tasks`
 
 | Subcommand | What it does |
 |---|---|
-| `sync pull` | Rebase `_tasks/` from the canonical's git remote (cross-machine stores only). |
-| `sync push "<msg>"` | Commit (and push, if a remote exists) task edits. **Use this instead of `git add _tasks/`** — shared stores are gitignored symlinks. |
+| `sync pull` | Rebase the task store from its git remote (cross-machine stores only). |
+| `sync push "<msg>" -- <file>…` | Commit (and push, if a remote exists) the task-store files you name. **Use this instead of `git add .cogyard/tasks`** — the link to the store is gitignored. Without names it commits only the files this chat has claimed or reserved. |
 | `projects [list]` | Show registered projects. |
 | `projects register` / `remove <slug>` | Manage the registry (remove never deletes files). |
-| `next-id <slug>` | Atomically reserve the next id and create `_tasks/NNN-<slug>.md` (race-safe across clones). |
+| `next-id <slug>` | Atomically reserve the next id and create `NNN-<slug>.md` in the store (race-safe across worktrees sharing the store). |
 | `current` | JSON of currently-claimed tasks in this repo (the `/commit` skill uses it to auto-tag commits). |
-| `convert [--store <p>] [--remote <u>]` | Convert a repo's tracked `_tasks/` to a shared store. |
-| `mount` | In a worktree, recreate the base checkout's `_tasks` symlink (the SessionStart hook does this automatically). |
+| `convert [--store <p>] [--remote <u>]` | Give a repo its shared store and `.cogyard/tasks` link, adopting an in-repo `_tasks/` folder if it has one. |
+| `mount` | In a worktree, recreate the base checkout's `.cogyard/tasks` link (the SessionStart hook does this automatically). |
 | `doctor` | Audit every registered project's storage health. |
 | `staleness` / `drift <id>` | Drift gates: is this checkout behind the default branch / have a task's paths changed since it was last reviewed. |
 | `analyze [--apply]` | Heuristic backfill for unknown-frontmatter tasks. |
@@ -197,20 +234,21 @@ Run `cogyard <command> --help` for a subcommand's own options.
 
 | Subcommand | What it does |
 |---|---|
-| `detect` | JSON of the current environment (planet, ports, worktree, branch). |
+| `detect` | JSON of the current environment (worktree, branch, ports, hostname). |
 | `port-owner <port>` | Which worktree owns a TCP port. |
 | `claim <task-file> <session-id>` | Atomically claim a task (refuses if claimed by another session). |
 | `release <task-file>` | Clear the claim (the worked-in worktree/branch record survives). |
+| `where <task-file>` | A task's claim and branch (from the task file) with this machine's worktree and session (from `~/.cogyard/claims.json`). |
 
-> **Never hand-edit `claimed_at` / `claimed_by_session`** in a task file — use
-> `claim`/`release` for atomicity. **Never `git add _tasks/`** when it's a
-> symlink — use `tasks sync push`.
+> **Never hand-edit `claimed_at` / `claimed_by`** in a task file — use
+> `claim`/`release` for atomicity. **Never `git add .cogyard/tasks`** — it is a
+> gitignored link; use `tasks sync push "<msg>" -- <file>…`.
 
 ---
 
 ## Task files
 
-Each project keeps a `_tasks/` directory of `NNN-<slug>.md` files: a YAML
+Each project keeps a task store of `NNN-<slug>.md` files: a YAML
 frontmatter block over a markdown body. The file is the source of truth for one
 unit of work — `core/` parses it, the portal renders it, the CLI claims and
 syncs it.
@@ -234,12 +272,11 @@ Full notes: [`docs/TASK-STATUS-VOCABULARY.md`](docs/TASK-STATUS-VOCABULARY.md).
 
 ### Storage
 
-`_tasks/` is either a normal tracked directory in the repo (`--store normal`) or
-a **shared store** (`--store shared`, the default): a gitignored absolute symlink
-into `<COGYARD_PROJECTS_ROOT>/_tasks/<slug>` (default `~/gitroot`), its own git
-repo on a `tasks` branch. The shared
-model lets every worktree see the same task files instantly and survives across
-clones. Commit shared-store edits with `cogyard tasks sync push`, never
+Every project's tasks live in a **shared store**,
+`<COGYARD_PROJECTS_ROOT>/_tasks/<slug>` (default `~/gitroot`), its own git repo
+on a `tasks` branch. The project reaches it through `.cogyard/tasks`, a gitignored
+absolute symlink. The shared model lets every worktree see the same task files
+instantly and survives across clones. Commit shared-store edits with `cogyard tasks sync push "<msg>" -- <file>…`, never
 `git add`.
 
 ---
@@ -253,6 +290,7 @@ trigger on natural phrasing — you don't type the skill name.
 |---|---|---|
 | "file this as a task", "park this for later", "spec this out" | **write-task** | Authors a new shelf-stable `_tasks/NNN-*.md` file. |
 | "do task 037", "pick up task X", "work on task Y" | **pickup-task** | Reads, claims, and executes an existing task — sync → claim → (optional) task-named worktree → drift check → work → release. |
+| "run the backlog", "run this unattended" | **autopilot** | Works many tasks without you, in the Plan tab's order — one worker per task, each claim verified before merge; stops before any step marked `(you: …)` and lists it for you. |
 
 Other driver skills: **commit** (auto-tags commits with the active task id),
 **handoff** (paste-ready brief for a fresh session), **debt-cleanup**
@@ -260,7 +298,7 @@ Other driver skills: **commit** (auto-tags commits with the active task id),
 
 Doing it by hand (any agent, no driver): `cogyard tasks next-id <slug>` to
 create a file, `cogyard env claim <file> <session-id>` before you touch it,
-`cogyard env release <file>` when done, `cogyard tasks sync push "<msg>"` to
+`cogyard env release <file>` when done, `cogyard tasks sync push "<msg>" -- <file>` to
 persist.
 
 ---
@@ -291,8 +329,8 @@ pair per worktree** — universally, no opt-in. The reservation is just a regist
 row + a briefing injected into the new session's context, so the session knows
 its ports.
 
-If a project additionally commits a `.claude/worktree-config.json`, the hook
-goes further: it writes `.planet` / env files / `launch.json` so dev servers
+If a project additionally commits a `.cogyard/worktree.json`, the hook
+goes further: it writes env files / `launch.json` so dev servers
 bind the reserved ports automatically. Allocations live in `~/.cogyard/ports.json`.
 You start a worktree's dev server yourself (e.g. via the Claude_Preview MCP) when
 you need it — nothing keeps it running in the background.
@@ -370,7 +408,7 @@ drivers plug in behind an adapter and the engine never names one.
     cli/         server/        hooks/        drivers/
   cogyard,     read-only       worktree       agent drivers;
   tasks, env,    /api over     session setup   claude/ is the
-  tunnel,        core/         (ports + _tasks  reference adapter
+  tunnel,        core/         (ports + task   reference adapter
   usage          │             mount)           + Claude plugin
   (skills +      ▼
    humans)    frontend/  ── Angular + PrimeNG SPA, consumes /api/*

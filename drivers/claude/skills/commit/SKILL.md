@@ -1,25 +1,26 @@
 ---
-name: commit
-description: Create git commits in cogyard-managed projects, following the cogyard commit conventions. Auto-prepends the active cogyard task id ([#NN]) to the subject when one task is currently claimed in this repo, so `git log` shows which task each commit relates to. Only applies where cogyard is initialized (a `_tasks/` dir or a registered project) — in any other repo this skill steps aside and normal commit behavior applies.
+description: Create git commits in cogyard-managed projects, following the cogyard commit conventions. Auto-prepends the active cogyard task id ([#NN]) to the subject when one task is currently claimed in this repo, so `git log` shows which task each commit relates to. Only applies where cogyard is initialized (a `.cogyard/tasks` task directory, or a registered project) — in any other repo this skill steps aside and normal commit behavior applies.
 disable-model-invocation: false
 argument-hint: "[task-id] [optional message]"
 ---
 
-# /commit — task-aware git commits
+# /cogyard-commit — task-aware git commits
 
 Create one or more git commits for staged + unstaged changes. Integrates with the cogyard task system: if a task is currently claimed in this repo, its id is auto-prepended to every commit subject as `[#NN]`. This makes `git log` immediately scannable for which task a change belongs to.
 
-If the project ships its own `commit` skill (`.claude/skills/commit/SKILL.md`), Claude Code's skill precedence resolves `/commit` to the project's version — this plugin skill (namespaced `cogyard:commit`) applies only when no project-level commit skill exists.
+**This skill's command** is `/cogyard-commit` when installed with `cogyard claude install`, `/cogyard:commit` under the plugin, and `/commit` while an older install's link is still in place. Below, "typed the command" means any of the three.
+
+**A project with its own version of this skill** turns this one off in its `.claude/settings.json` (`"skillOverrides": { "cogyard-commit": "off" }` — its personal name, so a project skill named `commit` stays on) and gives its own a different name, with `Replaces cogyard's commit. Last reconciled against it: <date>.` at the top. A project skill that is merely also named `commit` does not replace this one: both load, and nothing says which applies. `cogyard onboard` sets this up when it finds a project's own process, and `cogyard tasks doctor` flags one that runs beside this one or is out of date. See `drivers/claude/README.md`, "Skipping or replacing a skill in one project".
 
 ## Step 0 — Cogyard gate
 
 This skill's conventions apply only to cogyard-managed repos. Check, in order:
 
-1. Repo root has a `_tasks/` dir (or `_tasks` symlink) → proceed.
+1. Repo root has a task directory — the `.cogyard/tasks` link → proceed.
 2. Otherwise, the repo appears in `cogyard tasks projects list` → proceed.
 3. Otherwise this repo is not cogyard-managed: **step aside.** Do not apply the steps below — commit per the session's defaults and the project's own conventions, as if this skill didn't exist.
 
-Exception: the user explicitly typed `/commit` in a non-cogyard repo. Honor the invocation — skip the task-id prefix (Step 1 will find nothing) and apply the rest.
+Exception: the user explicitly typed the command in a non-cogyard repo. Honor the invocation — skip the task-id prefix (Step 1 will find nothing) and apply the rest.
 
 ## Step 1 — Detect the active task id
 
@@ -35,9 +36,9 @@ Output is JSON `{count, tasks: [{id, file, claimed_at, claimed_by, claimed_by_se
 - `count === 0` → no prefix.
 - `count > 1` → ambiguous. Ask the user which task this commit belongs to (or `none` to skip the prefix). Don't guess.
 
-If `$ARGUMENTS` starts with a 1–3 digit number (e.g. `/commit 37 fix routing`), that overrides auto-detect: use that id and treat the rest as the message. Use `0` or `none` as the explicit "no prefix" override.
+If `$ARGUMENTS` starts with a 1–3 digit number (e.g. `/cogyard-commit 37 fix routing`), that overrides auto-detect: use that id and treat the rest as the message. Use `0` or `none` as the explicit "no prefix" override.
 
-If the repo has no `_tasks/` dir (i.e. cogyard isn't initialized here), `cogyard tasks current` returns `count: 0`. Skip the prefix silently — no error, no warning.
+If the repo has no task directory (i.e. cogyard isn't initialized here), `cogyard tasks current` returns `count: 0`. Skip the prefix silently — no error, no warning.
 
 ## Step 2 — Build commit messages
 
@@ -47,8 +48,8 @@ If `$ARGUMENTS` (after stripping any leading task-id) is a complete commit messa
 2. Group changes into logical commits per the rules below.
 3. For each commit, compose a proper subject and bullet body per the rules below.
 4. **Then branch on WHO invoked this skill:**
-   - **The user typed `/commit` in their message** → present the proposals via `AskUserQuestion` with `multiSelect: true`. Each option's label is the proposed subject; the description lists the files. Only commit the ones the user selects.
-   - **Agent-invoked** (Claude reached for this skill itself — mid-task per `commit_policy`, after finishing work, any turn where the user did not type `/commit`) → do NOT ask. Compose the full message to the same standard and commit directly. The quality bar is identical either way — the dialog is an interactive-use affordance, not a substitute for writing a proper message.
+   - **The user typed the command in their message** → present the proposals via `AskUserQuestion` with `multiSelect: true`. Each option's label is the proposed subject; the description lists the files. Only commit the ones the user selects.
+   - **Agent-invoked** (Claude reached for this skill itself — mid-task after each change per the pickup-task loop, after finishing work, any turn where the user did not type the command) → do NOT ask. Compose the full message to the same standard and commit directly. The quality bar is identical either way — the dialog is an interactive-use affordance, not a substitute for writing a proper message.
 
 ### Subject format
 
@@ -111,17 +112,17 @@ EOF
 
 ## Examples
 
-User: `/commit`  
+User: `/cogyard-commit`  
 → One task claimed (#40). Stage and commit each logical group with `[#40]` prefix.
 
-User: `/commit fix dropdown overflow on mobile`  
+User: `/cogyard-commit fix dropdown overflow on mobile`  
 → One task claimed (#40). Single commit: `[#40] fix(frontend): dropdown overflow on mobile`.
 
-User: `/commit 37 add registry dedupe`  
+User: `/cogyard-commit 37 add registry dedupe`  
 → Override prefix to `#37`. Single commit: `[#37] feat(cli): add registry dedupe`.
 
-User: `/commit none typo in readme`  
+User: `/cogyard-commit none typo in readme`  
 → No prefix. Single commit: `docs: typo in readme`.
 
-User: `/commit` (no claims, no `_tasks/`)  
+User: `/cogyard-commit` (no claims, no task directory)  
 → No prefix. Group changes and propose commits as usual.

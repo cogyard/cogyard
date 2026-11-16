@@ -1,5 +1,6 @@
 <div class="filters">
   <div class="filter-row">
+    <span class="section-label row-title">Grouping</span>
     <p-selectbutton size="small" [options]="modeOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="mode()" (ngModelChange)="mode.set($event)" />
     @if (mode() === 'grouped') {
       <span class="group-by">group by</span>
@@ -8,12 +9,20 @@
         <p-selectbutton size="small" [options]="axisOptions()" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="axisSelect()" (ngModelChange)="axisSelect.set($event)" />
       }
     }
-    <span class="row-gap"></span>
-    <span class="ctl-label">Type</span>
-    <p-selectbutton size="small" [options]="typeFilterOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="typeFilter()" (ngModelChange)="typeFilter.set($event)" />
   </div>
   <div class="filter-row">
-    <input pInputText pSize="small" class="search" placeholder="search title / id…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+    <span class="section-label row-title">Filters</span>
+    <p-selectbutton size="small" [options]="typeFilterOptions" optionLabel="label" optionValue="value" [allowEmpty]="false" [ngModel]="typeFilter()" (ngModelChange)="typeFilter.set($event)" />
+    <span class="search">
+      <input pInputText pSize="small" placeholder="search title / id…" [ngModel]="search()" (ngModelChange)="search.set($event)" />
+      @if (search()) {
+        <button type="button" class="row-del search-clear" title="Clear search" aria-label="Clear search" (click)="search.set('')">
+          <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/>
+          </svg>
+        </button>
+      }
+    </span>
   </div>
 </div>
 
@@ -30,9 +39,15 @@
     <section class="bucket" [class.sub]="b.isSub">
       @if (b.title) {
         <h2 class="section-label" [class.sub-h]="b.isSub">
-          @if (b.color) { <span class="axis-dot" [style.background]="b.color"></span> }
-          @if (b.icon) { <span class="type-hdr-icon">{{ b.icon }}</span> }
-          {{ b.title }} ({{ b.list.length }})
+          @if (b.state) {
+            <!-- Grouped by status: the heading IS the status chip, the same element
+                 as the Flat view's row badge, so the two cannot differ (task 155). -->
+            <app-task-chip show="status" [state]="b.state" [slug]="slug()" /> ({{ b.list.length }})
+          } @else {
+            @if (b.color) { <span class="axis-dot" [style.background]="b.color"></span> }
+            @if (b.icon) { <span class="type-hdr-icon">{{ b.icon }}</span> }
+            {{ b.title }} ({{ b.list.length }})
+          }
         </h2>
       }
       <p-table [value]="b.list" dataKey="file" [expandedRowKeys]="expandedKeys()" [rowTrackBy]="trackByFile" size="small">
@@ -47,21 +62,40 @@
           </tr>
         </ng-template>
         <ng-template #body let-t>
-          <tr class="grid-row" [class.expanded]="isExpanded(t)" (click)="toggle(t)"
+          <!-- data-file: how an arriving #NN chip finds this row to scroll it
+               into view (task 126). p-table's own rows carry no stable hook. -->
+          <tr class="grid-row" [attr.data-file]="t.file" [class.expanded]="isExpanded(t)" (click)="toggle(t)"
               (mouseenter)="hoveredFile.set(t.file)" (mouseleave)="hoveredFile.set(null)">
-            <td class="mono">{{ t.id != null ? '#' + t.id : '?' }} @if (t.stale) { <span class="warn" pTooltip="Possibly outdated! Code has changed since task written.">⚠️</span> }</td>
+            <td class="mono">@if (t.id != null) { <span class="task-ico" aria-hidden="true"></span>{{ t.id }} } @else { ? } @if (t.stale) { <span class="warn" pTooltip="Possibly outdated! Code has changed since task written.">⚠️</span> }</td>
             @if (showStatusColumn()) {
               <td class="status">
-                <span class="badge caps st-badge" [class]="statusClass(t)" [pTooltip]="t.bucket === 'claimed' ? claimTooltip(t) : ''" tooltipPosition="left">{{ statusLabel(t) }}</span>
-                @if (statusDetail(t)) { <span class="st-detail hint sm">{{ statusDetail(t) }}@if (t.bucket === 'claimed' && since(t)) { <span class="dim"> · {{ since(t) }}</span> }</span> }
+                <!-- Your own claim: what its agent is doing now, in place of your name
+                     (task 202); in a flex row, so a line too long for the cell is cut
+                     at its end instead of the cell's ellipsis hiding all of it.
+                     Someone else's claim keeps their name. -->
+                @if (t.bucket === 'claimed' && t.live) {
+                  <span class="st-live"><app-task-chip show="status" [id]="t.id" [slug]="slug()" /><app-agent-state class="st-detail" [live]="t.live" /></span>
+                } @else {
+                  <app-task-chip show="status" [id]="t.id" [slug]="slug()" />
+                  @if (statusDetail(t)) { <span class="st-detail hint sm">{{ statusDetail(t) }}@if (t.bucket === 'claimed' && since(t)) { <span class="dim"> · {{ since(t) }}</span> }</span> }
+                }
               </td>
             }
             <td class="title">
               <div class="title-flex">
                 @if (showRowType() && typeIcon(t)) { <span class="type-icon" [pTooltip]="t.fm.type">{{ typeIcon(t) }}</span> }
                 <span class="title-text" [title]="t.title">{{ t.title }}</span>
-                @for (l of visibleLabels(t); track l) { <span class="badge label-chip" [class.axis]="labelColor(l)" [style.--chip]="labelColor(l)">{{ l }}</span> }
-                @if (hiddenLabels(t).length) { <span class="badge label-chip more" [pTooltip]="hiddenLabels(t).join(', ')">+{{ hiddenLabels(t).length }}</span> }
+                <!-- The file fails the schema (task 217) — its frontmatter, or since
+                     task 238 a badly written checkbox marker — what `cogyard tasks
+                     validate` reports, on the row it is about. -->
+                @if (t.schemaErrors?.length) {
+                  <app-flag tone="bad" face="text" [pTooltip]="'Task-file errors — ' + t.schemaErrors.join('; ')">{{ t.schemaErrors.length === 1 ? 'task-file error' : t.schemaErrors.length + ' task-file errors' }}</app-flag>
+                }
+                <!-- Grouped by status (the default view) has no Status column, so the
+                     live state of your own claim sits here instead (task 202). -->
+                @if (!showStatusColumn() && t.bucket === 'claimed' && t.live) { <app-agent-state [live]="t.live" /> }
+                @for (l of visibleLabels(t); track l) { <app-label-chip [label]="l" [color]="labelColor(l)" /> }
+                @if (hiddenLabels(t).length) { <app-label-chip [label]="'+' + hiddenLabels(t).length" [pTooltip]="hiddenLabels(t).join(', ')" /> }
                 @if (worktreeName(t)) {
                   <app-git-ref kind="worktree" [name]="worktreeName(t)" (open)="jumpWorktree.emit(worktreeName(t)!)" />
                 }
@@ -105,12 +139,16 @@
                     @for (c of allChats(t); track c.sessionId + '/' + c.role) {
                       <div class="gb-row chat-row" (click)="openTranscript(c)">
                         <code>{{ shortId(c) }}</code>
-                        <span class="chat-role" [class]="'role-' + c.role">{{ c.role }}</span>
+                        <app-action-chip [kind]="c.role" />
                         @if (c.inferred) { <span class="chat-flag">inferred</span> }
-                        <span class="chat-label">{{ c.label || '(no label)' }}</span>
-                        @if (c.archived) { <span class="chat-flag arch">archived</span> }
+                        <span class="chat-label">
+                          @if (c.title) { <span class="chat-title">{{ c.title }}</span> }
+                          @if (c.label) { <span class="chat-snippet">{{ c.label }}</span> }
+                          @if (!c.title && !c.label) { (no label) }
+                        </span>
+                        @if (c.archived) { <span class="chat-flag">archived</span> }
                         <span class="dim chat-date">{{ chatDate(c) }}</span>
-                        <button type="button" class="chat-copy" (click)="copyBencc(c, $event)" pTooltip="copy: bencc show {{ shortId(c) }}">copy cmd</button>
+                        <button type="button" class="chat-copy" (click)="copyShowCmd(c, $event)" pTooltip="copy: cogyard sessions show {{ shortId(c) }}" tooltipPosition="top">copy cmd</button>
                       </div>
                     }
                   } @else {
@@ -118,6 +156,20 @@
                   }
                 } @else {
                   <div class="gb-row dim">loading…</div>
+                }
+              </div>
+              <!-- Where this task's markdown actually is (task 132). The store is
+                   normally a symlink out of the repo, so the path is the only
+                   thing that says which file on disk this row IS. -->
+              <div class="gitbox">
+                <div class="gb-head">FILE</div>
+                @if (t.filePath) {
+                  <div class="gb-row"><code>{{ t.filePath }}</code></div>
+                  <div class="gb-row file-open" (click)="$event.stopPropagation()">
+                    <app-file-actions [slug]="slug()" [path]="t.file" [store]="true" />
+                  </div>
+                } @else {
+                  <div class="gb-row dim">{{ t.file }}</div>
                 }
               </div>
               <div class="md" [innerHTML]="bodyHtml(t)"></div>

@@ -1,0 +1,58 @@
+<section class="settings-card">
+  <h3 class="card-title">Label axes</h3>
+  @if (isShared()) {
+    <p class="card-hint">
+      Group free-form task labels into named, colored axes so the portal can show them as bundles.
+      This is the <strong>shared</strong> map, applied to every project; a project can add its own
+      on its settings tab (the cog to the right of its tab strip).
+      Labels stay free — this only groups and colors them; unmapped labels show as <em>Ungrouped</em>.
+    </p>
+  } @else {
+    <p class="card-hint">
+      Group this project's task labels into named, colored axes. This map is <strong>this project's own</strong>,
+      committed with its tasks, and overlays the shared map from Settings.
+      Labels stay free — this only groups and colors them; unmapped labels show as <em>Ungrouped</em>.
+    </p>
+  }
+
+  @if (loading()) {
+    <p class="ax-loading hint">Loading axes…</p>
+  } @else {
+    @if (!axes().length) {
+      <p class="ax-empty hint">No axes in this layer yet. Add one to start grouping labels.</p>
+    }
+
+    <!-- `ai` is bound explicitly because the chips are a nested @for: inside it,
+         a bare $index is the LABEL's position, not the axis's, and the remove
+         button silently edited whichever axis happened to sit at that index. -->
+    @for (ax of axes(); track $index; let ai = $index) {
+      <div class="axis-row">
+        <input type="color" class="ax-color" [value]="ax.color"
+          (input)="setColor(ai, $any($event.target).value)" [title]="ax.color" />
+        <input pInputText pSize="small" class="ax-name" placeholder="axis name (e.g. Surface)"
+          [ngModel]="ax.name" (ngModelChange)="setName(ai, $event)" />
+        <div class="ax-labels">
+          @for (l of ax.labels; track l) {
+            <app-label-chip [label]="l" [color]="ax.color" [removable]="true" (remove)="removeLabel(ai, l)" />
+          }
+          <input pInputText pSize="small" class="ax-add" placeholder="+ label"
+            #lab (keydown.enter)="addLabel(ai, lab.value); lab.value = ''" />
+        </div>
+        <button type="button" class="row-del" (click)="removeAxis(ai)" title="delete axis">
+          <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+            <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                  d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6"/>
+          </svg>
+        </button>
+      </div>
+    }
+
+    <div class="set-actions">
+      <button type="button" class="btn-pill" (click)="addAxis()">+ Add axis</button>
+      <button type="button" class="btn-primary" [disabled]="!canSave()" (click)="save()">
+        {{ saving() ? 'Saving…' : 'Save axes' }}
+      </button>
+      @if (invalid()) { <span class="hint ax-warn">every axis needs a name</span> }
+    </div>
+  }
+</section>

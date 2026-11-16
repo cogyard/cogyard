@@ -13,23 +13,61 @@
       <ng-template #header>
         <tr>
           <th class="col-branch" pSortableColumn="name">Branch <p-sortIcon field="name" /></th>
+          <th class="col-links">Links</th>
           <th class="col-commit">Last commit</th>
-          <th class="ctr col-ahead" pSortableColumn="aheadMain">Ahead <p-sortIcon field="aheadMain" /></th>
-          <th class="ctr col-behind" pSortableColumn="behindMain">Behind <p-sortIcon field="behindMain" /></th>
+          <!-- ↑ / ↓ instead of the words (task 156, owner's call): the words held
+               these columns at 80+px over numbers that need ~41. The tooltip is
+               the legend — the arrows alone are easy to forget. -->
+          <th class="ctr col-ahead" pSortableColumn="aheadMain" aria-label="Ahead of main"
+              pTooltip="Ahead of main — commits on this branch that main doesn't have" tooltipPosition="top">↑ <p-sortIcon field="aheadMain" /></th>
+          <th class="ctr col-behind" pSortableColumn="behindMain" aria-label="Behind main"
+              pTooltip="Behind main — commits on main that this branch doesn't have" tooltipPosition="top">↓ <p-sortIcon field="behindMain" /></th>
           <th class="ctr col-tracking">Tracking</th>
-          <th class="col-worktree">Worktree</th>
         </tr>
       </ng-template>
       <ng-template #body let-b>
         <tr class="bt-row" [class.stale]="isStale(b)" [class.active]="isActive(b)">
           <td class="bname">
             @if (b.isHead && !isMainRow(b)) { <span class="head-dot" pTooltip="current branch">●</span> }
-            @if (isMainRow(b)) { <p-tag styleClass="badge caps main-ref" [value]="b.name" /> }
+            @if (isMainRow(b)) { <app-ref-chip kind="main">{{ b.name }}</app-ref-chip> }
             @else {
               <!-- this IS the Branches tab, so the name goes nowhere (linked=false) -->
               <app-git-ref kind="branch" [name]="b.name" [linked]="false" />
             }
-            @if (b.taskId) { <button class="btn-link mono" (click)="jumpTask.emit(b.taskId!)">#{{ b.taskId }}</button> }
+          </td>
+          <!-- Links, the same column the Worktrees tab carries: everywhere else
+               this branch exists, as WORDS. The worktree used to get a whole
+               column to spell its name out — which on a task branch is the
+               branch name again, minus a prefix, at the cost of 20% of the
+               table. The link goes to it; the name it would have printed is in
+               the tooltip.
+               The task chip lives here too: sharing the Branch cell, the name
+               took the full width and the chip rendered past the cell edge, so
+               on 157 of 184 branches it was simply invisible. A column of its
+               own cannot be crowded out. -->
+          <td class="links">
+            <!-- task first (task 156, owner's call), in a fixed-width slot that is
+                 there even with no task, so the icons after it line up down the column -->
+            <span class="task-slot">@if (b.taskId) { <app-task-chip [id]="b.taskId!" [slug]="slug()" (open)="jumpTask.emit($event)" /> }</span>
+            @if (b.hasWorktree) {
+              <!-- the WORKTREE's name, not the branch's: ?wt= is matched against
+                   the worktree row's name, and a task worktree
+                   (task-126-foo) is not its branch (worktree-task-126-foo), so
+                   passing b.name arrived with nothing selected. -->
+              <!-- icon only (task 156, owner's call): the words cost the width
+                   Tracking needed for its second flag. The tooltip names where
+                   each goes; aria-label stands in for the dropped word. -->
+              <button class="btn-link lnk" (click)="jumpWorktree.emit(b.worktreeName || b.name)"
+                      [attr.aria-label]="'worktree ' + (b.worktreeName || b.name)"
+                      [pTooltip]="(b.worktreeName || b.name) + ' — open on the Worktrees tab'" tooltipPosition="top">
+                <img class="lnk-ico" src="assets/git-worktree.svg" alt="" aria-hidden="true" />
+              </button>
+              <button class="btn-link lnk" (click)="jumpFiles.emit({ wt: isMainRow(b) ? '' : (b.worktreeName || b.name), file: null })"
+                      [attr.aria-label]="'files of ' + (b.worktreeName || b.name)"
+                      [pTooltip]="'Browse ' + (b.worktreeName || b.name) + ' on the Files tab'" tooltipPosition="top">
+                <img class="lnk-ico" src="assets/files.svg" alt="" aria-hidden="true" />
+              </button>
+            }
           </td>
           <td class="commit-cell">
             <button class="commit link" (click)="openCommit.emit(b.hash)">
@@ -40,18 +78,12 @@
           </td>
           <td class="ctr">@if (b.aheadMain) { <span class="ahead">{{ b.aheadMain }}</span> } @else { <span class="dim">—</span> }</td>
           <td class="ctr">@if (b.behindMain) { <span class="behind">{{ b.behindMain }}</span> } @else { <span class="dim">—</span> }</td>
-          <td class="ctr">
+          <td class="ctr tracking">
             @if (b.isRemote) { <span class="dim">—</span> }
-            @else if (!b.onOrigin) { <p-tag styleClass="badge caps localonly" value="local" pTooltip="no origin/{{ b.name }} — never pushed" /> }
-            @else if (b.unpushed) { <p-tag styleClass="badge caps unpushed" value="unpushed" pTooltip="on origin but has local commits not pushed" /> }
-            @else { <p-tag styleClass="badge caps origin" value="origin" pTooltip="tracks {{ b.upstream || ('origin/' + b.name) }}" /> }
-            @if (isStale(b)) { <p-tag styleClass="badge caps stale" value="stale" pTooltip="last activity {{ b.relDate }}" /> }
-          </td>
-          <td class="worktree">
-            @if (b.hasWorktree) {
-              <app-git-ref kind="worktree" [name]="b.worktreeName || b.name"
-                (open)="jumpWorktree.emit(b.name)" />
-            }
+            @else if (!b.onOrigin) { <app-flag pTooltip="no origin/{{ b.name }} — never pushed">local</app-flag> }
+            @else if (b.unpushed) { <app-flag tone="warn" pTooltip="on origin but has local commits not pushed">unpushed</app-flag> }
+            @else { <app-flag tone="good" pTooltip="tracks {{ b.upstream || ('origin/' + b.name) }}">origin</app-flag> }
+            @if (isStale(b)) { <app-flag tone="review" pTooltip="last activity {{ b.relDate }}">stale</app-flag> }
           </td>
         </tr>
       </ng-template>

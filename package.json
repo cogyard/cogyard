@@ -1,6 +1,6 @@
 {
   "name": "cogyard",
-  "version": "1.53.0",
+  "version": "2.0.0",
   "license": "MIT",
   "type": "module",
   "engines": {
@@ -43,6 +43,7 @@
     "api": "node server/index.mjs",
     "dev": "bash scripts/dev.sh",
     "test": "node --test",
+    "test:frontend": "npm test -w frontend",
     "test:clean-machine": "bash test/clean-machine.sh",
     "lint:leaks": "bash scripts/leak-scan.sh",
     "prepack": "npm run build",

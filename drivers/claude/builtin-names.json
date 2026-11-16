@@ -1,0 +1,32 @@
+{
+  "about": "Names Claude Code itself uses for a slash command. A personal skill or command with one of these names replaces the built-in (its aliases still reach it), so `cogyard claude install` will not link a cogyard skill or command under one of them. Claude Code exposes no list to read, so this is copied from its docs by hand: re-read the sources and update `checked` when Claude Code adds commands. test/claude-install.test.mjs compares it with the live page when COGYARD_NET_TESTS=1.",
+  "checked": "2026-11-14",
+  "sources": [
+    "https://code.claude.com/docs/en/commands",
+    "https://code.claude.com/docs/en/skills"
+  ],
+  "commands": [
+    "add-dir", "advisor", "agents", "artifact-capabilities", "artifact-diagramming", "artifacts",
+    "auto-mode-setup", "autocompact", "autofix-pr", "background", "batch", "branch", "btw", "bug",
+    "cd", "chrome", "claude-api", "claude-in-chrome", "clear", "code-review", "color", "compact",
+    "config", "context", "copy", "cost", "dataviz", "debug", "deep-research", "design",
+    "design-login", "design-sync", "desktop", "diff", "doctor", "effort", "exit", "export", "fast",
+    "feedback", "fewer-permission-prompts", "focus", "fork", "goal", "heapdump", "help", "hooks",
+    "ide", "import", "init", "insights", "install-github-app", "install-slack-app", "keybindings",
+    "list-agents", "login", "logout", "loop", "mcp", "memory", "mobile", "model", "output-style",
+    "passes", "permissions", "plan", "plugin", "plugin-authoring", "powerup", "pr-comments",
+    "privacy-settings", "radio", "rate-limit-options", "recap", "release-notes", "reload-plugins",
+    "reload-skills", "remote-control", "remote-env", "rename", "restart", "resume", "review",
+    "rewind", "run", "run-skill-generator", "sandbox", "schedule", "scroll-speed",
+    "security-review", "setup-bedrock", "setup-vertex", "simplify", "skill-doctor", "skills",
+    "slides", "stats", "status", "statusline", "stickers", "stop", "subtask", "tasks",
+    "team-onboarding", "teleport", "terminal-setup", "theme", "tui", "ultraplan", "ultrareview",
+    "update-config", "upgrade", "usage", "usage-credits", "verify", "vim", "voice", "web-setup",
+    "workflow-authoring", "workflows"
+  ],
+  "aliases": [
+    "allowed-tools", "android", "app", "bg", "checkpoint", "checkup", "continue", "ios", "new",
+    "proactive", "quit", "rc", "reset", "routines", "settings", "share", "undo", "update"
+  ],
+  "reserved": ["anthropic-skills"]
+}

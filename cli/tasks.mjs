@@ -4,30 +4,52 @@
 // the old ~/.claude engine; every adapter points here now and the old copy is
 // dormant. The lockstep rule is OVER: edit only this file.)
 //
-// Subcommands: init / sync / projects / next-id / current / analyze /
+// Subcommands: sync / projects / next-id / current / analyze /
 //              convert / mount / doctor / default-branch / staleness / drift /
-//              (default = generate INDEX.md)
+//              (no command = help)
 //   --backfill            Walk unknown-frontmatter files in $EDITOR
 
-import { execSync, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, lstatSync, realpathSync, unlinkSync, readlinkSync, symlinkSync, cpSync, rmSync } from 'node:fs';
+import { execFileSync, execSync, spawn } from 'node:child_process';
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync, mkdirSync, lstatSync, realpathSync, unlinkSync, readlinkSync, symlinkSync, cpSync, rmSync, renameSync } from 'node:fs';
 import { join, dirname, relative, basename, resolve, isAbsolute } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import {
   REGISTRY_PATH,
-  tryExec, execLoud, findRepoRoot, findTasksDir, defaultBranchSync,
-  loadTasks, computeDerived, generateIndexMd,
+  tryExec, execLoud, gitIdentityArgs, gitIdentityFlags, findRepoRoot, findTasksDir, defaultBranchSync,
+  loadTasks,
   readRegistry, registerProject, unregisterProject, discoverProjects, makeProjectEntry, findProject,
   gitWorktrees, worktreesForProject,
   inferStatus,
-  validateTasks,
+  validateTasks, introducedErrors, taskFromContent, normalizeTaskId,
+  closeability, closeableTasks, doneWithLeftovers, markerText, markerProblemsByFile, whoAmI, rewriteStatusLine, isClosed,
   convertToSharedStore, joinSharedStore,
+  auditProcess, describeAudit, auditReservedNames, describeReservedNames,
   resolveAxes, axisLookup, registeredLabels,
+  resolveSwitches, switchProblems,
+  storeHealth, classifyStorePath, taskIdOfPath,
+  localClaim, recordReservation, clearReservation, currentSessionId, agentSession,
+  currentOwnerTurns, checkOwnerWords,
+  TASKS_DIR, locateTasksDir, tasksDirOf, excludeTasksLink,
+  planFor, resolveProjectForPath, addTouchesPaths, outsideList, branchChangedFiles, runningClashesFor, branchConflicts,
 } from '../core/index.mjs';
 
 const HOME = homedir();
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
+
+// git with an ARGUMENT LIST — no shell. Anything a caller typed (a commit
+// message, a path) reaches git as itself: through a shell, inside the double
+// quotes JSON.stringify adds, `$VAR` still expands and backticks or $(…) RUN
+// (task 196 — task 187's "moved to $COGYARD_HOME" commits landed as "moved to  ").
+// gitQuiet mirrors tryExec (trimmed stdout, null on a non-zero exit); gitLoud
+// mirrors execLoud (inherits stdio, throws on failure).
+function gitQuiet(args, cwd) {
+  try { return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); }
+  catch { return null; }
+}
+function gitLoud(args, cwd) {
+  return execFileSync('git', args, { cwd, encoding: 'utf8', stdio: 'inherit' });
+}
 
 function fail(msg, code = 1) {
   process.stderr.write(`tasks.mjs: ${msg}\n`);
@@ -35,44 +57,6 @@ function fail(msg, code = 1) {
 }
 
 // --- Subcommands -------------------------------------------------------------
-
-function cmdInit() {
-  // Low-level primitive: mkdir _tasks/ + register. NOT the project-creation front
-  // door — that's `cogyard init <name>` (greenfield) / `cogyard onboard [path]`
-  // (adopt an existing folder), which orchestrate git, store, version stamping,
-  // and worktree wiring. This stays for the bare "register an
-  // already-set-up repo" case.
-  process.stderr.write('note: `cogyard tasks init` is a low-level primitive. To create or adopt a\n      full project, use `cogyard init <name>` or `cogyard onboard [path]`.\n');
-  const repoRoot = findRepoRoot();
-  if (!repoRoot) fail('not in a git repo');
-  const tasksDir = join(repoRoot, '_tasks');
-
-  // Symlink model: _tasks/ is either a normal directory in this repo, or a symlink
-  // to a shared canonical location (e.g., for planet-style multi-clone projects).
-  // No orphan branches, no worktree mounts.
-
-  if (!existsSync(tasksDir)) {
-    mkdirSync(tasksDir, { recursive: true });
-    process.stdout.write(`Created empty _tasks/ at ${tasksDir}\n`);
-  }
-
-  let isSymlink = false;
-  try { isSymlink = lstatSync(tasksDir).isSymbolicLink(); } catch {}
-
-  const entry = registerProject(repoRoot);
-  process.stdout.write(`Registered ${entry.slug} -> ${entry.path}\n`);
-
-  if (isSymlink) {
-    const target = tryExec(`readlink "${tasksDir}"`);
-    process.stdout.write(`_tasks/ is a symlink to ${target} (shared canonical dir).\n`);
-  } else {
-    process.stdout.write(`_tasks/ is a normal directory in this repo.\n`);
-    process.stdout.write(`To share across multiple clones (planet system), set up a canonical dir + symlinks manually:\n`);
-    process.stdout.write(`  - Move _tasks/ contents to a shared location (e.g., parent dir)\n`);
-    process.stdout.write(`  - Replace this _tasks/ with a symlink: ln -s <canonical-path> _tasks\n`);
-    process.stdout.write(`  - Add _tasks to .gitignore in this repo\n`);
-  }
-}
 
 // Synchronous sleep (no busy loop) — used only to back off while waiting on the
 // store lock. Atomics.wait blocks the thread for `ms` without spinning.
@@ -103,13 +87,54 @@ function withStoreLock(canonical, fn) {
   try { return fn(); } finally { try { unlinkSync(lock); } catch {} }
 }
 
-// Split the store's pending files into "mine" (this push should commit them) and
-// "foreign" (a DIFFERENT worktree/branch actively claims them — committing them
-// here is exactly the attribution bug this task fixes). Default scope = every
-// pending file EXCEPT task files whose claim names another branch; foreign files
-// are reported, never absorbed and never silently skipped. Dotfiles (lock
-// sentinels, .git internals) are ignored entirely — they are not task content.
-function classifyPending(tasksDir, currentBranch) {
+// The commit gate (task 222): each STAGED task file under `paths`, compared
+// with its version in the store's HEAD by core/validate.mjs introducedErrors —
+// the same rule the Edit/Write hook applies at an agent's edit. A deletion is
+// never refused (that is a cleanup); a new file must be clean. Returns
+// [{ file, errors }] for each file that would gain errors, [] when all pass.
+function stagedRegressions(canonical, paths) {
+  const show = (spec) => {
+    try { return execFileSync('git', ['show', spec], { cwd: canonical, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }); }
+    catch { return null; }
+  };
+  const staged = (gitQuiet(['diff', '--cached', '--name-only', '--relative', '--diff-filter=d', '--', ...paths], canonical) || '')
+    .split('\n').filter((rel) => rel && classifyStorePath(rel) === 'task');
+  if (!staged.length) return [];
+  let all = [];
+  try { all = loadTasks(canonical); } catch { all = []; }
+  const out = [];
+  for (const rel of staged) {
+    const abs = join(canonical, rel);
+    const now = show(`:./${rel}`);
+    if (now == null) continue;
+    const was = show(`HEAD:./${rel}`);
+    const errors = introducedErrors(all.filter((t) => t.path !== abs),
+      was == null ? null : taskFromContent(abs, was), taskFromContent(abs, now));
+    if (errors.length) out.push({ file: rel, errors });
+  }
+  return out;
+}
+
+// Split the store's pending files into "mine" (this push should commit them),
+// "foreign" (another chat claims them), "unowned" (nobody claims them and this
+// chat did not reserve them) and "notTask" (not a task file at all). Only `mine`
+// is committed; the rest are reported, never absorbed and never silently
+// skipped. Dotfiles (lock sentinels, .git internals) are ignored entirely.
+//
+// Who owns a file is decided by its task's claim (an attachment `files/<id>/…`
+// belongs to task <id>), by SESSION, not branch (task 225): two chats in one
+// checkout share a branch, and the branch rule let one chat's push sweep the
+// other's edits into its commit.
+//   - claimed, session recorded → mine only when it is `me`, the chat pushing.
+//     `me` unknown (a human's shell) → foreign: some chat holds it.
+//   - claimed, no session recorded (another machine's claim, or one written
+//     before claims.json) → the old branch rule: foreign when its named branch
+//     is not ours.
+//   - unclaimed → mine only when `me` reserved its id with `next-id`; else
+//     unowned. A new task file has no claim, so "unclaimed" used to mean
+//     "anyone's" and a different chat's push took it. With `me` unknown, an
+//     unclaimed file is still the pusher's: the owner at a terminal is not a chat.
+function classifyPending(tasksDir, currentBranch, me) {
   // Column-free plumbing: `diff --name-only HEAD` (all uncommitted tracked
   // changes, staged or not) ∪ `ls-files --others` (untracked). Avoids parsing
   // porcelain's XY status columns — tryExec trims output, which would strip the
@@ -118,8 +143,8 @@ function classifyPending(tasksDir, currentBranch) {
   // `--relative` on the diff call matters: git reports diff paths relative to
   // the REPO ROOT, not cwd. That's invisible in the shared-store model (tasksDir
   // IS its own repo root, so root-relative == tasksDir-relative), but breaks the
-  // normal-directory model (_tasks/ as a subdir of the project repo) — without
-  // it this returns "_tasks/NNN-foo.md" while every caller below (and `git add`/
+  // normal-directory model (a task folder inside the project repo) — without
+  // it this returns "<folder>/NNN-foo.md" while every caller below (and `git add`/
   // `git commit`, run with cwd: tasksDir) expects tasksDir-relative "NNN-foo.md".
   // `ls-files` doesn't need the flag — it's cwd-relative by default already.
   const changed = tryExec('git diff --name-only --relative HEAD', { cwd: tasksDir }) || '';
@@ -127,89 +152,184 @@ function classifyPending(tasksDir, currentBranch) {
   const pending = [...new Set([...changed.split('\n'), ...untracked.split('\n')])]
     .map((p) => p.trim())
     .filter((p) => p && !basename(p).startsWith('.'));
-  const envByFile = new Map();
-  for (const t of loadTasks(tasksDir)) envByFile.set(basename(t.path), (t.frontmatter || {}).env || {});
-  const mine = [], foreign = [];
-  for (const rel of pending) {
-    const env = envByFile.get(basename(rel));
-    const claimed = env && env.claimed_at && env.claimed_at !== 'null';
-    const branch = claimed ? (env.branch && env.branch !== 'null' ? env.branch : null) : null;
-    // Foreign only when the file is claimed on a NAMED branch other than ours.
-    // A null-branch claim (claimed from the main checkout, no worktree) can't
-    // collide across worktrees, so it stays in scope.
-    (branch && currentBranch && branch !== currentBranch ? foreign : mine).push(rel);
+  const taskById = new Map();
+  for (const t of loadTasks(tasksDir)) {
+    const id = taskIdOfPath(basename(t.path));
+    if (id != null) taskById.set(id, { path: t.path, env: (t.frontmatter || {}).env || {} });
   }
-  return { mine, foreign };
+  const isSet = (v) => v != null && v !== '' && v !== 'null';
+  const mine = [], foreign = [], unowned = [], notTask = [];
+  for (const rel of pending) {
+    // Only task files, their attachments (files/<id>/…) and the store's
+    // allowed files (axes.json, switches.json …) are a session's to commit by default — the same rule the portal's store view
+    // flags by (core/store-audit.mjs). Job output (briefs/, heartbeats/,
+    // drift.md) and anything else stays pending: it used to be swept into the
+    // next "add task" commit under a message that said nothing about it (task
+    // 187). An explicit `sync push -- <path>` still commits whatever it names.
+    if (!['task', 'attachment', 'allowed'].includes(classifyStorePath(rel))) { notTask.push(rel); continue; }
+    const id = taskIdOfPath(rel);
+    const task = id != null ? taskById.get(id) : null;
+    const env = task ? task.env : {};
+    if (isSet(env.claimed_at)) {
+      const holder = { path: rel, session: isSet(env.claimed_by_session) ? env.claimed_by_session : null,
+        worktree: isSet(env.worktree) ? env.worktree : null, branch: isSet(env.branch) ? env.branch : null };
+      const theirs = holder.session
+        ? holder.session !== me
+        : !!(holder.branch && currentBranch && holder.branch !== currentBranch);
+      (theirs ? foreign : mine).push(theirs ? holder : rel);
+      continue;
+    }
+    // Unclaimed. Looked up by store + id, not by a loaded task: a just-reserved
+    // file is empty until written, and its attachments may arrive first.
+    const reservedBy = id != null ? ((localClaim(join(tasksDir, basename(rel)), id) || {}).reservedBy || null) : null;
+    if (!me || reservedBy === me) mine.push(rel);
+    else unowned.push({ path: rel, reservedBy });
+  }
+  return { mine, foreign, unowned, notTask };
 }
 
-function cmdSync(args) {
+// Turn one `sync push -- <path>` argument into the store-relative name git
+// expects (task 161). git runs with cwd = the store, so only a store-relative or
+// absolute path used to work; the repo-relative `.cogyard/tasks/NNN-foo.md` a caller
+// naturally types died as a bare `fatal: pathspec`. A relative path is tried
+// against each base in turn (the caller's cwd, the repo root, the store itself —
+// the last keeps the bare-filename form working) and the first that EXISTS
+// decides: inside the store it is used, outside it is refused. Only when no base
+// finds the file (a deletion to commit) does the first missing candidate inside
+// the store win, resolved through its nearest EXISTING ancestor — the file's
+// folder may be gone too (task 196: job output's emptied `briefs/` folder was
+// removed with its files, and the deletions could not be named). realpath
+// collapses whatever link points at the store, so no link name is hardcoded here.
+export function resolveStorePath(p, { canonical, bases }) {
+  const real = (abs) => {
+    const missing = [];
+    for (let dir = abs; ; dir = dirname(dir)) {
+      try { return join(realpathSync(dir), ...missing); } catch {}
+      if (dirname(dir) === dir) return null;
+      missing.unshift(basename(dir));
+    }
+  };
+  const inStore = (abs) => {
+    const r = abs && relative(canonical, abs);
+    return r && !r.startsWith('..') && !isAbsolute(r) ? r : null;
+  };
+  const candidates = (isAbsolute(p) ? [p] : bases.map((b) => resolve(b, p)))
+    .map(real).filter(Boolean).map((abs) => ({ abs, rel: inStore(abs) }));
+  const existing = candidates.find((c) => existsSync(c.abs));
+  const hit = existing || candidates.find((c) => c.rel);
+  if (!hit || !hit.rel) throw new Error(
+    `${p} is not inside the task store (${canonical}). Pass a file in the store: ` +
+    'its bare filename, the path `cogyard tasks find` prints, or a path through the ' +
+    "project's link to the store.");
+  return hit.rel;
+}
+
+async function cmdSync(args) {
   const sub = args[0];
   const repoRoot = findRepoRoot();
   if (!repoRoot) fail('not in a git repo');
-  const tasksDir = join(repoRoot, '_tasks');
-  if (!existsSync(tasksDir)) fail('_tasks/ does not exist — run `tasks.mjs init` first');
+  const tasksDir = tasksDirOf(repoRoot);
+  if (!existsSync(tasksDir)) fail('no task directory (.cogyard/tasks) — set the project up with `cogyard onboard` first');
 
   if (sub === 'pull') {
     // Same local-only tolerance as push.
     const remotes = (tryExec('git remote', { cwd: tasksDir }) || '').split('\n');
     if (!remotes.includes('origin')) { process.stdout.write('No remote configured — nothing to pull (local-only).\n'); return; }
-    try { execLoud(`git pull --rebase origin tasks`, { cwd: tasksDir }); }
-    catch { fail('pull failed (rebase conflict?). Investigate manually in _tasks/.'); }
+    try { execLoud(`git ${gitIdentityFlags(tasksDir)}pull --rebase origin tasks`, { cwd: tasksDir }); }
+    catch { fail('pull failed (rebase conflict?). Investigate manually in the task store (`cogyard tasks doctor` shows where it is).'); }
   } else if (sub === 'push') {
     // `sync push "<msg>"` scopes to this session's own pending edits (default),
     // or `sync push "<msg>" -- <path> [<path>...]` to commit exactly named paths.
     const rest = args.slice(1);
     const dashIdx = rest.indexOf('--');
-    const explicit = dashIdx === -1 ? [] : rest.slice(dashIdx + 1);
     const message = (dashIdx === -1 ? rest : rest.slice(0, dashIdx)).join(' ')
       || `tasks: update ${new Date().toISOString()}`;
     const canonical = realpathSync(tasksDir);
+    // Normalised once, here, so `git add` and `git commit` below both get the
+    // store-relative form — they share one pathspec.
+    let explicit;
+    try {
+      explicit = (dashIdx === -1 ? [] : rest.slice(dashIdx + 1))
+        .map((p) => resolveStorePath(p, { canonical, bases: [process.cwd(), repoRoot, canonical] }));
+    } catch (e) { fail(e.message); }
+    // A name inside the store that is neither on disk nor tracked (a typo) would
+    // otherwise reach git as a bare `fatal: pathspec`.
+    for (const rel of explicit) {
+      if (!existsSync(join(canonical, rel)) && gitQuiet(['ls-files', '--error-unmatch', '--', rel], canonical) === null) {
+        fail(`${rel} does not exist in the task store (${canonical}) and is not tracked there.`);
+      }
+    }
+    // Naming a path no longer commits anything at all (task 190): a file the
+    // store rule does not allow is refused even when named — that is how most of
+    // the stray files task 190 cleaned up got in. Its DELETION may still be
+    // committed (that is the cleanup), and a folder is judged by what a file
+    // inside it would be (`files/179` is a task's attachment folder).
+    for (const rel of explicit) {
+      const abs = join(canonical, rel);
+      if (!existsSync(abs)) continue;
+      const probe = statSync(abs).isDirectory() ? `${rel.replace(/\/+$/, '')}/x` : rel;
+      if (!['task', 'attachment', 'allowed'].includes(classifyStorePath(probe))) {
+        fail(`${rel} is not something a task store holds — a store commits task files (NNN-<slug>.md), ` +
+          `axes.json, switches.json, and each task's attachments under files/<task id>/. Move it into the folder of the ` +
+          `task it belongs to (git mv in the store), or out of the store. Committing its deletion is allowed.`);
+      }
+    }
     const currentBranch = tryExec('git rev-parse --abbrev-ref HEAD', { cwd: repoRoot }) || '';
+    const me = explicit.length ? null : await currentSessionId();
     const remotes = (tryExec('git remote', { cwd: tasksDir }) || '').split('\n');
     const hasTasksBranch = !!tryExec('git rev-parse --verify --quiet refs/heads/tasks', { cwd: tasksDir });
     const remoteBacked = remotes.includes('origin') && hasTasksBranch;
+    const identity = gitIdentityFlags(tasksDir);
 
-    withStoreLock(canonical, () => {
+    const refused = withStoreLock(canonical, () => {
       // Team stores: pull before write so the scoped commit lands on current
       // origin/tasks (mirrors env.mjs's claim path). --autostash tolerates other
       // sessions' pending edits in the shared tree.
-      if (remoteBacked) tryExec('git pull --rebase --autostash origin tasks', { cwd: tasksDir });
+      if (remoteBacked) tryExec(`git ${identity}pull --rebase --autostash origin tasks`, { cwd: tasksDir });
 
-      const { mine, foreign } = explicit.length
-        ? { mine: explicit, foreign: [] }
-        : classifyPending(tasksDir, currentBranch);
+      const { mine, foreign, unowned, notTask } = explicit.length
+        ? { mine: explicit, foreign: [], unowned: [], notTask: [] }
+        : classifyPending(tasksDir, currentBranch, me);
       const reportForeign = () => {
+        const who = (f) => [f.session && `session ${f.session}`, f.worktree ? `worktree ${f.worktree}` : f.branch && `branch ${f.branch}`]
+          .filter(Boolean).join(', ') || 'another checkout';
         if (foreign.length) process.stdout.write(
-          `${foreign.length} file(s) claimed by other sessions — left pending, not committed by this push:\n` +
-          foreign.map((f) => `  ${f}`).join('\n') + '\n');
+          `${foreign.length} file(s) claimed by another chat — left pending, not committed by this push:\n` +
+          foreign.map((f) => `  ${f.path} — claimed by ${who(f)}`).join('\n') + '\n');
+        if (unowned.length) process.stdout.write(
+          `${unowned.length} file(s) left pending — not claimed or reserved by this chat (commit one with \`sync push "<msg>" -- <path>\`):\n` +
+          unowned.map((f) => `  ${f.path} — ${f.reservedBy ? `reserved by session ${f.reservedBy}` : 'unclaimed'}`).join('\n') + '\n');
+        if (notTask.length) process.stdout.write(
+          `${notTask.length} file(s) left pending — not a task file (job output or other; commit one with \`sync push "<msg>" -- <path>\`):\n` +
+          notTask.map((f) => `  ${f}`).join('\n') + '\n');
       };
 
-      if (!mine.length) { reportForeign(); if (!foreign.length) process.stdout.write('Nothing to commit.\n'); return; }
-
-      // Keep INDEX.md in lockstep with every default-scope push (core/index.mjs's
-      // contract: pickup-task reads it directly, so it must never go stale).
-      // Skip for explicit `-- <path>` pushes — those promise to commit exactly
-      // the named paths, and INDEX.md isn't one of them.
-      if (!explicit.length) {
-        regenerateIndex(tasksDir, repoRoot);
-        if (!mine.includes('INDEX.md')) mine.push('INDEX.md');
-      }
+      if (!mine.length) { reportForeign(); if (!foreign.length && !unowned.length) process.stdout.write('Nothing to commit.\n'); return; }
 
       // Scope BOTH halves: a pathspec-less `git commit` would still absorb
       // whatever another session left staged, so add AND commit take the paths.
-      const pathspec = mine.map((p) => JSON.stringify(p)).join(' ');
-      execLoud(`git add -- ${pathspec}`, { cwd: tasksDir });
-      if (tryExec(`git diff --cached --quiet -- ${pathspec}`, { cwd: tasksDir }) !== null) {
+      // Argument lists, never a shell string — see gitQuiet.
+      gitLoud(['add', '--', ...mine], tasksDir);
+      if (gitQuiet(['diff', '--cached', '--quiet', '--', ...mine], tasksDir) !== null) {
         // Non-null (exit 0) => nothing staged for the named paths.
         process.stdout.write('Nothing to commit for this session.\n');
         reportForeign();
         return;
       }
-      execLoud(`git commit -m ${JSON.stringify(message)} -- ${pathspec}`, { cwd: tasksDir });
+      // The commit gate (task 222): no store commit adds a validator error.
+      // The Edit/Write hook sees only an agent's edit tool; a shell or human
+      // edit reaches the store only through here. Nothing is committed when
+      // any staged task file is refused, and the staging is undone.
+      const bad = stagedRegressions(canonical, mine);
+      if (bad.length) {
+        if (gitQuiet(['reset', '-q', '--', ...mine], tasksDir) === null) gitQuiet(['rm', '-q', '-r', '--cached', '--', ...mine], tasksDir);
+        return bad;
+      }
+      gitLoud([...gitIdentityArgs(tasksDir), 'commit', '-m', message, '--', ...mine], tasksDir);
       reportForeign();
 
       // Local-only tolerance: push only when the store has an origin AND a tasks
-      // branch. Local-only shared stores and normal-dir projects (where _tasks
+      // branch. Local-only shared stores and normal-dir projects (where the task dir
       // rides the project repo) commit locally + notice — they must NOT fail(),
       // or every skill sync errors on them.
       if (!remoteBacked) {
@@ -219,34 +339,19 @@ function cmdSync(args) {
       }
       if (tryExec(`git push origin tasks`, { cwd: tasksDir }) === null) {
         process.stdout.write(`Push failed; pulling and retrying...\n`);
-        tryExec(`git pull --rebase --autostash origin tasks`, { cwd: tasksDir });
-        if (tryExec(`git push origin tasks`, { cwd: tasksDir }) === null) fail('push retry failed. Investigate manually in _tasks/.');
+        tryExec(`git ${identity}pull --rebase --autostash origin tasks`, { cwd: tasksDir });
+        if (tryExec(`git push origin tasks`, { cwd: tasksDir }) === null) fail('push retry failed. Investigate manually in the task store (`cogyard tasks doctor` shows where it is).');
       }
     });
+    if (refused?.length) {
+      fail(`nothing committed — this commit would add validator errors to ${refused.length} task file(s):\n`
+        + refused.map(({ file, errors }) => `  ${file}\n${errors.map((e) => `    • ${e}`).join('\n')}`).join('\n')
+        + `\nFix them (\`cogyard tasks validate <id>\` shows each file's errors), then push again. `
+        + `Errors a file already had in the store are allowed through — only new ones are refused.`);
+    }
   } else {
     fail('usage: tasks.mjs sync pull | tasks.mjs sync push <message> [-- <path>...]');
   }
-}
-
-// The one place that writes INDEX.md. core/index.mjs's contract calls it
-// "consumed tooling" the pickup-task skill reads directly — that's only true
-// if it's regenerated on every mutation, not just when someone runs the bare
-// `tasks` command by hand. cmdSync's push path calls this too (see below).
-function regenerateIndex(tasksDir, repoRoot) {
-  const project = repoRoot ? basename(repoRoot) : basename(dirname(tasksDir));
-  const tasks = loadTasks(tasksDir);
-  for (const t of tasks) t.derived = computeDerived(t, tasks, repoRoot);
-  writeFileSync(join(tasksDir, 'INDEX.md'), generateIndexMd(tasks, project));
-  return { tasks, project };
-}
-
-function cmdGenerate(opts) {
-  const repoRoot = findRepoRoot();
-  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
-  if (!tasksDir || !existsSync(tasksDir)) fail('no _tasks/ found');
-  const { tasks, project } = regenerateIndex(tasksDir, repoRoot);
-  if (!opts.quiet) process.stdout.write(`Wrote ${join(tasksDir, 'INDEX.md')}\n`);
-  return { tasks, project, tasksDir };
 }
 
 // `labels` — the anti-duplicate reference the write-task skill checks BEFORE
@@ -257,7 +362,7 @@ function cmdGenerate(opts) {
 // is emphatically NOT a merge/rename "broom" (that stays out of scope).
 function cmdLabels(flags) {
   const repoRoot = findRepoRoot();
-  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
+  const tasksDir = repoRoot ? tasksDirOf(repoRoot) : findTasksDir();
   const axes = resolveAxes(repoRoot);
   const registered = registeredLabels(axes);
 
@@ -282,7 +387,7 @@ function cmdLabels(flags) {
   }
 
   if (!axes.length) {
-    process.stdout.write('No axis map ($COGYARD_HOME/axes.json or <repo>/_tasks/axes.json). All labels are Ungrouped.\n');
+    process.stdout.write('No axis map ($COGYARD_HOME/axes.json or <repo>/.cogyard/tasks/axes.json). All labels are Ungrouped.\n');
   }
   for (const ax of axes) {
     process.stdout.write(`\n${ax.name}\n`);
@@ -297,13 +402,38 @@ function cmdLabels(flags) {
   }
 }
 
+// `switches` — this project's switches (task 246), resolved: each value from
+// <task store>/switches.json, else its default. What the merge-to-main and
+// pickup-task skills read; they never read the file, so the defaults live in
+// core/switches.mjs only. Read-only.
+function cmdSwitches(flags) {
+  const repoRoot = findRepoRoot();
+  if (!repoRoot) fail('not in a git repo');
+  const s = resolveSwitches(repoRoot);
+  if (flags.json) { process.stdout.write(JSON.stringify(s, null, 2) + '\n'); return; }
+  const tag = (x) => (x.set ? 'set' : 'default');
+  const versionText = typeof s.version.value === 'object'
+    ? `own command: ${s.version.value.command} (version kept in ${s.version.value.file})`
+    : s.version.value;
+  process.stdout.write(`rebase   ${s.rebase.value}  (${tag(s.rebase)})\n`);
+  process.stdout.write(`version  ${versionText}  (${tag(s.version)})\n`);
+  const problems = switchProblems(repoRoot);
+  if (problems.length) {
+    process.stdout.write('\nIgnored in switches.json:\n');
+    for (const p of problems) process.stdout.write(`  ${p}\n`);
+  }
+  let store = tasksDirOf(repoRoot);
+  try { store = realpathSync(store); } catch { /* no store yet: name where it would be */ }
+  process.stdout.write(`\nSet in ${join(store, 'switches.json')}, or on the project's settings page.\n`);
+}
+
 function cmdProjects(args) {
   const sub = args[0];
   if (!sub || sub === 'list') {
     const projects = readRegistry();
-    if (!projects.length) { process.stdout.write('(registry empty — run `tasks.mjs init` in a project to register it)\n'); return; }
+    if (!projects.length) { process.stdout.write('(registry empty — `cogyard init <name>` creates a project, `cogyard onboard [path]` adds an existing one)\n'); return; }
     for (const p of projects) {
-      const status = existsSync(join(p.path, '_tasks')) ? '  ' : ' ⚠';
+      const status = existsSync(tasksDirOf(p.path)) ? '  ' : ' ⚠';
       process.stdout.write(`${status} ${p.slug.padEnd(40)} ${p.path}\n`);
     }
     return;
@@ -326,12 +456,12 @@ function cmdProjects(args) {
   fail('usage: tasks.mjs projects [list | remove <slug> | register]');
 }
 
-// --- Shared-store model: convert · mount · doctor ------------------
-// convert: relocate a project's tracked _tasks/ into its own git repo (the
-// "store", branch `tasks`) and replace it with an ABSOLUTE symlink, so every
-// git worktree of the project shares one physical _tasks/ (mounted via `mount`).
-// Absolute because worktrees are not siblings (unlike multi-clone "planets",
-// which use a relative ../_tasks). Copy-first: originals are never removed
+// --- The task store: convert · mount · doctor ------------------
+// convert: give a project its own store repo (branch `tasks`) — adopting an
+// in-repo `_tasks/` folder if it has one, else empty — and an ABSOLUTE symlink, so every
+// git worktree of the project shares one store through its .cogyard/tasks link (mounted via `mount`).
+// Absolute because worktrees are not siblings of the main checkout, so a
+// relative link would not resolve from inside one. Copy-first: originals are never removed
 // until the copy is verified file-by-file.
 //
 // The conversion logic itself lives in core/scaffold.mjs (convertToSharedStore),
@@ -348,15 +478,15 @@ function cmdConvert(flags) {
     });
   } catch (e) { fail(e.message); }
   if (!r.converted && r.reason === 'already-symlink') {
-    process.stdout.write(`_tasks is already a symlink → ${r.store} (shared store). Nothing to do.\n`);
+    process.stdout.write(`The task directory is already a link → ${r.store} (shared store). Nothing to do.\n`);
     return;
   }
-  process.stdout.write(`\nConverted. _tasks → ${r.store} (branch tasks). Worktrees: run \`cogyard tasks mount\` inside each (the SessionStart hook does this automatically).\n`);
+  process.stdout.write(`\nConverted. ${TASKS_DIR} → ${r.store} (branch tasks). Worktrees: run \`cogyard tasks mount\` inside each (the SessionStart hook does this automatically).\n`);
 }
 
 // join: member-#2 onboarding for a TEAM store. The lead ran
 // `convert --remote <url>`; a fresh clone of the project repo has a dangling
-// gitignored _tasks symlink. This clones the store, mounts the symlink,
+// gitignored task link. This clones the store, mounts .cogyard/tasks,
 // registers the project, then runs the doctor audit so the result is verified.
 function cmdJoin(flags, positional) {
   const remote = positional[1];
@@ -370,99 +500,76 @@ function cmdJoin(flags, positional) {
       log: (m) => process.stdout.write(m + '\n'),
     });
   } catch (e) { fail(e.message); }
-  process.stdout.write(`\nJoined: ${r.slug} — _tasks → ${r.store}. Doctor audit:\n\n`);
+  process.stdout.write(`\nJoined: ${r.slug} — task link → ${r.store}. Doctor audit:\n\n`);
   cmdDoctor();
 }
 
+// mount: give a worktree the same link to the store its main checkout has. The
+// worktree's link always takes the new name `.cogyard/tasks` (task 160),
+// whichever name the main checkout still uses. A worktree whose branch predates
+// the project's `.cogyard/.gitignore` would show that link as untracked, so the
+// worktree-shared `info/exclude` covers it whenever the checkout does not.
 function cmdMount() {
   const repoRoot = findRepoRoot();
   if (!repoRoot) fail('not in a git repo');
-  const tasksDir = join(repoRoot, '_tasks');
-  let l = null;
-  try { l = lstatSync(tasksDir); } catch {}
-  if (l) {
-    if (l.isSymbolicLink() && !existsSync(tasksDir)) {
-      fail(`_tasks is a BROKEN symlink → ${readlinkSync(tasksDir)} — fix or remove it, then re-run mount`);
+  const found = locateTasksDir(repoRoot);
+  if (found) {
+    const name = relative(repoRoot, found.path);
+    if (lstatSync(found.path).isSymbolicLink() && !existsSync(found.path)) {
+      fail(`${name} is a BROKEN symlink → ${readlinkSync(found.path)} — fix or remove it, then re-run mount`);
     }
-    process.stdout.write('_tasks already present — nothing to mount.\n');
+    process.stdout.write(`${name} already present — nothing to mount.\n`);
     return;
   }
   const raw = tryExec('git worktree list --porcelain', { cwd: repoRoot });
   const mainPath = (raw || '').split('\n').find((x) => x.startsWith('worktree '))?.slice('worktree '.length);
   if (!mainPath) fail('cannot determine the main worktree');
   if (resolve(mainPath) === resolve(repoRoot)) {
-    process.stdout.write('This is the main worktree and it has no _tasks — run `tasks.mjs init` (or `convert`).\n');
+    process.stdout.write('This is the main worktree and it has no task directory — run `cogyard onboard` here.\n');
     return;
   }
-  const baseTasks = join(mainPath, '_tasks');
-  let bl = null;
-  try { bl = lstatSync(baseTasks); } catch {}
-  if (!bl) { process.stdout.write(`Base worktree (${mainPath}) has no _tasks — nothing to mount.\n`); return; }
-  if (!bl.isSymbolicLink()) { process.stdout.write('Base _tasks is a normal directory (not a shared store) — nothing to mount.\n'); return; }
-  let target = readlinkSync(baseTasks);
-  if (!isAbsolute(target)) target = resolve(mainPath, target); // tolerate planet-style relative links
-  if (!existsSync(target)) fail(`base _tasks symlink is broken → ${target} — fix the store before mounting`);
-  symlinkSync(target, tasksDir);
-  process.stdout.write(`Mounted _tasks → ${target}\n`);
+  const base = locateTasksDir(mainPath);
+  if (!base) { process.stdout.write(`Base worktree (${mainPath}) has no task directory — nothing to mount.\n`); return; }
+  const baseName = relative(mainPath, base.path);
+  if (!lstatSync(base.path).isSymbolicLink()) { process.stdout.write(`Base ${baseName} is a folder, not a link to a task store — nothing to mount. Fix the main checkout first (\`cogyard tasks doctor\` names it).\n`); return; }
+  const target = readlinkSync(base.path);
+  // The link must be absolute: a worktree is not a sibling of the main
+  // checkout, so a relative target means something else from inside one.
+  // cogyard only ever writes absolute links (task 169 removed the tolerance).
+  if (!isAbsolute(target)) {
+    const abs = resolve(dirname(base.path), target);
+    fail(`base ${baseName} is a relative link (→ ${target}); cogyard needs an absolute one. In ${mainPath}, replace it:\n  ln -sfn ${JSON.stringify(abs)} ${TASKS_DIR}\nthen re-run mount`);
+  }
+  if (!existsSync(target)) fail(`base ${baseName} symlink is broken → ${target} — fix the store before mounting`);
+  const linkPath = join(repoRoot, TASKS_DIR);
+  mkdirSync(dirname(linkPath), { recursive: true });
+  symlinkSync(target, linkPath);
+  if (gitQuiet(['check-ignore', '-q', TASKS_DIR], repoRoot) === null) {
+    const common = gitQuiet(['rev-parse', '--git-common-dir'], repoRoot);
+    if (common) excludeTasksLink(resolve(repoRoot, common));
+  }
+  process.stdout.write(`Mounted ${TASKS_DIR} → ${target}\n`);
 }
 
 function cmdDoctor() {
-  const projects = readRegistry();
-  if (!projects.length) { process.stdout.write('(registry empty)\n'); return; }
-  // canonical store -> slugs, to show intentional sharing (planets) at a glance
-  const byCanon = new Map();
-  const rows = projects.map((p) => {
-    const td = join(p.path, '_tasks');
-    const flags = [];
-    let model = 'normal', storePath = '—', remote = '—', wt = '—';
-    if (!tryExec('git rev-parse --show-toplevel', { cwd: p.path })) flags.push('not a git repo');
-    let l = null;
-    try { l = lstatSync(td); } catch {}
-    if (!l) { model = 'MISSING'; flags.push('no _tasks'); }
-    else if (l.isSymbolicLink()) {
-      const target = readlinkSync(td);
-      if (!existsSync(td)) { model = 'BROKEN'; storePath = target; flags.push(`broken symlink → ${target}`); }
-      else {
-        model = 'shared';
-        storePath = realpathSync(td);
-        if (!isAbsolute(target)) flags.push('relative symlink (worktrees need absolute)');
-        const storeGit = tryExec('git rev-parse --show-toplevel', { cwd: storePath });
-        if (!storeGit) flags.push('store is not a git repo');
-        else {
-          const branch = tryExec('git branch --show-current', { cwd: storePath });
-          if (branch !== 'tasks') flags.push(`store on branch ${branch || '?'} (expected tasks)`);
-          remote = (tryExec('git remote', { cwd: storePath }) || '').split('\n').includes('origin') ? 'origin' : 'local-only';
-        }
-        byCanon.set(storePath, [...(byCanon.get(storePath) || []), p.slug]);
-      }
-    } else {
-      storePath = '(in repo)';
-    }
-    // Worktrees: total beyond main, and (for shared) how many are unmounted.
-    const wts = tryExec('git rev-parse --show-toplevel', { cwd: p.path }) ? gitWorktrees(p.path) : [];
-    if (wts.length > 1) {
-      const extra = wts.slice(1);
-      if (model === 'shared') {
-        const unmounted = extra.filter((e) => { try { lstatSync(join(e.path, '_tasks')); return false; } catch { return true; } });
-        wt = `${extra.length - unmounted.length}/${extra.length} mounted`;
-        if (unmounted.length) flags.push(`${unmounted.length} worktree(s) unmounted — run mount`);
-      } else {
-        wt = `${extra.length}`;
-        if (model === 'normal') flags.push('convertible (worktrees + normal _tasks)');
-      }
-    }
-    return { slug: p.slug, model, storePath, remote, wt, flags };
-  });
-  for (const r of rows) {
-    const shared = r.model === 'shared' && byCanon.get(r.storePath)?.length > 1;
-    if (shared) r.flags.unshift(`store shared with: ${byCanon.get(r.storePath).filter((s) => s !== r.slug).join(', ')}`);
-  }
-  const W = { slug: 28, model: 8, store: 52, remote: 11, wt: 14 };
-  process.stdout.write(['PROJECT'.padEnd(W.slug), 'MODEL'.padEnd(W.model), 'STORE'.padEnd(W.store), 'REMOTE'.padEnd(W.remote), 'WORKTREES'.padEnd(W.wt), 'FLAGS'].join('') + '\n');
+  // Renderer only — the report itself is core/store-health.mjs, so the portal's
+  // GET /api/storage answers from the same code that prints this table (task 132).
+  const { rows, drift } = storeHealth();
+  if (!rows.length) { process.stdout.write('(registry empty)\n'); return; }
+
+  // A working link reports mounted-of-total (an unmounted worktree cannot see
+  // the store at all); anything else just counts worktrees.
+  const wtCell = (r) => !r.worktrees ? '—'
+    : r.link.state === 'ok' ? `${r.worktrees.mounted}/${r.worktrees.total} mounted`
+    : `${r.worktrees.total}`;
+
+  // LINK: the project's task link — ok / broken / missing / folder (task 169).
+  const W = { slug: 28, link: 8, store: 52, remote: 11, wt: 14 };
+  process.stdout.write(['PROJECT'.padEnd(W.slug), 'LINK'.padEnd(W.link), 'STORE'.padEnd(W.store), 'REMOTE'.padEnd(W.remote), 'WORKTREES'.padEnd(W.wt), 'FLAGS'].join('') + '\n');
   for (const r of rows) {
     process.stdout.write([
-      r.slug.padEnd(W.slug), r.model.padEnd(W.model),
-      String(r.storePath).padEnd(W.store), r.remote.padEnd(W.remote), String(r.wt).padEnd(W.wt),
+      r.slug.padEnd(W.slug), r.link.state.padEnd(W.link),
+      String(r.storePath).padEnd(W.store), r.remote.padEnd(W.remote), wtCell(r).padEnd(W.wt),
       r.flags.length ? r.flags.join('; ') : 'ok',
     ].join('') + '\n');
   }
@@ -471,33 +578,91 @@ function cmdDoctor() {
   // rejects. Compact: one line per project, error files listed (run `validate`
   // for the full per-file detail incl. warnings).
   process.stdout.write('\nSchema drift (run `tasks.mjs validate [--all]` for detail):\n');
-  let totalErrors = 0;
-  for (const p of projects) {
-    const td = join(p.path, '_tasks');
-    if (!existsSync(td)) continue;
-    let tasks;
-    try { tasks = loadTasks(td); } catch { continue; }
-    if (!tasks.length) continue;
-    const { results, errorCount, warningCount } = validateTasks(tasks);
-    totalErrors += errorCount;
-    const flag = errorCount ? '✗' : warningCount ? '⚠' : '✓';
-    process.stdout.write(`  ${flag} ${p.slug.padEnd(26)} ${errorCount} error(s), ${warningCount} warning(s)\n`);
-    for (const r of results.filter((x) => x.errors.length)) {
-      process.stdout.write(`      ${r.file}: ${r.errors.join('; ')}\n`);
+  for (const d of drift.projects) {
+    const flag = d.errorCount ? '✗' : d.warningCount ? '⚠' : '✓';
+    process.stdout.write(`  ${flag} ${d.slug.padEnd(26)} ${d.errorCount} error(s), ${d.warningCount} warning(s)\n`);
+    for (const f of d.errorFiles) {
+      process.stdout.write(`      ${f.file}: ${f.errors.join('; ')}\n`);
     }
   }
-  process.stdout.write(`  ${totalErrors ? '✗' : '✓'} ${totalErrors} schema error(s) total.\n`);
+  process.stdout.write(`  ${drift.totalErrors ? '✗' : '✓'} ${drift.totalErrors} schema error(s) total.\n`);
+
+  // Finished work still sitting OPEN (task 171). Listed, never closed: the
+  // owner decides, then runs the command printed beside each one.
+  const ready = closeableTasks();
+  process.stdout.write(`\nLook closeable — every box ticked or settled, branch merged or none, claim yours or free (${ready.length}):\n`);
+  if (!ready.length) process.stdout.write('  (none)\n');
+  const mergeNote = { merged: 'merged', 'no-branch': 'no branch', 'no-commits': 'branch had no commits' };
+  for (const r of ready) {
+    const s = r.boxes.settled;
+    const settled = Object.entries(s).filter(([, n]) => n).map(([k, n]) => `${n} ${k}`).join(', ');
+    process.stdout.write(`  ${r.slug}#${r.id}  ${r.title}\n      ${r.boxes.done}/${r.boxes.counted} ticked${settled ? `, ${settled}` : ''}; ${mergeNote[r.merge.state] || r.merge.state}` +
+      ` — to close: cd ${r.path} && cogyard tasks close ${r.id}\n`);
+  }
+
+  // DONE tasks that still hold open boxes (task 238). DONE means nothing is left
+  // to see: each box is ticked, (dropped: why) or (moved: <id>), or the task is
+  // really ENOUGH. One line per project; under it, the boxes that already say in
+  // prose how they were settled, with the marker that prose reads as, and the
+  // tasks whose leftovers are already marked (optional) — those are
+  // the owner's to reopen and close as ENOUGH. The rest are the owner's call.
+  const leftover = doneWithLeftovers();
+  const boxes = leftover.reduce((n, r) => n + r.open.length, 0);
+  process.stdout.write(`\nDONE but still holding open boxes — tick or mark each (dropped: why) / (moved: <id>), or reopen and close as ENOUGH (${leftover.length} task(s), ${boxes} box(es)):\n`);
+  if (!leftover.length) process.stdout.write('  (none)\n');
+  const bySlug = new Map();
+  for (const r of leftover) bySlug.set(r.slug, [...(bySlug.get(r.slug) || []), r]);
+  for (const [slug, rows] of bySlug) {
+    const n = rows.reduce((a, r) => a + r.open.length, 0);
+    const proposed = rows.flatMap((r) => r.open.filter((o) => o.proposal).map((o) => ({ r, o })));
+    const marked = rows.filter((r) => r.open.some((o) => o.kind));
+    process.stdout.write(`  ${slug.padEnd(28)} ${rows.length} task(s), ${n} box(es)${proposed.length ? `, ${proposed.length} already say how they were settled:` : ''}\n`);
+    for (const { r, o } of proposed) {
+      const text = o.text.length > 70 ? o.text.slice(0, 67) + '…' : o.text;
+      process.stdout.write(`      #${r.id}  ${markerText(o.proposal).padEnd(28)} ${text}\n`);
+    }
+    if (marked.length) process.stdout.write(`      leftovers already marked (optional) — ENOUGH, not DONE: ${marked.map((r) => `#${r.id}`).join(', ')}\n`);
+  }
+  // A project's own merge or commit process beside cogyard's skill (task 133):
+  // a doc no skill reads, a project skill named like cogyard's (it never runs,
+  // or runs beside it), or a replacing skill older than cogyard's last change.
+  // Every registered project's main checkout, so projects onboarded before the
+  // check existed are audited too. Reported, never fixed: the owner decides.
+  // Also every project command a cogyard skill or command hides, and any of
+  // cogyard's names the agent keeps for a built-in command (task 218) — so
+  // this one section lists every name clash.
+  const procRows = [];
+  try {
+    const lines = describeReservedNames(auditReservedNames());
+    if (lines.length) procRows.push({ slug: '(this machine)', lines });
+  } catch (e) { procRows.push({ slug: '(this machine)', lines: [`could not check built-in names: ${e.message}`] }); }
+  for (const p of readRegistry()) {
+    if (!p.path || !existsSync(p.path)) continue;
+    let lines;
+    try { lines = describeAudit(auditProcess(p.path, { slug: p.slug })); } catch (e) { lines = [`could not audit: ${e.message}`]; }
+    if (lines.length) procRows.push({ slug: p.slug, lines });
+  }
+  const procCount = procRows.reduce((n, r) => n + r.lines.length, 0);
+  process.stdout.write(`\nProcess docs, project skills and commands, name clashes — one process, one place (docs/PROJECT-INIT.md) (${procRows.length} project(s), ${procCount} finding(s)):\n`);
+  if (!procRows.length) process.stdout.write('  (none)\n');
+  for (const r of procRows) {
+    process.stdout.write(`  ⚠ ${r.slug}\n`);
+    for (const l of r.lines) process.stdout.write(`      ${l}\n`);
+  }
 }
 
-// --- Next-id picker (atomic, race-safe across symlinked clones) -------------
+// --- Next-id picker (atomic, race-safe across checkouts sharing a store) ----
 
-function cmdNextId(slug) {
+async function cmdNextId(slug) {
   if (!slug || /^[0-9]/.test(slug)) fail('usage: tasks.mjs next-id <slug>   (slug: kebab-case, no leading digit)');
+  // Which chat reserved the id (task 225): a plain `sync push` from any other
+  // chat leaves the new file alone until it is claimed or named.
+  const me = await currentSessionId();
   const cleanSlug = String(slug).replace(/[^a-zA-Z0-9._-]/g, '-');
   const repoRoot = findRepoRoot();
-  const localTasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
-  if (!localTasksDir || !existsSync(localTasksDir)) fail('no _tasks/ found');
-  // Resolve to canonical so all sibling clones serialize on the same dir via O_EXCL.
+  const localTasksDir = repoRoot ? tasksDirOf(repoRoot) : findTasksDir();
+  if (!localTasksDir || !existsSync(localTasksDir)) fail('no task directory found (.cogyard/tasks)');
+  // Resolve to canonical so every checkout of the store serializes on the same dir via O_EXCL.
   let canonical;
   try { canonical = realpathSync(localTasksDir); } catch { canonical = localTasksDir; }
 
@@ -509,7 +674,7 @@ function cmdNextId(slug) {
   const storeRemotes = (tryExec('git remote', { cwd: canonical }) || '').split('\n');
   const remoteBacked = storeRemotes.includes('origin')
     && !!tryExec('git rev-parse --verify --quiet refs/heads/tasks', { cwd: canonical });
-  if (remoteBacked) tryExec('git pull --rebase --autostash origin tasks', { cwd: canonical });
+  if (remoteBacked) tryExec(`git ${gitIdentityFlags(canonical)}pull --rebase --autostash origin tasks`, { cwd: canonical });
 
   // Sweep stale sentinels: a `.id-NNN.lock` older than 5 min is considered abandoned
   // (the creator process crashed between locking and writing the real file). Without
@@ -555,10 +720,11 @@ function cmdNextId(slug) {
     }
     try { unlinkSync(sentinel); } catch {}
     if (!remoteBacked) {
+      recordReservation(filepath, me);
       process.stdout.write(JSON.stringify({ id: nextId, padded, file: filepath, canonical }) + '\n');
       return;
     }
-    publishReservation(canonical, cleanSlug, nextId);
+    publishReservation(canonical, cleanSlug, nextId, me);
     return;
   }
   fail('next-id: too many collisions (gave up after 100 attempts)');
@@ -568,7 +734,7 @@ function cmdNextId(slug) {
 // re-allocating the id when a competitor's file arrives with the same number.
 // Offline is tolerated: the reservation stays as a local commit (a warning says
 // so) and the next `sync push` publishes it — never block task creation.
-function publishReservation(canonical, cleanSlug, id) {
+function publishReservation(canonical, cleanSlug, id, me) {
   const scanIds = (excludeFile) => {
     const used = new Set();
     for (const f of readdirSync(canonical)) {
@@ -581,8 +747,9 @@ function publishReservation(canonical, cleanSlug, id) {
   let padded = String(id).padStart(3, '0');
   let filename = `${padded}-${cleanSlug}.md`;
   const msg = () => `reserve id ${padded} (${cleanSlug})`;
+  const identity = gitIdentityFlags(canonical);
   tryExec(`git add -- ${JSON.stringify(filename)}`, { cwd: canonical });
-  tryExec(`git commit -m ${JSON.stringify(msg())} -- ${JSON.stringify(filename)}`, { cwd: canonical });
+  tryExec(`git ${identity}commit -m ${JSON.stringify(msg())} -- ${JSON.stringify(filename)}`, { cwd: canonical });
   let pushed = false;
   for (let i = 0; i < 20; i++) {
     // A competitor's same-id file may have arrived on the last pull — even when
@@ -595,14 +762,19 @@ function publishReservation(canonical, cleanSlug, id) {
       const newPadded = String(next).padStart(3, '0');
       const newFilename = `${newPadded}-${cleanSlug}.md`;
       tryExec(`git mv ${JSON.stringify(filename)} ${JSON.stringify(newFilename)}`, { cwd: canonical });
+      const oldFilename = filename;
       id = next; padded = newPadded; filename = newFilename;
-      tryExec(`git commit --amend -m ${JSON.stringify(msg())}`, { cwd: canonical });
+      // Both names, so the rename is recorded — and ONLY them (task 225): a
+      // pathspec-less amend would also take whatever another chat has staged
+      // in this shared store.
+      gitQuiet([...gitIdentityArgs(canonical), 'commit', '--amend', '-m', msg(), '--', oldFilename, newFilename], canonical);
       continue; // re-check before pushing (mv target could clash again after another pull)
     }
     if (tryExec('git push origin tasks', { cwd: canonical }) !== null) { pushed = true; break; }
-    if (tryExec('git pull --rebase --autostash origin tasks', { cwd: canonical }) === null) break; // offline/unreachable
+    if (tryExec(`git ${identity}pull --rebase --autostash origin tasks`, { cwd: canonical }) === null) break; // offline/unreachable
   }
   if (!pushed) process.stderr.write('tasks.mjs: warning — id reserved locally but not pushed (remote unreachable?); it publishes on the next sync push\n');
+  recordReservation(join(canonical, filename), me); // the FINAL id, after any re-numbering
   process.stdout.write(JSON.stringify({ id, padded, file: join(canonical, filename), canonical, pushed }) + '\n');
 }
 
@@ -610,7 +782,7 @@ function publishReservation(canonical, cleanSlug, id) {
 
 function cmdCurrent() {
   const repoRoot = findRepoRoot();
-  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
+  const tasksDir = repoRoot ? tasksDirOf(repoRoot) : findTasksDir();
   if (!tasksDir || !existsSync(tasksDir)) {
     process.stdout.write(JSON.stringify({ count: 0, tasks: [] }) + '\n');
     return;
@@ -623,6 +795,10 @@ function cmdCurrent() {
       const claimedAt = env.claimed_at;
       // Treat `null` (YAML null parsed as JS null) and the literal string 'null' as unclaimed.
       if (!claimedAt || claimedAt === 'null') return null;
+      // A claim counts only on an OPEN task (task 222) — the same set as the
+      // plan's "In progress". A claim left on a closed or parked task is a
+      // validator error (`tasks validate`), not work in progress.
+      if (fm.status !== 'OPEN') return null;
       return {
         id: fm.id != null ? fm.id : null,
         file: basename(t.path),
@@ -686,30 +862,55 @@ function cmdStaleness() {
   process.exit(1);
 }
 
-// The one place an id/filename/slug turns into an actual _tasks/ file. Every
+// The one place an id/filename/slug turns into an actual task file. Every
 // command that takes a task reference (find, drift, ...) goes through this —
 // so "how do I look up a task" always has ONE true answer, not a filename
 // convention in a skill doc that can drift from what the code really does.
-function resolveTask(tasksDir, idArg) {
+// Zero-padding is NOT part of a task's identity: `033`, `33`, and `_tasks/33-x.md`
+// all name the same task, and stores disagree on which spelling they write into
+// frontmatter. Every numeric comparison here goes through normalizeTaskId, and the
+// filename's own id token counts as a match, so a leading zero can never be the
+// reason a lookup fails.
+//
+// Exported for test/task-lookup.test.mjs. The CLI dispatch below is behind an
+// __isCLI guard, so importing this module runs no commands.
+export function resolveTask(tasksDir, idArg) {
   const want = String(idArg).replace(/\.md$/, '');
+  const wantId = normalizeTaskId(want);
   return loadTasks(tasksDir).find((t) => {
     const fm = t.frontmatter || {};
-    return String(fm.id) === want || basename(t.path).replace(/\.md$/, '') === want || String(fm.slug) === want;
+    const stem = basename(t.path).replace(/\.md$/, '');
+    if (stem === want || String(fm.slug) === want) return true;
+    if (wantId == null) return false;
+    if (normalizeTaskId(fm.id) === wantId) return true;
+    const m = stem.match(/^(\d+(?:[._]\d+)?[a-z]?)(?:-|$)/);
+    return m != null && normalizeTaskId(m[1]) === wantId;
   });
 }
 
 // find: resolve an id/filename/slug to its file path. The lookup primitive
 // other tooling (and the pickup-task skill) should call instead of guessing
-// `_tasks/NNN-<slug>.md` or trusting a possibly-stale INDEX.md.
+// `.cogyard/tasks/NNN-<slug>.md`.
+//
+// The path is the REAL one — through the task link to the shared store, not
+// `<repo>/.cogyard/tasks/…` (task 158). Sessions edit whatever path this prints, and
+// Claude Code treats a write whose link resolves outside the working directory
+// as out of bounds: a permission prompt in the main checkout, a hard refusal in
+// a worktree.
+// Exported for test/task-lookup.test.mjs.
+export function findTaskFile(repoRoot, idArg) {
+  const task = resolveTask(tasksDirOf(repoRoot), idArg);
+  return task ? realpathSync(task.path) : null;
+}
+
 function cmdFind(idArg) {
   if (!idArg) fail('usage: tasks.mjs find <task-id-or-file-or-slug>');
   const repoRoot = findRepoRoot();
   if (!repoRoot) fail('not in a git repo');
-  const tasksDir = join(repoRoot, '_tasks');
-  if (!existsSync(tasksDir)) fail('no _tasks/ in this repo');
-  const task = resolveTask(tasksDir, idArg);
-  if (!task) fail(`task not found: ${idArg}`);
-  process.stdout.write(task.path + '\n');
+  if (!existsSync(tasksDirOf(repoRoot))) fail('no task directory in this repo (.cogyard/tasks)');
+  const file = findTaskFile(repoRoot, idArg);
+  if (!file) fail(`task not found: ${idArg}`);
+  process.stdout.write(file + '\n');
 }
 
 // Drift gate: commits on the (fetched) default branch touching a task's
@@ -721,9 +922,11 @@ function cmdDrift(idArg) {
   if (!idArg) fail('usage: tasks.mjs drift <task-id-or-file>');
   const repoRoot = findRepoRoot();
   if (!repoRoot) fail('not in a git repo');
-  const tasksDir = join(repoRoot, '_tasks');
-  if (!existsSync(tasksDir)) fail('no _tasks/ in this repo');
-  const task = resolveTask(tasksDir, idArg);
+  const tasksDir = tasksDirOf(repoRoot);
+  if (!existsSync(tasksDir)) fail('no task directory in this repo (.cogyard/tasks)');
+  // A file argument is usually the full path `find` printed (task 158) —
+  // resolve it by its filename, since that path may be the store's, not the link's.
+  const task = resolveTask(tasksDir, basename(idArg));
   if (!task) fail(`task not found: ${idArg}`);
   const fm = task.frontmatter || {};
   const since = fm.last_reviewed_at_commit;
@@ -740,6 +943,242 @@ function cmdDrift(idArg) {
   process.exit(1);
 }
 
+// --- Close (task 171) ----------------------------------------------------------
+// The three steps /merge-to-main used to describe in prose, as one command:
+// status + done_date, release the claim, commit. Whether the task MAY close is
+// core/close.mjs's call (the same rule `tasks doctor` suggests from); this only
+// runs when the owner types it — cogyard never closes a task on its own.
+
+// Set (or insert after `status:`) one top-level frontmatter key, leaving every
+// other line exactly as written.
+function setTopLevelKey(fmText, key, value) {
+  const lines = fmText.split('\n');
+  const i = lines.findIndex((l) => new RegExp(`^${key}:(\\s|$)`).test(l));
+  if (i !== -1) { lines[i] = `${key}: ${value}`; return lines.join('\n'); }
+  const at = lines.findIndex((l) => /^status:(\s|$)/.test(l));
+  lines.splice(at === -1 ? lines.length : at + 1, 0, `${key}: ${value}`);
+  return lines.join('\n');
+}
+
+function localDate() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The owner's own calls (task 228). Overruling a refused close overrides the
+// owner's sign-off, so an agent may not do it on its own judgment — the same
+// way `cogyard publish` refuses (task 170). Asked of EVERY driver, not the
+// active one: whether an agent started this process is a fact about the
+// process, not a setting.
+//
+// But the owner TELLING the agent to run it counts as the owner running it
+// (task 237). The agent passes the owner's exact words (`--asked "…"`); they
+// must be in a message the owner typed in this chat and say "close" plus
+// `word` ("enough" / "done") — core/owner-words.mjs. Returns null for the
+// owner's own shell, or the quote the agent was cleared on; refuses otherwise.
+async function ownerOnly(what, repoRoot, command, { word, asked }) {
+  const said = await currentOwnerTurns();
+  if (!said.agent) return null;
+  const check = asked === undefined
+    ? { ok: false, reason: null }
+    : checkOwnerWords({ quote: asked, word, turns: said.turns });
+  if (check.ok) return String(asked);
+  process.stderr.write(
+    `${what} is the owner's call, and this was started by ${said.agent}. Nothing changed.\n`
+    + (check.reason ? `Not cleared by the owner's words: ${check.reason}.\n` : '')
+    + `If the owner told you to in this chat, run it again with their exact words: --asked "<what they typed>" `
+    + `(their words must say "close" and "${word}"). Otherwise hand the owner this command to run from their own terminal:\n\n`
+    + `  cd ${repoRoot} && ${command}\n`);
+  process.exit(1);
+}
+
+// Resolve <id-or-file> to a task with frontmatter in this repo's task directory.
+function taskForStatusChange(idArg, usage) {
+  if (!idArg) fail(usage);
+  const repoRoot = findRepoRoot();
+  if (!repoRoot) fail('not in a git repo');
+  const tasksDir = tasksDirOf(repoRoot);
+  if (!existsSync(tasksDir)) fail('no task directory in this repo (.cogyard/tasks)');
+  const task = resolveTask(tasksDir, basename(idArg));
+  if (!task) fail(`task not found: ${idArg}`);
+  if (!task.hasFrontmatter) fail(`${basename(task.path)} has no frontmatter`);
+  return { repoRoot, task, abs: realpathSync(task.path), id: task.frontmatter.id };
+}
+
+// Write status + done_date (+ the body's status line) atomically. Returns the
+// file's previous contents, so a later step that fails can put it back.
+function writeStatus(abs, status, doneDate) {
+  const before = readFileSync(abs, 'utf8');
+  const end = before.indexOf('\n---\n', 4);
+  if (!before.startsWith('---\n') || end === -1) fail(`${basename(abs)} frontmatter not terminated`);
+  let fm = setTopLevelKey(before.slice(4, end), 'status', status);
+  fm = setTopLevelKey(fm, 'done_date', doneDate);
+  const tmp = `${abs}.status-${process.pid}.tmp`;
+  writeFileSync(tmp, `---\n${fm}\n---\n${rewriteStatusLine(before.slice(end + 5), status)}`);
+  renameSync(tmp, abs);
+  return before;
+}
+
+async function cmdClose(idArg, flags) {
+  const { repoRoot, task, abs, id } = taskForStatusChange(idArg, 'usage: tasks.mjs close <task-id-or-file> [--enough] [--force]');
+  const target = flags.enough ? 'ENOUGH' : 'DONE';
+  let ownerSaid = null;
+  if (flags.enough || flags.force) {
+    const flagText = [flags.enough && '--enough', flags.force && '--force'].filter(Boolean).join(' ');
+    ownerSaid = await ownerOnly(`Closing #${id} with ${flagText}`, repoRoot, `cogyard tasks close ${id} ${flagText}`,
+      { word: flags.enough ? 'enough' : 'done', asked: flags.asked });
+  }
+
+  // Badly written checkbox markers (task 238) block a close: checked against
+  // the whole project, so a (moved: <id>) to a missing task counts.
+  const markerProblems = markerProblemsByFile(loadTasks(tasksDirOf(repoRoot))).get(basename(task.path)) || [];
+  const v = closeability(task, { repoRoot, me: whoAmI(repoRoot), markerProblems });
+  if (v.alreadyClosed) {
+    fail(`#${id} is already ${v.status}.`
+      + (['DONE', 'ENOUGH'].includes(v.status) ? ` To undo that close: cogyard tasks reopen ${id} --why "<reason>"` : ''));
+  }
+  const verdict = flags.enough ? v.enough : v.done;
+  if (!verdict.ok && !flags.force) {
+    process.stderr.write(`Not closing #${id} as ${target}:\n${verdict.reasons.map((r) => `  - ${r}`).join('\n')}\n`);
+    // Only after-merge checks left (task 232): the agent's own work, so no
+    // owner flags are offered — run them, tick them, close again.
+    if (!flags.enough && v.done.onlyAfterMerge) {
+      process.stderr.write(`Run each (after merge) check now, tick it with what you saw, then run \`cogyard tasks close ${id}\` again. This is not a question for the owner.\n`);
+      process.exit(1);
+    }
+    // An agent is told to report, not to ask (task 236): the override flags are
+    // the owner's, and offering ENOUGH at every refusal made it the normal way a
+    // task closed. The owner, typing the command themself, still gets the hints.
+    if (await agentSession()) {
+      process.stderr.write(`Leave #${id} OPEN with its claim and tell the owner what's left. Don't ask them anything, and don't offer --enough or --force.\n`);
+      process.exit(1);
+    }
+    const hints = [];
+    if (!flags.enough && v.enough.ok) hints.push('`--enough` closes it as ENOUGH (partly done; the open and (optional) boxes are the leftovers you chose to leave)');
+    hints.push(`\`--force\` closes it as ${target} anyway`);
+    process.stderr.write(`Mark settled boxes (dropped: why) / (moved: <id>), or: ${hints.join('; ')}.\n`);
+    process.exit(1);
+  }
+
+  // 1. status + done_date. Kept so a failed release can put the file back —
+  //    a task closed but still claimed is exactly the half-close this replaces.
+  const before = writeStatus(abs, target, localDate());
+
+  // 2. Release through `env release` — the one place a claim is cleared (it also
+  //    closes the claims-ledger window). --no-commit: the release is committed
+  //    with the status change in step 3, as one "close #N" commit.
+  if (v.claim.state !== 'none') {
+    try { execFileSync(process.execPath, [join(SCRIPT_DIR, 'env.mjs'), 'release', abs, '--no-commit'], { stdio: ['ignore', 'ignore', 'inherit'] }); }
+    catch { writeFileSync(abs, before); fail(`releasing the claim failed — #${id} left as it was (${v.status}, still claimed).`); }
+  }
+
+  // 3. Commit (and push, on a team store) the task file.
+  const forced = !verdict.ok ? ' (--force)' : '';
+  const told = ownerSaid ? ` — owner said: "${ownerSaid.replace(/\s+/g, ' ').trim()}"` : '';
+  await cmdSync(['push', `close #${id} as ${target}${forced}${told}`, '--', abs]);
+  // 4. The id reservation `next-id` recorded is spent: nothing about a closed
+  //    task is left for the reserving chat's unnamed `sync push` to commit.
+  try { clearReservation(abs, id); } catch { /* claims.json busy — the record is advisory */ }
+  process.stdout.write(`#${id} closed as ${target} (done_date ${localDate()})${v.claim.state !== 'none' ? ', claim released' : ''}.\n`);
+}
+
+// --- Reopen (task 228) ---------------------------------------------------------
+// The way back from a close: DONE or ENOUGH → OPEN, done_date cleared, the
+// body's status line rewritten, committed through `sync push`. Before this
+// existed, `close` refusing an already-closed task left a hand edit or raw git
+// in the store as the only way to undo a wrong close — and that is what an
+// agent did. Open to agents (task 237): reopening only makes a task LESS done,
+// and the owner decided it follows from context — more work that belongs to a
+// closed task reopens it, through pickup-task. The commit says why and, when
+// an agent ran it, which chat. It does not claim the task; whoever works it
+// next claims it as usual.
+async function cmdReopen(idArg, flags = {}) {
+  const { abs, id, task } = taskForStatusChange(idArg, 'usage: tasks.mjs reopen <task-id-or-file> [--why "<reason>"]');
+  const was = task.frontmatter.status;
+  if (!['DONE', 'ENOUGH'].includes(was)) fail(`#${id} is ${was || 'missing a status'} — reopen takes a DONE or ENOUGH task.`);
+  const why = typeof flags.why === 'string' && flags.why.trim() ? ` — ${flags.why.replace(/\s+/g, ' ').trim()}` : '';
+  const chat = (await agentSession()) ? await currentSessionId() : null;
+  writeStatus(abs, 'OPEN', 'null');
+  await cmdSync(['push', `reopen #${id} (was ${was})${why}${chat ? ` [chat ${chat}]` : ''}`, '--', abs]);
+  process.stdout.write(`#${id} reopened (was ${was}); done_date cleared.\n`);
+}
+
+// `touches` (task 239) — keep a task's touches_paths true, because the plan's
+// parallel check (`clash`) is only as good as that list. core/touches.mjs says
+// why and when each form runs.
+//   touches <id>                 print the list
+//   touches <id> --add <path>…   add paths (committed); names, for information,
+//                                any task IN PROGRESS that also lists one
+//   touches <id> --check         files this branch changed that the list doesn't
+//                                cover (Markdown left out); exit 1 when any
+async function cmdTouches(idArg, flags, rest) {
+  const usage = 'usage: tasks.mjs touches <task-id-or-file> [--add <path>… | --check]';
+  const { repoRoot, task, abs, id } = taskForStatusChange(idArg, usage);
+  const list = Array.isArray(task.frontmatter.touches_paths) ? task.frontmatter.touches_paths : [];
+
+  if (flags.check) {
+    const changed = await branchChangedFiles(repoRoot);
+    if (changed == null) fail('no default branch (main/master) to compare this branch with');
+    const out = outsideList({ changed, touches: list });
+    if (!out.length) { process.stdout.write(`#${id}: every file this branch changed is in its touches_paths.\n`); return; }
+    process.stdout.write(`#${id}: this branch changed ${out.length} file(s) its touches_paths doesn't list:\n${out.map((f) => `  ${f}`).join('\n')}\n`
+      + `Add them: cogyard tasks touches ${id} --add ${out.join(' ')}\n`);
+    process.exit(1);
+  }
+
+  if (flags.add) {
+    const paths = [...(typeof flags.add === 'string' ? [flags.add] : []), ...rest].map(String);
+    if (!paths.length) fail(usage);
+    const before = readFileSync(abs, 'utf8');
+    const { text, added } = addTouchesPaths(before, paths);
+    if (added.length) {
+      const tmp = `${abs}.touches-${process.pid}.tmp`;
+      writeFileSync(tmp, text);
+      renameSync(tmp, abs);
+      await cmdSync(['push', `[#${id}] touches: add ${added.join(', ')}`, '--', abs]);
+    }
+    const slug = resolveProjectForPath(repoRoot);
+    const plan = await planFor({ slug, path: repoRoot }, discoverProjects());
+    const hits = runningClashesFor(plan, id, paths);
+    process.stdout.write(added.length ? `#${id}: added ${added.join(', ')} to touches_paths.\n` : `#${id}: already listed.\n`);
+    // Sharing a file is not a collision (owner, 2026-11-13): say so, never stop.
+    // `conflicts` is what says whether the edits actually collide.
+    if (hits.length) {
+      process.stdout.write(`For information — a task in progress also lists ${hits.length === 1 ? 'one of these' : 'these'}:\n`
+        + hits.map((h) => `  #${h.id}: ${h.files.join(', ')}`).join('\n') + '\n'
+        + `Whether the edits actually collide: cogyard tasks conflicts ${id}, after your next commit.\n`);
+    }
+    return;
+  }
+
+  process.stdout.write(list.length ? list.map((p) => `${p}\n`).join('') : `#${id} lists no files.\n`);
+}
+
+// `conflicts` (task 239) — would this task's branch actually conflict with
+// another task's in progress, or with the default branch? A dry-run merge each
+// (core/touches.mjs dryMerge); nothing is merged or changed. Exit 1 when any
+// would conflict — the working chat stops and asks. A recorded branch that is
+// gone is reported and skipped, never a reason to stop.
+async function cmdConflicts(idArg) {
+  const { repoRoot, task, id } = taskForStatusChange(idArg, 'usage: tasks.mjs conflicts <task-id-or-file>');
+  const branch = task.frontmatter.env?.branch;
+  if (!branch || branch === 'null') fail(`#${id} has no branch recorded — claim it from its worktree first`);
+  const others = loadTasks(tasksDirOf(repoRoot))
+    .filter((t) => t.hasFrontmatter && t.frontmatter.status === 'OPEN' && normalizeTaskId(t.frontmatter.id) !== normalizeTaskId(id))
+    .map((t) => ({ id: normalizeTaskId(t.frontmatter.id), env: t.frontmatter.env || {} }))
+    .filter((t) => t.env.claimed_at && t.env.claimed_at !== 'null' && t.env.branch && t.env.branch !== 'null' && t.env.branch !== branch)
+    .map((t) => ({ id: t.id, branch: t.env.branch }));
+  const results = await branchConflicts(repoRoot, branch, others);
+  const name = (r) => (r.id == null ? r.branch : `#${r.id} (${r.branch})`);
+  const lines = results.map((r) => r.error ? `  ${name(r)}: skipped — ${r.error}`
+    : r.conflict ? `  ${name(r)}: CONFLICTS in ${r.files.join(', ')}` : `  ${name(r)}: merges cleanly`);
+  const bad = results.filter((r) => r.conflict);
+  process.stdout.write(`#${id} (${branch}) against ${results.length ? results.map(name).join(', ') : 'nothing in progress'}:\n${lines.join('\n')}\n`);
+  if (!bad.length) return;
+  process.stdout.write(`${bad.length} would conflict — stop and ask before going on.\n`);
+  process.exit(1);
+}
+
 // --- Heuristic analyzer (for unknown-frontmatter tasks) ----------------------
 
 function cmdAnalyze(opts) {
@@ -753,7 +1192,7 @@ function cmdAnalyze(opts) {
   const noPush = !!opts['no-push'];
 
   for (const proj of projects) {
-    const tasksDir = join(proj.path, '_tasks');
+    const tasksDir = tasksDirOf(proj.path);
     if (!existsSync(tasksDir)) continue;
     const tasks = loadTasks(tasksDir).filter((t) => !t.hasFrontmatter);
     if (!tasks.length) { process.stdout.write(`\n# ${proj.label} — no unknown-frontmatter tasks. Skipping.\n`); continue; }
@@ -780,10 +1219,10 @@ function cmdAnalyze(opts) {
           `created: ${today}`, `created_at_commit: ${repoSha}`, `last_reviewed_at_commit: ${repoSha}`, `last_touched_commit: ${repoSha}`,
           `done_date: ${inferred.doneDate || 'null'}`, 'depends_on: []', 'related: []', 'touches_paths:',
           ...inferred.paths.map((p) => `  - ${p}`),
-          'commit_policy: end', 'out_of_scope: []', 'parallel_safe: true', 'coordination: []',
-          'env:', '  planet: null', '  ports:', '    backend: null', '    frontend: null',
-          '  hostname: null', '  worktree: null', '  branch: null', '  db: development',
-          '  claimed_at: null', '  claimed_by: null', '  claimed_by_session: null', '---', '',
+          'commit_policy: per-phase', 'out_of_scope: []', 'resources: []',
+          // The shared claim only — a worktree and a session are this machine's
+          // and live in $COGYARD_HOME/claims.json (task 190).
+          'env:', '  branch: null', '  claimed_at: null', '  claimed_by: null', '---', '',
         ].join('\n');
         writeFileSync(t.path, fm + (t.body || ''));
         writtenFiles.push(basename(t.path));
@@ -800,7 +1239,7 @@ function cmdAnalyze(opts) {
         try {
           withStoreLock(realpathSync(tasksDir), () => {
             execSync(`git add -- ${pathspec}`, { cwd: tasksDir });
-            execSync(`git commit -m "analyze: backfill frontmatter for ${writeCount} tasks (heuristic)" -- ${pathspec}`, { cwd: tasksDir });
+            execSync(`git ${gitIdentityFlags(tasksDir)}commit -m "analyze: backfill frontmatter for ${writeCount} tasks (heuristic)" -- ${pathspec}`, { cwd: tasksDir });
             execSync(`git push origin tasks`, { cwd: tasksDir });
           });
           process.stdout.write(`  ✓ Pushed to origin/tasks.\n`);
@@ -810,7 +1249,24 @@ function cmdAnalyze(opts) {
   }
 }
 
-function cmdValidate(opts) {
+function cmdValidate(opts, idArg) {
+  // One task (task 238): its file's errors and warnings, checked against the
+  // whole project; exit 1 on an error. /merge-to-main runs this before merging.
+  if (idArg) {
+    const repoRoot = findRepoRoot();
+    if (!repoRoot) fail('not in a git repo');
+    const tasksDir = tasksDirOf(repoRoot);
+    if (!existsSync(tasksDir)) fail('no task directory in this repo (.cogyard/tasks)');
+    const task = resolveTask(tasksDir, basename(idArg));
+    if (!task) fail(`task not found: ${idArg}`);
+    const r = validateTasks(loadTasks(tasksDir)).results.find((x) => x.file === basename(task.path));
+    const flag = r.errors.length ? '✗' : r.warnings.length ? '⚠' : '✓';
+    process.stdout.write(`${flag} ${r.file} — ${r.errors.length} error(s), ${r.warnings.length} warning(s)\n`);
+    for (const e of r.errors) process.stdout.write(`    ✗ ${e}\n`);
+    if (!opts['errors-only']) for (const w of r.warnings) process.stdout.write(`    ⚠ ${w}\n`);
+    if (r.errors.length) process.exitCode = 1;
+    return;
+  }
   const projects = opts.all ? discoverProjects() : (() => {
     const repoRoot = findRepoRoot();
     if (!repoRoot) fail('not in a git repo (or pass --all)');
@@ -822,7 +1278,7 @@ function cmdValidate(opts) {
   let totalErrors = 0;
   let totalWarnings = 0;
   for (const proj of projects) {
-    const tasksDir = join(proj.path, '_tasks');
+    const tasksDir = tasksDirOf(proj.path);
     if (!existsSync(tasksDir)) continue;
     const tasks = loadTasks(tasksDir);
     if (!tasks.length) continue;
@@ -844,8 +1300,8 @@ function cmdValidate(opts) {
 
 function cmdBackfill() {
   const repoRoot = findRepoRoot();
-  const tasksDir = repoRoot ? join(repoRoot, '_tasks') : findTasksDir();
-  if (!tasksDir || !existsSync(tasksDir)) fail('no _tasks/ found');
+  const tasksDir = repoRoot ? tasksDirOf(repoRoot) : findTasksDir();
+  if (!tasksDir || !existsSync(tasksDir)) fail('no task directory found (.cogyard/tasks)');
   const tasks = loadTasks(tasksDir);
   const unknown = tasks.filter((t) => !t.hasFrontmatter);
   if (!unknown.length) { process.stdout.write('No unknown-frontmatter tasks. Nothing to backfill.\n'); return; }
@@ -853,95 +1309,10 @@ function cmdBackfill() {
   for (const t of unknown) {
     process.stdout.write(`Backfilling ${basename(t.path)}... opening in ${editor}\n`);
     const sha = tryExec('git rev-parse --short HEAD', { cwd: repoRoot }) || '';
-    const template = `---\nid: ${basename(t.path).match(/^(\d+)/)?.[1] || '???'}\nslug: ${basename(t.path).replace(/^\d+[a-z]?-/, '').replace(/\.md$/, '')}\ntitle: \nstatus: OPEN\ncreated: ${new Date().toISOString().slice(0, 10)}\ncreated_at_commit: ${sha}\nlast_reviewed_at_commit: ${sha}\nlast_touched_commit: ${sha}\ndone_date: null\ndepends_on: []\nrelated: []\ntouches_paths: []\ncommit_policy: end\nout_of_scope: []\nparallel_safe: true\ncoordination: []\n---\n\n${t.body}`;
+    const template = `---\nid: ${basename(t.path).match(/^(\d+)/)?.[1] || '???'}\nslug: ${basename(t.path).replace(/^\d+[a-z]?-/, '').replace(/\.md$/, '')}\ntitle: \nstatus: OPEN\ncreated: ${new Date().toISOString().slice(0, 10)}\ncreated_at_commit: ${sha}\nlast_reviewed_at_commit: ${sha}\nlast_touched_commit: ${sha}\ndone_date: null\ndepends_on: []\nrelated: []\ntouches_paths: []\ncommit_policy: per-phase\nout_of_scope: []\nresources: []\n---\n\n${t.body}`;
     writeFileSync(t.path, template);
     spawn(editor, [t.path], { stdio: 'inherit' });
   }
-}
-
-// --- cleanup: reclaim build/install dirs from MERGED, CLEAN worktrees -
-// Worktrees share the parent repo's git objects, so the only heavy per-worktree
-// thing is regenerable build/install output (DISPOSABLE_DIRS) once a build/install
-// has run. The user keeps the worktrees (chat-archiving removes those) but wants
-// the disk back once the work is in main — re-running `npm install` / a rebuild on
-// a revisit is the accepted cost. Regenerable dirs ONLY: the worktree dir, branch,
-// ports, git state, source, and local files (*.local.md) are untouched.
-//
-// Eligibility is "nothing unique left to lose", NOT a task-status lookup (a task
-// can span several worktrees, so the worktree→task map is unreliable). A
-// worktree is eligible iff it is STALE — fully merged into main
-// (ahead === 0) AND its working tree is clean (no uncommitted changes). That alone
-// proves every file is already in main, so deleting build dirs loses nothing, and
-// it protects in-flight work for free: uncommitted edits (dirty) or unmerged
-// commits (ahead > 0) both make a worktree non-stale.
-//
-// Hard exclusions (never clean): the main checkout (never stale), the currently-
-// active worktree (this session — don't yank deps from a live build), and any
-// worktree with a live claim (a session is actively holding it).
-
-function dirSizeKb(p) {
-  try { return parseInt(execSync(`du -sk ${JSON.stringify(p)}`).toString().trim().split(/\s+/)[0], 10) || 0; }
-  catch { return 0; }
-}
-function fmtMb(kb) { return `${(kb / 1024).toFixed(1)} MB`; }
-
-// The disposable dirs: build/install output that's heavy and 100% regenerable.
-// Matched by name at ANY depth (root, frontend/, extras/desktop/…) so workspaces and
-// sub-packages are all caught — `node_modules` (install; desktop's holds the
-// ~250 MB Electron binary), `dist`/`.angular`/`out-tsc`/`coverage` (build + cache),
-// `release` (electron-builder's packaged .app/dmg). NOT a "delete everything
-// gitignored" sweep — that net also catches *.local.md private notes and the
-// _tasks symlink, which are irreplaceable. Names only; never files.
-const DISPOSABLE_DIRS = ['node_modules', 'dist', '.angular', 'out-tsc', 'coverage', 'release'];
-
-// `-prune` stops find descending INTO a match, so a package's own dist inside
-// node_modules is never separately listed — each top-level disposable dir is
-// returned once, and we don't walk the tens of thousands of files inside.
-function findDisposable(root) {
-  const names = DISPOSABLE_DIRS.map((n) => `-name ${JSON.stringify(n)}`).join(' -o ');
-  try {
-    const out = execSync(`find ${JSON.stringify(root)} -type d \\( ${names} \\) -prune`, { maxBuffer: 64 * 1024 * 1024 }).toString().trim();
-    return out ? out.split('\n').filter(Boolean) : [];
-  } catch { return []; }
-}
-
-async function cmdCleanup(opts) {
-  const slug = opts.positional[1];
-  const dryRun = !!opts.flags['dry-run'];
-  const projects = slug
-    ? (() => { const p = findProject(slug); if (!p) fail(`no registered project: ${slug} (see \`tasks.mjs projects list\`)`); return [p]; })()
-    : readRegistry();
-  if (!projects.length) fail('no registered projects (run init/onboard somewhere first)');
-
-  // The active worktree = the checkout this process runs in. Never clean it.
-  const activeRoot = (() => { const r = findRepoRoot(); return r ? resolve(r) : null; })();
-
-  process.stdout.write(`${dryRun ? 'DRY RUN — ' : ''}cleanup: merged + clean worktrees${slug ? ` in ${slug}` : ' across all projects'}\n`);
-  let totalKb = 0, count = 0;
-  for (const proj of projects) {
-    let wts;
-    try { wts = await worktreesForProject(proj); }
-    catch { continue; }
-    for (const wt of wts) {
-      if (wt.isMain) continue;                                    // portal builds from main
-      if (activeRoot && resolve(wt.path) === activeRoot) continue; // this session — live build/preview
-      if (wt.claimLive) continue;                                 // a session is actively holding it
-      if (!wt.stale) continue;                                    // STALE = merged into main + clean tree; skips dirty/unmerged (in-flight)
-      const dirs = findDisposable(wt.path);                        // node_modules/dist/.angular/release … any depth
-      if (!dirs.length) continue;                                  // nothing regenerable left
-      const kb = dirs.reduce((s, d) => s + dirSizeKb(d), 0);
-      totalKb += kb; count++;
-      const nDirs = dirs.length > 1 ? ` [${dirs.length} dirs]` : '';
-      if (dryRun) {
-        process.stdout.write(`  would clean  ${proj.slug}/${wt.name}  ${fmtMb(kb)}${nDirs}\n`);
-      } else {
-        for (const d of dirs) rmSync(d, { recursive: true, force: true });
-        process.stdout.write(`  cleaned      ${proj.slug}/${wt.name}  ${fmtMb(kb)} reclaimed${nDirs}\n`);
-      }
-    }
-  }
-  if (!count) { process.stdout.write('  nothing to clean (no merged, clean worktree has build/install dirs).\n'); return; }
-  process.stdout.write(`${dryRun ? 'Would reclaim' : 'Reclaimed'} ${fmtMb(totalKb)} across ${count} worktree(s).${dryRun ? ' Re-run without --dry-run to delete.' : ''}\n`);
 }
 
 // --- CLI ---------------------------------------------------------------------
@@ -970,43 +1341,39 @@ if (__isCLI) {
 const opts = parseArgs(process.argv);
 const cmd = opts.positional[0];
 
-if (opts.flags.help || opts.flags.h) {
+function printHelp() {
   process.stdout.write(`tasks.mjs — task index, data layer, and orphan-branch manager.
 
 Subcommands:
-  init                                Low-level: mkdir _tasks/ + register an
-                                      already-set-up repo. To CREATE or ADOPT a
-                                      full project use \`cogyard init <name>\` /
-                                      \`cogyard onboard [path]\` instead.
-  sync pull                           Rebase _tasks/ from origin/tasks
-  sync push <message>                 Commit and push _tasks/ to origin/tasks
+  sync pull                           Rebase the task store from origin/tasks
+  sync push <message>                 Commit and push the task store to origin/tasks
   projects [list]                     Show registered projects
   projects register                   Register the current repo manually
   projects remove <slug-or-path>      Remove from registry (does not delete files)
   next-id <slug>                      Atomically reserve the next numeric id and
-                                      create _tasks/<NNN>-<slug>.md (race-safe
-                                      across symlinked sibling clones).
+                                      create <NNN>-<slug>.md in the store (race-safe
+                                      across worktrees sharing the store).
   current                             Print JSON of currently-claimed tasks in
                                       this repo (used by the /commit skill to
                                       auto-tag commits with the active task id).
-  convert [--store <p>] [--remote <u>]  Convert this repo's tracked _tasks/ to a
-                                      shared store: copy-first into
+  convert [--store <p>] [--remote <u>]  Give this repo a shared store (adopting
+                                      an in-repo _tasks/ folder if any): copy-first into
                                       <COGYARD_PROJECTS_ROOT>/_tasks/<slug> (or --store), own
                                       git repo on branch "tasks", absolute
-                                      symlink + gitignore.
-                                      Worktrees then share one _tasks.
+                                      .cogyard/tasks link + .cogyard/.gitignore.
+                                      Worktrees then share one store.
   join <remote-url> [--slug <s>] [--store <p>]  Join an EXISTING team store
                                       (member onboarding): clone it (branch
                                       "tasks") to <COGYARD_PROJECTS_ROOT>/_tasks/<slug>
-                                      (or --store), mount the absolute _tasks
-                                      symlink, register the project, run doctor.
+                                      (or --store), mount the absolute .cogyard/tasks
+                                      link, register the project, run doctor.
                                       Idempotent; never repoints at a different store.
-  mount                               In a worktree: recreate the base checkout's
-                                      _tasks symlink here. No-op when the base
-                                      uses a normal _tasks dir.
-  doctor                              Audit every registered project: storage
-                                      model, store health, remote, worktree
-                                      mounts, flags.
+  mount                               In a worktree: link .cogyard/tasks to the
+                                      base checkout's store. No-op when the base
+                                      has no task link; refuses a relative one.
+  doctor                              Audit every registered project: its task
+                                      link (ok / broken / missing / folder), store
+                                      health, remote, worktree mounts, flags.
   default-branch                      Print the repo's default branch (main or
                                       master); exit 1 if neither exists.
   staleness                           Is this checkout behind the repo's default
@@ -1018,15 +1385,52 @@ Subcommands:
                                       frontmatter id, filename stem, or slug
                                       (same rule drift/claim/release use
                                       internally). Prefer this over guessing
-                                      _tasks/NNN-<slug>.md or reading INDEX.md.
+                                      .cogyard/tasks/NNN-<slug>.md.
   drift <task-id-or-file>             Commits on the default branch touching a
                                       task's touches_paths since its
                                       last_reviewed_at_commit. Exits 1 on drift.
+  close <task-id-or-file>             Close a task: status DONE + today's done_date,
+                                      release the claim, commit. Refuses, listing why,
+                                      unless every box is ticked or settled
+                                      ((dropped: why) / (moved: <id>) / ~~struck~~),
+                                      the branch is merged (or there is none), and
+                                      the claim is yours. Exits 1 on refusal.
+    --enough                          Close as ENOUGH — shipped enough, leftovers
+                                      ((optional) or open boxes) recorded
+    --force                           Close even though the check fails
+                                      (--enough and --force are the owner's: an
+                                      agent runs them only with --asked)
+    --asked "<owner's words>"         For an agent the owner told to: the owner's
+                                      exact words from this chat, which must say
+                                      "close" and "enough" (--enough) or "done"
+                                      (--force). Recorded in the commit. Without
+                                      them an agent is refused and gets the
+                                      command for the owner.
+  reopen <task-id-or-file>            Undo a close: DONE or ENOUGH → OPEN, done_date
+                                      cleared, committed. Does not claim the task.
+    --why "<reason>"                  Recorded in the commit (an agent's commit also
+                                      names its chat)
+  touches <task-id-or-file>           Print the task's touches_paths — the files it edits,
+                                      which the plan's parallel check reads.
+    --add <path>…                     Add paths to it (committed) BEFORE editing a file it
+                                      doesn't list; names any task in progress that also
+                                      lists one, for information.
+    --check                           Files this branch changed that the list doesn't
+                                      cover (Markdown left out); exits 1 when any.
+                                      What /merge-to-main runs before merging.
+  conflicts <task-id-or-file>         Would this task's branch conflict with another task's
+                                      branch in progress, or with main? A dry-run merge each
+                                      (nothing is changed); exits 1 naming the files when
+                                      any would. The working chat runs it after each commit.
   analyze                             Heuristic-classify unknown-frontmatter tasks (dry-run)
     --apply                           Actually write the inferred frontmatter
     --no-push                         Skip pushing to origin/tasks after --apply
     --all                             Analyze every registered project (else: current repo only)
-  validate                            Check task frontmatter against the v2 schema (drift audit)
+  validate [<task-id-or-file>]        Check task frontmatter and checkbox markers against the
+                                      v2 schema (drift audit); exits 1 on any error. With a
+                                      task, checks only that file (against its whole project,
+                                      so a (moved: <id>) to a missing task counts) — what
+                                      /merge-to-main runs before merging
     --all                             Validate every registered project (else: current repo only)
     --errors-only                     Suppress warnings; show only schema errors
   labels                              List the curated label registry (resolved shared +
@@ -1034,37 +1438,40 @@ Subcommands:
                                       then in-use-but-unregistered labels. Read-only reference
                                       the write-task skill checks before minting new labels.
     --json                            Machine-readable (axes, registered, inUse, unregisteredInUse)
-  cleanup [slug] [--dry-run]          Reclaim build/install dirs (node_modules,
-                                      dist, .angular, out-tsc, coverage, release —
-                                      any depth) from worktrees that are MERGED
-                                      into main AND clean (no uncommitted changes).
-                                      Skips main, the active worktree, live-claimed
-                                      ones, and anything in-flight (dirty or
-                                      unmerged). Regenerable dirs ONLY — worktree
-                                      dir, branch, ports, git state, source
-                                      untouched. Default: all registered projects;
-                                      pass a slug for one.
-  (no command)                        Generate _tasks/INDEX.md
+  switches                            This project's switches — rebase (always | ask) and
+                                      version (off | minor | patch | own command) — each
+                                      marked set (from the task store's switches.json) or
+                                      default. What merge-to-main and pickup-task read.
+    --json                            { rebase: {value, set}, version: {value, set, file} }
+  plan                               What's left, in the order it can run: in progress, can
+                                      start, waiting for a task (depends_on) or another
+                                      project, built and waiting on you, parked. A task that
+                                      shares a file or resource with one in progress says so.
+                                      Same data as the portal's Plan tab.
+    --json                            The full plan as JSON (each task's \`clash\`: every
+                                      active task it shares a file or resource with)
+    --problems                        List the task-data problems that make it less accurate
+  (no command)                        This help
     --backfill                        Walk unknown-frontmatter files in $EDITOR
 
-Project visibility: only what you've explicitly registered (via init) is visible to
-analyze --all. No filesystem scanning.
+Project visibility: only what you've explicitly registered (\`cogyard init\` /
+\`cogyard onboard\`) is visible to analyze --all. No filesystem scanning.
 
 Files:
   Script:        ${SCRIPT_DIR}/
   Registry:      ${REGISTRY_PATH}
 `);
-  process.exit(0);
 }
 
+if (opts.flags.help || opts.flags.h) { printHelp(); process.exit(0); }
+
 switch (cmd) {
-  case 'init': cmdInit(); break;
   // Raw argv tail (not opts.positional) so `sync push "<msg>" -- <path>...`
   // keeps its `--` separator — the generic parseArgs swallows a bare `--`.
-  case 'sync': cmdSync(process.argv.slice(2).slice(process.argv.slice(2).indexOf('sync') + 1)); break;
+  case 'sync': await cmdSync(process.argv.slice(2).slice(process.argv.slice(2).indexOf('sync') + 1)); break;
   case 'analyze': cmdAnalyze(opts.flags); break;
   case 'projects': cmdProjects(opts.positional.slice(1)); break;
-  case 'next-id': cmdNextId(opts.positional[1]); break;
+  case 'next-id': await cmdNextId(opts.positional[1]); break;
   case 'current': cmdCurrent(); break;
   case 'convert': cmdConvert(opts.flags); break;
   case 'join': cmdJoin(opts.flags, opts.positional); break;
@@ -1074,12 +1481,21 @@ switch (cmd) {
   case 'staleness': cmdStaleness(); break;
   case 'find': cmdFind(opts.positional[1]); break;
   case 'drift': cmdDrift(opts.positional[1]); break;
-  case 'validate': cmdValidate(opts.flags); break;
+  case 'close': await cmdClose(opts.positional[1], opts.flags); break;
+  case 'reopen': await cmdReopen(opts.positional[1], opts.flags); break;
+  case 'touches': await cmdTouches(opts.positional[1], opts.flags, opts.positional.slice(2)); break;
+  case 'conflicts': await cmdConflicts(opts.positional[1]); break;
+  case 'validate': cmdValidate(opts.flags, opts.positional[1]); break;
   case 'labels': cmdLabels(opts.flags); break;
-  case 'cleanup': cmdCleanup(opts).catch((e) => fail(e.message)); break;
+  case 'switches': cmdSwitches(opts.flags); break;
+  case 'plan': await (await import('./plan.mjs')).cmdPlan(opts.flags); break;
+  // `tasks cleanup` moved to `cogyard cleanup disk` (task 117) — disposal is
+  // one group now. Kept as an explicit redirect rather than an unknown-command
+  // error, because muscle memory outlives a rename.
+  case 'cleanup': fail('`tasks cleanup` moved — use `cogyard cleanup disk [slug] [--dry-run]`');
   case undefined:
     if (opts.flags.backfill) cmdBackfill();
-    else cmdGenerate({});
+    else printHelp();
     break;
   default:
     fail(`unknown subcommand: ${cmd}. Run tasks.mjs --help`);

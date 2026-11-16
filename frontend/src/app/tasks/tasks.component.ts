@@ -1,4 +1,4 @@
-import { Component, input, output, inject, effect, signal, computed, HostListener } from '@angular/core';
+import { Component, input, output, inject, effect, untracked, signal, computed, HostListener } from '@angular/core';
 import { GitRefComponent } from '../shared/git-ref/git-ref.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -11,10 +11,16 @@ import { marked } from 'marked';
 import { ApiService } from '../services/api.service';
 import { TasksResponse, ProjectUsageResponse, TaskUsage, TaskChatsResponse, TaskChat, AxisRow } from '../services/models';
 import { TranscriptModalComponent } from './transcript-modal/transcript-modal.component';
-import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
-import { TYPES, TYPE_ICONS } from '../shared/task-buckets';
+import { TaskViewStateService } from '../services/task-view-state.service';
+import { TYPES, TYPE_ICONS, BUCKET_TITLES, TaskState, taskStateOf } from '../shared/task-buckets';
+import { TaskChipComponent } from '../shared/task-chip/task-chip.component';
+import { ActionChipComponent } from '../shared/action-chip/action-chip.component';
+import { LabelChipComponent } from '../shared/label-chip/label-chip.component';
 import { UsageBreakdownComponent } from '../shared/usage-breakdown/usage-breakdown.component';
+import { FileActionsComponent } from '../shared/file-actions/file-actions.component';
+import { AgentStateComponent } from '../shared/agent-state/agent-state.component';
+import { FlagComponent } from '../shared/flag/flag.component';
 
 // One rendered block in the task list. `superHeader` (category mode) is the colored
 // axis band drawn above the first label-lane of an axis; `isSub` marks a label lane
@@ -24,6 +30,8 @@ interface TaskSection {
   title: string;
   icon?: string;
   color?: string | null;
+  /** Grouped by status: the heading renders as this status chip instead of a title. */
+  state?: TaskState | null;
   list: any[];
   superHeader?: { name: string; color: string | null } | null;
   isSub?: boolean;
@@ -36,30 +44,35 @@ interface TaskSection {
 //                icon, and a grouping option (the DEFAULT grouping)
 //   · category (the label axes: Surface/Subsystem/…/Ungrouped) — a filter, a
 //                grouping option, and the label-chip colors
-// Controls: row 1 = Flat|Grouped + (when grouped) group-by Type|Category + the
-// Type radio; row 2 = the Category filter + search. Every row in every view
+// Controls: two toolbars (task 250). Row 1, grouping: Flat|Grouped + (when
+// grouped) group-by Status|Type|Category + (when Category) the axis buttons.
+// Row 2, filters: the Type radio and the search box (with its ✕
+// clear; it matches title / id). Every row in every view
 // carries the same columns (type icon · colored labels · Sub · Deps · Status),
 // so switching views never hides information.
 @Component({
   selector: 'app-tasks',
-  imports: [FormsModule, SelectButton, InputText, TableModule, TooltipModule, Skeleton, UsageBreakdownComponent, GitRefComponent, TranscriptModalComponent],
+  imports: [FormsModule, SelectButton, InputText, TableModule, TooltipModule, Skeleton, UsageBreakdownComponent, GitRefComponent, TaskChipComponent, ActionChipComponent, LabelChipComponent, TranscriptModalComponent, FileActionsComponent, AgentStateComponent, FlagComponent],
   templateUrl: './tasks.component.html',
   styleUrl: './tasks.component.scss',
 })
 export class TasksComponent {
   private api = inject(ApiService);
   private san = inject(DomSanitizer);
-  private refresh = inject(RefreshService);
   private store = inject(StoreService);
+  private viewState = inject(TaskViewStateService);
 
   slug = input.required<string>();
-  externalFilter = input<string>('');
+  /** A #NN chip elsewhere in the portal (or a ?task=NN link) asked for this
+   *  task to be OPEN in the full list (tasks 126, 194). `seq` distinguishes two
+   *  requests for the same id. */
+  focus = input<{ id: string; seq: number } | null>(null);
   jumpWorktree = output<string>();
   jumpBranch = output<string>();
 
   // Cached data renders instantly on tab return; spinner only before the
   // very first response for this project ever lands.
-  private cached = computed(() => this.store.sig<TasksResponse>(`tasks|${this.slug()}`)());
+  private cached = this.store.use<TasksResponse>(() => (this.slug() ? `tasks|${this.slug()}` : null));
   all = computed(() => this.cached()?.tasks ?? []);
   loading = computed(() => this.cached() === null);
 
@@ -72,13 +85,17 @@ export class TasksComponent {
   readonly groupByOptions = [{ label: 'Status', value: 'status' }, { label: 'Type', value: 'type' }, { label: 'Category', value: 'category' }];
   // When grouped by Category: pick ONE category — an axis, or the Ungrouped
   // bucket (un-curated labels). Shown as a select button; defaults to the first
-  // axis (see the effect in the constructor). No "All": stacking every axis was
-  // noise, and one-category-at-a-time keeps each label-lane legible.
+  // NON-EMPTY axis (see the effect in the constructor). No "All": stacking every
+  // axis was noise, and one-category-at-a-time keeps each label-lane legible.
+  // Only categories that actually produce a lane in the current filtered view
+  // are offered — an inherited axis the project carries no labels for (e.g. the
+  // global Surface default on a Phase/Area/Ops project) would be a dead button
+  // that opens an empty view, so it's hidden (task 098).
   static readonly UNGROUPED = '__ungrouped__';
   axisSelect = signal('');
   axisOptions = computed(() => [
-    ...this.axes().map((a) => ({ label: a.name, value: a.name })),
-    { label: 'Ungrouped', value: TasksComponent.UNGROUPED },
+    ...this.nonEmptyAxes().map((a) => ({ label: a.name, value: a.name })),
+    ...(this.ungroupedHasLane() ? [{ label: 'Ungrouped', value: TasksComponent.UNGROUPED }] : []),
   ]);
 
   // --- Filters ---
@@ -133,13 +150,34 @@ export class TasksComponent {
   });
   labelColor(l: string): string | null { return this.axisLookup()[l]?.color ?? null; }
 
+  // Emptiness, single source of truth (task 098). Which axes/Ungrouped actually
+  // produce a lane is decided by ONE set — the labels carried by ≥1 task in the
+  // current filtered view — so the selector's option list and categorySections
+  // never disagree about what's empty.
+  private labelsInView = computed(() => {
+    const s = new Set<string>();
+    for (const t of this.filtered()) for (const l of this.labelsOf(t)) s.add(l);
+    return s;
+  });
+  // An axis is offered only if one of its labels is in view; else it's a dead lane.
+  nonEmptyAxes = computed(() => this.axes().filter((a) => a.labels.some((l) => this.labelsInView().has(l))));
+  // Ungrouped has a lane when some in-view task carries a label no axis claims,
+  // or carries no label at all.
+  private ungroupedHasLane = computed(() => {
+    const lu = this.axisLookup();
+    return this.filtered().some((t) => {
+      const labs = this.labelsOf(t);
+      return labs.length === 0 || labs.some((l) => !(l in lu));
+    });
+  });
+
   // --- Status column (task 096): status is a column, folding in the old
   // per-bucket detail (who / why / done-date). ---
   private titleCase(s: string) { return s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s; }
   statusLabel(t: any): string {
     const b = t.bucket;
     if (b === 'done') return this.titleCase(String(t.status || 'Done')); // DONE/ENOUGH/OBSOLETE
-    return this.titleCase(String(b || 'unknown'));                        // Ready/Claimed/Waiting
+    return BUCKET_TITLES[b] ?? this.titleCase(String(b || 'unknown'));   // Idle/Claimed/Waiting
   }
   statusDetail(t: any): string {
     switch (t.bucket) {
@@ -149,10 +187,9 @@ export class TasksComponent {
       default: return '';
     }
   }
-  statusClass(t: any): string { return `st-${t.bucket || 'unknown'}`; }
 
   // Token/cost usage for this project — feeds the per-task USAGE box in expanded rows.
-  usage = computed(() => this.store.sig<ProjectUsageResponse>(`usage|${this.slug()}`)());
+  usage = this.store.use<ProjectUsageResponse>(() => (this.slug() ? `usage|${this.slug()}` : null));
 
   // Per-task cost keyed by task id, for the sortable Cost column. Attribution is
   // claim-window based (core/usage.mjs): only work done while the task was claimed
@@ -164,23 +201,88 @@ export class TasksComponent {
     return m;
   });
 
+  // The slug we've already restored view state for — so the restore effect fires
+  // once per project switch, not on every filter change.
+  private restoredSlug: string | null = null;
+
   constructor() {
+    // Sticky per-project view controls. The shell renders tabs via @switch, which
+    // destroys this component on tab-out and rebuilds it on return with fresh
+    // (default) signals — so without this the filters reset every visit. Restore
+    // reads the saved snapshot for the current project (or defaults if none, so a
+    // never-visited project never inherits the previous one's filters); persist
+    // writes it back on any change. The service is a root singleton, so state
+    // outlives the component; keyed by slug, so it's per-project.
     effect(() => {
       const s = this.slug();
-      this.refresh.tick();
-      if (s) this.store.load(`tasks|${s}`, this.api.tasks(s));
-      if (s) this.store.load(`usage|${s}`, this.api.projectUsage(s));
+      if (s === this.restoredSlug) return;   // only on an actual project switch
+      this.restoredSlug = s;
+      const v = untracked(() => this.viewState.get(s));
+      untracked(() => {
+        this.mode.set(v?.mode ?? 'grouped');
+        this.groupBy.set(v?.groupBy ?? 'status');
+        this.axisSelect.set(v?.axisSelect ?? '');
+        this.typeFilter.set(v?.typeFilter ?? '');
+        this.search.set(v?.search ?? '');
+      });
+    });
+    effect(() => {
+      const s = this.slug();
+      const snap = { mode: this.mode(), groupBy: this.groupBy(), axisSelect: this.axisSelect(), typeFilter: this.typeFilter(), search: this.search() };
+      untracked(() => this.viewState.set(s, snap));
     });
     effect(() => { this.slug(); this.expanded.set(new Set()); }); // collapse on project switch
-    // Keep the axis SelectButton on a valid option — default to the first AXIS
-    // once axes load (never the trailing Ungrouped sentinel), and re-anchor if the
-    // current pick vanishes on project switch. Wait for axes: defaulting while the
-    // list is still empty would latch onto Ungrouped and stick.
+    // Keep the axis SelectButton on a valid option — default to the first
+    // offered category (a non-empty axis; Ungrouped only trails, so it's picked
+    // just when no axis has lanes) and re-anchor whenever the current pick drops
+    // out (project switch, or filters narrowing until that axis is empty — task
+    // 098). Empty option list (still loading, or nothing matches): leave it be —
+    // the view is empty anyway and defaulting now would latch onto a stale pick.
     effect(() => {
-      const axes = this.axes();
-      if (!axes.length) return;
-      if (!this.axisOptions().some((o) => o.value === this.axisSelect())) this.axisSelect.set(axes[0].name);
+      const opts = this.axisOptions();
+      if (!opts.length) return;
+      if (!opts.some((o) => o.value === this.axisSelect())) this.axisSelect.set(opts[0].value);
     });
+    // Arriving from a #NN chip or a ?task=NN link: OPEN that task in the full
+    // list (tasks 126, 194). Declared LAST so it wins over the
+    // collapse-on-project-switch effect above, which runs in the same flush when
+    // the tab is first created, and over the sticky-filter restore.
+    // Waits for the list — the chip usually gets here before /api/tasks does.
+    effect(() => {
+      const f = this.focus();
+      const rows = this.all();
+      if (!f || f.seq === this.focusedSeq || !rows.length) return;
+      // The sticky search and Type filter (restored per project) could exclude
+      // the row, and expanding a row that isn't rendered shows nothing. Clear
+      // both; grouping never hides a row, so it stays. The persist effect saves
+      // the cleared values.
+      untracked(() => { this.search.set(''); this.typeFilter.set(''); });
+      const row = rows.find((t: any) => String(t.id ?? '') === String(f.id));
+      if (!row) { this.focusedSeq = f.seq; return; }   // unknown id: nothing to open, don't retry
+      this.focusedSeq = f.seq;
+      untracked(() => {
+        if (!this.expanded().has(row.file)) {
+          this.expanded.set(new Set(this.expanded()).add(row.file));
+          this.loadChats(row);
+        }
+      });
+      // 80ms, matching the Branches tab's own scroll-into-view: the row has to
+      // render (and the expansion row with it) before it can be measured.
+      setTimeout(() => this.scrollFileIntoView(row.file), 80);
+    });
+  }
+  private focusedSeq = -1;
+
+  // Mirrors branches.component's scrollActiveIntoView — same container, same
+  // "already comfortably visible → leave it alone" rule.
+  private scrollFileIntoView(file: string) {
+    const row = document.querySelector(`.grid-row[data-file="${CSS.escape(file)}"]`) as HTMLElement | null;
+    const main = document.querySelector('main') as HTMLElement | null;
+    if (!row || !main) return;
+    const r = row.getBoundingClientRect(), m = main.getBoundingClientRect();
+    if (r.top - m.top > 40 && r.bottom - m.top < main.clientHeight) return; // already visible
+    const rowOffset = (r.top - m.top) + main.scrollTop;
+    main.scrollTo({ top: Math.max(0, rowOffset - main.clientHeight * 0.35), behavior: 'smooth' });
   }
 
   taskUsage(t: any): TaskUsage | null {
@@ -197,7 +299,7 @@ export class TasksComponent {
 
   filtered = computed(() => {
     const tf = this.typeFilter();
-    const q = (this.search() || this.externalFilter() || '').toLowerCase();
+    const q = this.search().toLowerCase();
     const cost = this.costByTaskId();
     return this.all()
       .filter((t) => {
@@ -224,13 +326,9 @@ export class TasksComponent {
   // Grouped by Status — sections in workflow order (active first, closed last),
   // each header wearing the status color. The Status column keeps the per-row
   // detail; only the redundant badge hides (showStatusBadge).
-  private static STATUS_ORDER = ['Ready', 'Claimed', 'Waiting', 'Enough', 'Done', 'Obsolete'];
-  // Header-dot colors reference the global CSS vars (styles.scss) — no hardcoded
-  // hex here, so recoloring a status is a one-line edit in the theme file.
-  private static STATUS_COLOR: Record<string, string> = {
-    Ready: 'var(--app-status-ready)', Claimed: 'var(--app-status-claimed)', Waiting: 'var(--app-status-waiting)',
-    Enough: 'var(--app-status-done)', Done: 'var(--app-status-done)', Obsolete: 'var(--app-status-done)',
-  };
+  private static STATUS_ORDER = ['Idle', 'Claimed', 'Waiting', 'Enough', 'Done', 'Obsolete'];
+  // The heading is a status chip (task 155): its state comes from the section's
+  // OWN tasks, the same derivation the row badges use, so heading and rows agree.
   private statusSections(f: any[]): TaskSection[] {
     const groups = new Map<string, any[]>();
     for (const t of f) {
@@ -241,10 +339,10 @@ export class TasksComponent {
     const out: TaskSection[] = [];
     for (const s of TasksComponent.STATUS_ORDER) {
       const list = groups.get(s);
-      if (list?.length) out.push({ key: 'status/' + s, title: s, color: TasksComponent.STATUS_COLOR[s] ?? 'var(--app-status-done)', list: list.sort(this.byId) });
+      if (list?.length) out.push({ key: 'status/' + s, title: s, state: taskStateOf(list[0]), list: list.sort(this.byId) });
     }
     for (const [s, list] of groups) { // any off-order status still renders, last
-      if (!TasksComponent.STATUS_ORDER.includes(s)) out.push({ key: 'status/' + s, title: s, color: 'var(--app-status-done)', list: list.sort(this.byId) });
+      if (!TasksComponent.STATUS_ORDER.includes(s)) out.push({ key: 'status/' + s, title: s, state: taskStateOf(list[0]), list: list.sort(this.byId) });
     }
     return out;
   }
@@ -382,9 +480,9 @@ export class TasksComponent {
   }
   // Click-to-copy the reader command for a chat — kept as a secondary affordance
   // for reading in a terminal; the row itself now opens the transcript in-portal.
-  copyBencc(c: TaskChat, ev?: Event) {
+  copyShowCmd(c: TaskChat, ev?: Event) {
     ev?.stopPropagation();
-    if (c.sessionId) navigator.clipboard?.writeText(`bencc show ${this.shortId(c)}`);
+    if (c.sessionId) navigator.clipboard?.writeText(`cogyard sessions show ${this.shortId(c)}`);
   }
 
   // --- in-portal transcript viewer (task 30 follow-up) ---
@@ -397,10 +495,4 @@ export class TasksComponent {
   bodyHtml(t: any): SafeHtml { return this.san.bypassSecurityTrustHtml(marked.parse(t.bodyMd || '*(no body)*') as string); }
   worktreeName(t: any): string | null { return t.worktreeName || null; }
 
-  claimTooltip(t: any): string {
-    const parts: string[] = [t.claimedByName || 'claimed'];
-    if (t.claimedAt) parts.push(`since ${new Date(t.claimedAt).toLocaleString()}`);
-    if (t.claimedBy) parts.push(`session ${t.claimedBy}`);
-    return parts.join(' · ');
-  }
 }

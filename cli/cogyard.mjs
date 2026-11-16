@@ -11,7 +11,7 @@
 // existing modules keep their exact argv/stdio/exit-code behaviour (no rewrite).
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,13 +25,15 @@ const ROUTES = {
   tunnel: join(HERE, 'tunnel.mjs'),
   usage: join(HERE, 'usage.mjs'),
   sessions: join(HERE, 'sessions.mjs'),
+  cleanup: join(HERE, 'cleanup.mjs'),
   claude: join(HERE, 'claude-install.mjs'),
   doctor: join(HERE, 'doctor.mjs'),
+  publish: join(HERE, 'publish.mjs'),
 };
 
 // `cogyard init|onboard …` → cli/scaffold.mjs, with the subcommand prepended so
-// the one module handles both. These are top-level (project creation
-// is a first-class action), distinct from the low-level `cogyard tasks init`.
+// the one module handles both. These are top-level: project creation is a
+// first-class action, and these two are the only ways to do it.
 const SCAFFOLD_CMDS = new Set(['init', 'onboard']);
 
 // `cogyard hook <name>` → an ENGINE hook entrypoint (the agent-agnostic ones the
@@ -40,7 +42,15 @@ const SCAFFOLD_CMDS = new Set(['init', 'onboard']);
 const HOOKS = {
   'session-start': join(ROOT, 'hooks', 'worktree-session.mjs'),
   'validate-frontmatter': join(ROOT, 'hooks', 'pretooluse-validate-frontmatter.mjs'),
+  'guard-branch-switch': join(ROOT, 'hooks', 'pretooluse-guard-branch-switch.mjs'),
+  'guard-dev-server': join(ROOT, 'hooks', 'pretooluse-guard-dev-server.mjs'),
+  'guard-task-store': join(ROOT, 'hooks', 'pretooluse-guard-task-store.mjs'),
+  'live-state': join(ROOT, 'hooks', 'live-state.mjs'),
 };
+
+// Hooks that must never block or slow the agent: no git preflight, and exit 0
+// even if the entrypoint failed to spawn.
+const NEVER_BLOCK_HOOKS = new Set(['session-start', 'live-state']);
 
 // git is a hard dependency of almost every command (init, serve's portal views,
 // tasks, env). Fail with a clear message instead of a raw spawn ENOENT when it's
@@ -73,14 +83,21 @@ Usage: cogyard <command> [...]
   init   <name>     create a NEW project (dir + git + skeleton + full wiring)
   onboard [path]    adopt an EXISTING folder as a project (additive-only)
   tasks  <…>        task store: sync, projects, doctor, next-id, current, analyze, mount
-  env    <…>        environment + claims: detect, port-owner, claim, release
+  env    <…>        environment + claims: detect, ports, port-owner, claim, release
   tunnel <…>        expose a worktree's dev server at a stable hostname
-  usage  <…>        token/cost ledger: collect, report, backfill
-  sessions audit    archived-chat × worktree report (read-only; manual-only)
+  usage  <…>        token/cost ledger: collect, report, backfill, pricing, reprice
+  sessions <…>      READ-ONLY reports: audit, archivable, chats, find
+  cleanup  <…>      remove finished worktrees + find the chats to archive:
+                    (no subcommand) = the report · worktrees · disk · chat
+  publish [project] which projects deploy on push; run a project's declared
+                    publish command (owner only — refused inside an agent)
   serve  [--port N] run the portal (API + SPA) on one origin (default PORT 7440)
   doctor            install preflight — is this machine wired to run cogyard?
   claude <install|uninstall>  install the Claude driver (skills/commands) into ~/.claude
-  hook   <name>     engine hook entrypoint (session-start | validate-frontmatter)
+  hook   <name>     engine hook entrypoint (session-start | validate-frontmatter |
+                    guard-branch-switch | guard-dev-server | guard-task-store |
+                    live-state)
+  --version, -v     print the installed version
 
 Run \`cogyard <command> --help\` for a command's own options.
 `);
@@ -94,7 +111,24 @@ function main() {
     process.exit(cmd ? 0 : 1);
   }
 
-  const needsGit = !GIT_OPTIONAL.has(cmd) && !(cmd === 'hook' && rest[0] === 'session-start');
+  if (cmd === '--version' || cmd === '-v') {
+    const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
+    process.stdout.write(`cogyard ${version}\n`);
+    process.exit(0);
+  }
+
+  // `<command> <subcommand> --help` answers with help BEFORE anything runs
+  // (task 209). Most modules only recognise --help as their first word, so the
+  // flag used to reach the subcommand: `tunnel disable --help` stopped the
+  // tunnel, `cleanup disk --help` deleted build folders. One check here covers
+  // every command, including ones added later.
+  if (rest.includes('--help') || rest.includes('-h')) {
+    if (ROUTES[cmd]) run(ROUTES[cmd], ['--help']);
+    if (SCAFFOLD_CMDS.has(cmd)) run(join(HERE, 'scaffold.mjs'), [cmd, '--help']);
+    if (cmd === 'serve' || cmd === 'hook') { help(); process.exit(0); }
+  }
+
+  const needsGit = !GIT_OPTIONAL.has(cmd) && !(cmd === 'hook' && NEVER_BLOCK_HOOKS.has(rest[0]));
   if (needsGit && !gitAvailable()) {
     process.stderr.write('cogyard: `git` was not found on PATH, but cogyard needs it.\n' +
       'Install git (https://git-scm.com/downloads), then re-run.\n');
@@ -131,9 +165,9 @@ function main() {
       process.exit(1);
     }
     const r = spawnSync(process.execPath, [target, ...rest.slice(1)], { stdio: 'inherit' });
-    // SessionStart must NEVER block the session — mirror the hook's own exit-0
-    // policy even if `cogyard`/node failed to spawn the entrypoint.
-    if (name === 'session-start') process.exit(0);
+    // SessionStart and live-state must NEVER block the session — mirror the
+    // hook's own exit-0 policy even if `cogyard`/node failed to spawn it.
+    if (NEVER_BLOCK_HOOKS.has(name)) process.exit(0);
     if (r.error) {
       process.stderr.write(`cogyard hook ${name}: ${r.error.message}\n`);
       process.exit(1);

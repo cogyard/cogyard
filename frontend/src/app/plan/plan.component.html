@@ -1,0 +1,75 @@
+@if (loading()) {
+  <p-skeleton height="18rem" />
+} @else if (plan(); as p) {
+  <div class="plan">
+    <app-plan-recently-done [slug]="slug()" [labelColors]="labelColors()" (jumpTask)="jumpTask.emit($event)" />
+    <div class="toolbar">
+      <span class="eyebrow">Show only</span>
+      @for (f of filters; track f.key) {
+        <button class="btn-toggle" [class.on]="isOn(f.key)" (click)="toggle(f.key)" [pTooltip]="f.rule" tooltipPosition="bottom">{{ f.label }}</button>
+      }
+    </div>
+
+    @if (p.groups.progress.length) {
+      <ng-container *ngTemplateOutlet="flat; context: { $implicit: 'progress', title: 'In progress', ids: p.groups.progress }" />
+    }
+    @if (p.groups.can.length) {
+      <ng-container *ngTemplateOutlet="flat; context: { $implicit: 'can', title: 'Can start', ids: p.groups.can }" />
+    }
+    @if (count(p.groups.dep)) {
+      <ng-container *ngTemplateOutlet="boxed; context: { $implicit: 'dep', title: 'Waiting for a task to finish', boxes: p.groups.dep }" />
+    }
+    @if (count(p.groups.other)) {
+      <ng-container *ngTemplateOutlet="boxed; context: { $implicit: 'other', title: 'Waiting on another project', boxes: p.groups.other }" />
+    }
+    @if (p.groups.look.length) {
+      <ng-container *ngTemplateOutlet="flat; context: { $implicit: 'look', title: 'Built — needs your look', ids: p.groups.look }" />
+    }
+    @if (p.parked.length) {
+      <ng-container *ngTemplateOutlet="flat; context: { $implicit: 'parked', title: 'Parked', ids: p.parked }" />
+    }
+    @if (!p.groups.progress.length && !p.groups.can.length && !count(p.groups.dep) && !count(p.groups.other) && !p.groups.look.length && !p.parked.length) {
+      <p class="hint">Nothing open.</p>
+    }
+  </div>
+
+  @if (open(); as q) {
+    <app-plan-quick-look [task]="q" [slug]="slug()" (close)="open.set(null)" (openTask)="open.set(null); jumpTask.emit($event)" />
+  }
+}
+
+<ng-template #head let-kind let-title="title" let-n="n">
+  <div class="band-head">
+    <span class="widget-title rule" [pTooltip]="rules[kind]" tooltipPosition="right">{{ title }}</span>
+    <span class="hint">{{ n }}</span>
+  </div>
+</ng-template>
+
+<ng-template #flat let-kind let-title="title" let-ids="ids">
+  <section class="band">
+    <ng-container *ngTemplateOutlet="head; context: { $implicit: kind, title, n: ids.length }" />
+    <div class="cards">
+      @for (id of ids; track id) { <app-plan-card [task]="t(id)" [slug]="slug()" [dim]="dim(t(id))" [dimWhy]="dimWhy(t(id))" [labelColors]="labelColors()" (select)="open.set(t(id))" (openTask)="jumpTask.emit($event)" /> }
+    </div>
+  </section>
+</ng-template>
+
+<ng-template #boxed let-kind let-title="title" let-boxes="boxes">
+  <section class="band">
+    <ng-container *ngTemplateOutlet="head; context: { $implicit: kind, title, n: count(boxes) }" />
+    @for (b of boxes; track b.after.join(',')) {
+      <fieldset class="wait">
+        <legend>
+          <span class="won" [pTooltip]="why(kind, b)" tooltipPosition="top">waiting on</span>
+          @for (a of b.after; track a) {
+            @if (isCross(a)) { <app-flag tone="info" face="mono">{{ crossRef(a) }}</app-flag> }
+            @else { <app-task-chip [id]="a" [slug]="slug()" (open)="jumpTask.emit($event)" /> }
+          }
+        </legend>
+        <div class="cards">
+          @for (id of b.tasks; track id) { <app-plan-card [task]="t(id)" [slug]="slug()" [dim]="dim(t(id))" [dimWhy]="dimWhy(t(id))" [labelColors]="labelColors()" (select)="open.set(t(id))" (openTask)="jumpTask.emit($event)" /> }
+        </div>
+      </fieldset>
+    }
+  </section>
+</ng-template>

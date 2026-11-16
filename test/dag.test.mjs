@@ -4,7 +4,7 @@
 // newest first, parent hashes space-separated in %P.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dagFromLog, spliceStashRows } from '../core/git-views.mjs';
+import { dagFromLog, spliceStashRows, spliceWorktreeRows } from '../core/git-views.mjs';
 
 const SEP = '\x1f';
 const line = (hash, parents, refs = '', subject = 's') =>
@@ -180,4 +180,92 @@ test('spliceStashRows: stash whose base is outside the window is skipped', () =>
   const out = spliceStashRows(dag, [{ ref: 'stash@{0}', sha: S, base: C, message: 'orphan' }]);
   assert.equal(out.rows.filter((r) => r.kind === 'stash').length, 0);
   assert.equal(out.rows.length, 2);
+});
+
+// --- spliceWorktreeRows ------------------------------------------------------
+// The dirty gate is the whole feature: a row means "this checkout has
+// uncommitted work", which no branch chip conveys. Task 110 deleted this splice
+// believing it duplicated a branch; task 115 restored it. These tests are the
+// guard so the next cleanup can't repeat that on a re-read of the same code.
+
+const wt = (name, head, dirtyCount, extra = {}) =>
+  ({ name, path: `/repo/${name}`, headFull: head, dirtyCount, branch: `br-${name}`, isMain: false, ...extra });
+
+test('spliceWorktreeRows: a dirty checkout gets a row above its HEAD commit', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [C]), line(C, [])].join('\n'), new Set([A, B, C]));
+  const out = spliceWorktreeRows(dag, [wt('feature', B, 3)]);
+  const idxB = out.rows.findIndex((r) => r.hash === B);
+  const row = out.rows[idxB - 1];
+  assert.equal(row.kind, 'worktree');
+  assert.equal(row.hash, 'wt:/repo/feature');   // row key + deep-link value
+  assert.equal(row.wtName, 'feature');
+  assert.equal(row.branch, 'br-feature');
+  assert.equal(row.dirtyCount, 3);
+  assert.equal(row.col, out.rows[idxB].col);    // borrows the anchor's lane
+  assert.equal(row.segs.some((s) => s.wt), true);
+  assert.equal(out.rows.filter((r) => !r.kind).length, 3); // real commits untouched
+});
+
+test('spliceWorktreeRows: clean and unknown-dirty checkouts get no row', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const out = spliceWorktreeRows(dag, [wt('clean', A, 0), wt('unknown', B, null)]);
+  assert.equal(out.rows.filter((r) => r.kind === 'worktree').length, 0);
+  assert.equal(out.rows.length, 2);
+});
+
+test('spliceWorktreeRows: a checkout whose HEAD is outside the window is skipped', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const out = spliceWorktreeRows(dag, [wt('offscreen', C, 5)]);
+  assert.equal(out.rows.filter((r) => r.kind === 'worktree').length, 0);
+  assert.equal(out.rows.length, 2);
+});
+
+test('spliceWorktreeRows: checkouts sharing an anchor stack, main checkout first', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const out = spliceWorktreeRows(dag, [
+    wt('zeta', A, 1), wt('alpha', A, 2), wt('main-checkout', A, 4, { isMain: true }),
+  ]);
+  const names = out.rows.filter((r) => r.kind === 'worktree').map((r) => r.wtName);
+  assert.deepEqual(names, ['main-checkout', 'alpha', 'zeta']);
+  // Only the topmost connects from its own dot; the rest carry the line full-height.
+  const halves = out.rows.filter((r) => r.kind === 'worktree')
+    .map((r) => r.segs.find((s) => s.wt).half);
+  assert.deepEqual(halves, ['bottom', 'full', 'full']);
+});
+
+test('spliceWorktreeRows: a tip anchor gains a top segment so the connector reaches its dot', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const before = dag.rows[0].segs.filter((s) => s.half === 'top').length;
+  assert.equal(before, 0); // tip draws nothing above itself
+  const out = spliceWorktreeRows(dag, [wt('tip', A, 1)]);
+  const anchor = out.rows.find((r) => r.hash === A);
+  assert.equal(anchor.segs.some((s) => s.half === 'top' && s.to === anchor.col && s.wt), true);
+});
+
+test('spliceWorktreeRows + spliceStashRows: worktree rows sit above stash rows on a shared anchor', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const out = spliceStashRows(
+    spliceWorktreeRows(dag, [wt('dirty', B, 2)]),
+    [{ ref: 'stash@{0}', sha: S, base: B, message: 'wip' }],
+  );
+  const kinds = out.rows.map((r) => r.kind || 'commit');
+  assert.deepEqual(kinds, ['commit', 'worktree', 'stash', 'commit']);
+});
+
+test('spliceWorktreeRows: the claimed task id rides the row as a [#NN] chip', () => {
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const out = spliceWorktreeRows(dag, [wt('feature', A, 1, { claimedByTaskId: 115 })]);
+  assert.deepEqual(out.rows.find((r) => r.kind === 'worktree').taskIds, ['115']);
+});
+
+test('spliceWorktreeRows: the main checkout carries a chip only when worktreesForProject gives it one', () => {
+  // worktreesForProject gives the main checkout a task only for a live claim
+  // (task 180), never for the env.worktree record every task worked on main
+  // leaves behind — that half is test/worktree-task-link.test.mjs. Here: the
+  // graph shows what it is given, and nothing when it is given nothing.
+  const dag = dagFromLog([line(A, [B]), line(B, [])].join('\n'), new Set([A, B]));
+  const live = spliceWorktreeRows(dag, [wt('cogyard', A, 4, { isMain: true, claimedByTaskId: 45, claimLive: true })]);
+  assert.deepEqual(live.rows.find((r) => r.kind === 'worktree').taskIds, ['45']);
+  const none = spliceWorktreeRows(dag, [wt('cogyard', A, 4, { isMain: true, claimedByTaskId: null })]);
+  assert.deepEqual(none.rows.find((r) => r.kind === 'worktree').taskIds, []);
 });

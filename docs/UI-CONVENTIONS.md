@@ -14,9 +14,13 @@ prod-vs-dev CSS-order differences — including a pill gray-flash that reproduce
 pixels is negative value: you pay the wrapper and fight its dynamics.
 
 - **PrimeNG** — where it provides machinery expensive to rebuild: `p-table`,
-  `p-select`, `p-tree`, tabs, drawers, `p-tag`, `p-skeleton`, tooltips.
+  `p-select`, `p-tree`, tabs, drawers, `p-skeleton`, tooltips.
 - **Native `<button>` + a shared recipe class** — every clickable control:
   switchers, links, toggles, actions. Never a styled `p-button`.
+- **Plain markup in a shared chip component** — every chip (see "Chips" below).
+  Never `<p-tag>`: chips were half PrimeNG tags restyled through 25 `::ng-deep`
+  rules that leaned on PrimeNG's internal markup, and half `.badge` spans — the
+  same drift as `p-button`, removed the same way.
 
 ## The button recipes — pick one, never invent another
 
@@ -36,7 +40,23 @@ first three are the everyday recipes; `sidebar-item` is the left-rail nav row.
 Sanctioned one-offs (composite controls, local by design, NOT recipes to copy):
 `button.commit` (Branches commit cell), `button.frow` + `button.close` (commit
 panel rows / dismiss), `button.headlink` (Worktrees HEAD hash — belongs with the
-commit-hash family, not the worktree/branch one).
+commit-hash family, not the worktree/branch one), `button.row-del` (remove-this-row
+in the settings list editors — Open-in targets, Label axes, the project Icon card; an
+icon-only affordance inside a row, quiet at rest. Defined once in `styles.scss`
+because the cards sit one above the other and had drifted into a ✕-in-a-pill and a
+🗑 emoji for the same job).
+
+### Settings cards: `.settings-card`, `.set-actions`, `.set-input`, `.ro-value` are GLOBAL
+
+Both settings surfaces — the global page and a project's own settings tab — are
+assembled from child components (`<app-settings-axes>`, `<app-project-icon>`,
+`<app-settings-addons>`). Angular's emulated encapsulation means a class defined
+in `settings.component.scss` is INERT inside those children — which is how the
+axes card ended up with a left-aligned action row while every other card's Save
+sat right. Any class a child panel wears lives in `styles.scss`, not in the
+parent's SCSS. The axis manager is now rendered by both surfaces, which is the
+same rule seen from the other side: a card with two parents can only be styled
+from the global sheet.
 
 ### Selected vs engaged — two looks, two jobs
 
@@ -89,7 +109,7 @@ render larger than the section heading above it.
 | `eyebrow` | Uppercase micro-label: column heads, field labels, small group heads. 11/600 caps. |
 | `hint` · `hint.sm` | Muted caption / note / sub-line. 12 · 11.5. |
 | `mono` | Inline monospace id / hash / count label. 11.5. |
-| `badge` | Small status/label pill. 10.5/600. Modifiers: `.caps` (uppercase status words), `.mono`. Also matches `.p-tag.badge` so a PrimeNG tag with `styleClass="badge"` outranks the Aura defaults without `::ng-deep`. **Colour is semantic and stays in the component; the shape never does.** |
+| `badge` | The chip's shape: SQUARE, 3px corners, 10.5/600. Modifiers: `.caps` (uppercase status words), `.mono`. Worn only inside the six shared chip components (see "Chips"); colour comes from that component's `--app-*` theme values, never from page CSS. |
 | `field` | Label-over-control stack; its control fills the width. |
 
 Justified exceptions (do NOT fold these into a recipe): chart axis micro-labels,
@@ -153,3 +173,79 @@ Never hardcode a hex in a component. Everything reads `var(--app-*)` from the
 `:root` knobs at the top of `styles.scss` (`--app-accent`, `--app-border`,
 `--app-surface`, `--app-fg-dim`, the `--app-accent-tint*` family, …). Changing
 the whole portal's accent is a one-line edit there.
+
+## Referring to a thing — use its shared component, never fresh markup
+
+Two kinds of thing are named over and over across the portal, and each has ONE
+component that renders it. A tab that needs to show one imports the component; it
+does not write its own chip, link, or pill. Both exist for the same reason: the
+same thing had drifted into four to six different looks across the tabs, with
+different click behaviour in each, and whether it was clickable at all depended
+only on which page you were looking at.
+
+| Thing | Component | Contract |
+|---|---|---|
+| a worktree · a branch | `app-git-ref` (`shared/git-ref/`) | kind icon + name; the name opens that kind's home tab (Worktrees / Branches), except ON that tab, where `linked=false` renders plain text |
+| a task | `app-task-chip` (`shared/task-chip/`) | `show="id"`: the `#NN` chip, always a control: opens the task on the Tasks tab **expanded**; filled by the task's status; tooltip carries STATUS · ACTION (where the caller knows it) · TITLE, as terse words, never sentences. `show="status"`: the status WORD, a label, not a control (see "Chips") |
+
+`app-task-chip` resolves the title and status ITSELF, from `TaskIndexService` (one
+read of `GET /api/tasks`, cached per project) — a caller passes the id, the
+project slug, and at most the extra facts its own context knows (`role` + `how`
+for Cleanup's "did this chat work on it, and by which actions", `note` for a
+blocking reason). Do not widen another endpoint to carry a task title.
+
+The fill is picked by the server-computed bucket (`data-bucket` on the chip →
+the `--app-status-*` tokens in `styles.scss`, each a solid fill paired with its
+own text colour): **Idle green · Claimed blue · Waiting yellow ·
+Done/Enough/Obsolete light grey**. "Idle" is the displayed word for the `ready`
+bucket (open, unclaimed, deps met). The palette is chosen to stay distinct under
+red-green colour blindness; recolour only in the tokens. A page must never invent
+its own done/not-done colouring — Cleanup did, using the parked amber for "open",
+and that page-local dialect is what the shared component replaced.
+
+## Chips — one component per job, and there is no ad-hoc chip
+
+A chip is a small square label. Every chip on every page is one of these six
+components; a page that needs a chip imports the one whose JOB it is and never
+writes `.badge` markup or chip colours itself. Chips are square (3px) so they
+never read as buttons, which are rounded pills. Every colour is an `--app-*`
+theme value in `styles.scss :root`, each group checked there for red-green colour
+blindness.
+
+| Job — what the chip tells you | Component | Inputs |
+|---|---|---|
+| A task (its id, or its status word) | `app-task-chip` (`shared/task-chip/`) | `id`, `slug`, `show: 'id' \| 'status'`, `state` (a status with no task: the Tasks tab's grouped headings), `role`, `how`, `note`; emits `open` |
+| How a chat touched a task | `app-action-chip` (`shared/action-chip/`) | `kind: 'claimed' \| 'created' \| 'committed' \| 'edited' \| 'looked-up'` (the wire's `mentioned` is accepted and shown as "looked up") |
+| A condition word | `app-flag` (`shared/flag/`) | `tone: 'good' \| 'warn' \| 'bad' \| 'review' \| 'neutral' \| 'info' \| 'caution'`, `face: 'word' \| 'mono' \| 'text'`, `wrap`; text via content; tooltip on the host |
+| A branch or tag name on a commit | `app-ref-chip` (`shared/ref-chip/`) | `kind: 'main' \| 'local' \| 'remote' \| 'synced' \| 'tag'`; name via content. A release tag is gold on black and tag-shaped (pointed left) |
+| A task label | `app-label-chip` (`shared/label-chip/`) | `label`, `color` (the axis colour or null), `removable`; emits `remove` |
+| A file's git status letter | `app-git-status` (`shared/git-status/`) | `code` (A, M, D, R…, C, T, `?`) |
+
+**The four status hues — Idle green, Claimed blue, Waiting yellow, Done grey —
+mean TASK STATUS and nothing else.** Only `app-task-chip` wears them. An action
+chip is neutral grey with the task chip's worked-on ring (the same rule), and
+flag tones are pale tints, so no other chip can be mistaken for a status. A
+release tag (`app-ref-chip kind="tag"`) is gold on black — black fill, gold text,
+a gold edge — not green: when it was green its pointed shape alone did not keep
+it apart from an Idle chip on the Graph, and releases are rare and meant to stand
+out (owner's pick, 2026-11-05). So no ref or flag wears a status hue.
+
+One sanctioned exception (owner's pick): the `caution` tone is SOLID
+construction-tape yellow on black, used only for the Plan card's "worktree
+missing" flag, and the card's striped border is drawn in the same two
+`--app-tone-caution*` values. It sits close to the Waiting yellow (ΔE 18), so
+the word and the black are what tell it apart. Do not reuse it for anything
+else.
+
+`app-task-chip show="status"` splits the closed bucket back into its three
+statuses — DONE (grey, darker text), ENOUGH (lighter grey), OBSOLETE (no fill, an
+outline) — because the word is where that difference is asked for; the `#NN`
+chip keeps one done grey.
+
+One sanctioned exception: Cleanup's colour key wears the task chip's own
+`.tchip` classes on plain spans, so the key is drawn by the very rules it
+explains and cannot drift from the rows below it.
+
+Not chips (so not in the table): buttons, code spans, `kbd` keys, commit-hash
+links, the sidebar count bubble (`.si-badge`), and the grey `.chat-flag` notes
+("inferred", "archived") beside a chat.

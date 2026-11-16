@@ -26,13 +26,37 @@ button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-m
 }
 
 .tree { border-right: 1px solid var(--app-border); display: flex; flex-direction: column; min-height: 0; }
-.tree-bar {
-  display: flex; align-items: center; justify-content: space-between; gap: var(--app-space-3);
-  padding: 6px 10px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
+/* The control bars (task 224): one above the tree (show gitignored), one above
+   the file (compare, hide unchanged, dark switch). Same height on both sides so
+   the two columns start level; wraps instead of cutting off on a narrow window. */
+.bar {
+  /* 43px = the compare p-selectbutton (34px) + padding + border, so the tree's
+     bar (only a switch) stands as tall as the file's. */
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-height: 43px;
+  padding: 4px 10px; background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
 }
-.tree-toggles { display: flex; align-items: center; gap: var(--app-space-3); flex: none; }
-/* mode/option controls = global .btn-toggle; only the count chip lives here */
-button.btn-toggle .cnt { font-weight: 700; }
+/* a switch with its label (p-toggleswitch + text) */
+.swl { display: inline-flex; align-items: center; gap: var(--app-space-3); font-size: 12px; color: var(--app-fg-dim); white-space: nowrap; cursor: pointer; }
+/* each side of the compare switch carries its count */
+.cnt { font-weight: 700; margin-left: var(--app-space-1); }
+/* The commit picker beside the compare switch (task 224, trial). Its list is
+   appended to <body>, so the option rows need ::ng-deep. */
+.commit-pick { font-size: 12px; min-width: 8rem; }
+.c-sel { display: inline-flex; align-items: center; gap: var(--app-space-3); }
+.cmp-label, .cmp-count { font-size: 12px; color: var(--app-fg-dim); white-space: nowrap; }
+.cmp-label { margin-right: calc(-1 * var(--app-space-2)); }
+:host ::ng-deep .commit-pick .p-select-label { font-size: 12px; }
+::ng-deep .c-opt { display: flex; align-items: baseline; gap: var(--app-space-3); font-size: 12px; max-width: 34rem; }
+::ng-deep .c-opt .c-sha { color: var(--app-fg-muted); flex: none; }
+::ng-deep .c-opt .c-subj { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto; }
+::ng-deep .c-opt .c-subj app-ref-chip { margin-right: var(--app-space-3); }
+::ng-deep .c-opt .c-when { color: var(--app-fg-muted); flex: none; font-size: 11px; }
+/* The status-letter legend, its own thin line under the file's control bar. */
+.legend {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--app-space-2) var(--app-space-4);
+  padding: 4px 12px; font-size: 11px; color: var(--app-fg-muted); border-bottom: 1px solid var(--app-border);
+}
+.legend .item { display: inline-flex; align-items: center; gap: var(--app-space-2); white-space: nowrap; }
 /* lazy gitignored-listing wait indicator */
 .ig-spin { flex: 0 0 auto; animation: ig-spin 0.8s linear infinite; }
 @keyframes ig-spin { to { transform: rotate(360deg); } }
@@ -45,6 +69,11 @@ button.btn-toggle .cnt { font-weight: 700; }
   .p-tree-node-content.p-tree-node-selected { background: var(--app-accent-tint2); color: inherit; }
   .p-tree-node-content:not(.p-tree-node-selected):hover { background: var(--app-hover); }
   .p-tree-node-toggle-button { width: 16px; height: 16px; flex: none; }
+  /* Files have no chevron; Aura only hides it (visibility), which keeps the 16px
+     slot and pushes a file's icon into the folder-LABEL column — so a root file
+     reads as a child of the folder above it. Remove the slot: a file's icon
+     sits where a sibling folder's chevron does. */
+  .p-tree-node-leaf > .p-tree-node-content .p-tree-node-toggle-button { display: none; }
   .p-tree-node-children { padding-left: 14px; }
 }
 .trow { display: inline-flex; align-items: center; gap: var(--app-space-3); min-height: 20px; overflow: hidden; }
@@ -58,19 +87,7 @@ button.btn-toggle .cnt { font-weight: 700; }
 .fname.nongit { color: #a3abb5; }
 .fname.full { font-family: ui-monospace, 'SF Mono', monospace; font-size: 11.5px; }
 
-/* p-tag status badges — ng-deep; .p-tag.st outranks the Aura .p-tag defaults */
-/* shape from the global .badge.mono recipe; a file-tree status chip is a SINGLE
-   letter inside a 20px tree row, so it keeps the tighter padding/leading only */
-:host ::ng-deep .p-tag.st {
-  flex: none; padding: 0 5px; line-height: 16px;
-}
-:host ::ng-deep .p-tag.st-a { background: #d1fae5; color: #047857; }
-/* '?' — untracked, not gitignored (OS junk, tool output). Muted so it reads as
-   "on disk, not in git", distinct from st-a (a real staged/committed addition). */
-:host ::ng-deep .p-tag.st-u { background: #eef0f2; color: #8b949e; }
-:host ::ng-deep .p-tag.st-m { background: #fef3c7; color: #b45309; }
-:host ::ng-deep .p-tag.st-d { background: #fde8e8; color: #b91c1c; }
-:host ::ng-deep :is(.p-tag.st-r, .p-tag.st-c, .p-tag.st-t) { background: var(--app-accent-tint2); color: var(--app-accent-tint-fg); }
+/* git status letters are app-git-status (task 155), shared with the commit panel */
 
 /* --- content pane -------------------------------------------------------------- */
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }

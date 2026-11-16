@@ -22,7 +22,7 @@ const execFileP = promisify(execFile);
 // repoPath -> { key, count }. Process-lifetime cache; the server is long-running.
 const cache = new Map();
 
-// Unmerged worktree count for ONE checkout (a project clone). Cheap on a cache
+// Unmerged worktree count for ONE checkout. Cheap on a cache
 // hit (just the ref-file reads above); on a miss, one ancestry probe per worktree.
 export async function worktreeUnmergedCount(repoPath) {
   let state;
@@ -44,9 +44,6 @@ export async function worktreeUnmergedCount(repoPath) {
   return count;
 }
 
-// Sum across a project's clones (multi-clone planet projects).
 export async function projectUnmerged(proj) {
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
-  const counts = await Promise.all(clonePaths.map((cp) => worktreeUnmergedCount(cp)));
-  return counts.reduce((n, c) => n + c, 0);
+  return worktreeUnmergedCount(proj.path);
 }

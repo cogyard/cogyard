@@ -4,11 +4,11 @@
   margin: var(--app-space-6) 0 var(--app-space-4);
 }
 .section-head:first-of-type { margin-top: var(--app-space-2); }
-.section-head.stale { color: #b91c1c; }
-/* .clone-head = layout for the global .section-label recipe (13/600 uppercase) */
-.clone-head {
-  margin: var(--app-space-5) 0 var(--app-space-3); padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
-}
+/* stale's own pink text, not the problem red (red is for BROKEN / MISSING) */
+.section-head.stale { color: var(--app-tone-review-fg); }
+/* the one-line definition of stale, tucked under its heading */
+.section-head.stale:has(+ .stale-why) { margin-bottom: var(--app-space-1); }
+.stale-why { margin: 0 0 var(--app-space-4); }
 /* table chrome (box/table/th) is shared — see styles.scss */
 :host ::ng-deep .wt .p-datatable-table-container { margin-bottom: var(--app-space-3); }
 /* name + branch are the elastic columns — they absorb slack instead of
@@ -16,16 +16,19 @@
 /* Below this the container scrolls instead of crushing columns (shared chrome
    owns the overflow-x). Sum of the column minimums below — ten columns, so this
    table reaches its floor sooner than the others. */
-:host ::ng-deep p-table table { min-width: 1010px; }
+:host ::ng-deep p-table table { min-width: 905px; }
 .col-name { width: 30%; min-width: 250px; }
-/* two short action links (branch · files), not a name — 140px is plenty */
-.col-links { width: 140px; }
+/* task chip + two icon links (branch · files) — the same 120px as the Branches
+   tab's Links (task 156; was 140 when the links were words) */
+.col-links { width: 120px; }
 .col-head { width: 84px; }
 .col-n { width: 88px; }
 .col-n2 { width: 72px; }
-/* worst case is two chips + a task link (LOCKED + STALE + #103) — at 112px that
-   trio overflowed and the link got clipped on the rows that carry both chips */
-.col-flags { width: 175px; }
+/* Holds one flag: LOCKED (60px) or MAIN (44). They never share a cell — git
+   cannot lock the main checkout — and the task chip moved to Links (task 156),
+   so 90 = LOCKED + 20px padding + a little air. (It was 175 for LOCKED + STALE +
+   the task chip, back when all three lived here.) */
+.col-flags { width: 150px; }
 /* height/padding/font-size come from the shared table chrome in styles.scss */
 .wt-row > td {
   border-bottom: 1px solid var(--app-border); background: var(--app-surface);
@@ -42,18 +45,21 @@
    anonymous cell and shift every column after them */
 .flags > * + * { margin-left: 6px; }
 .flags > * { vertical-align: middle; }
+/* The `unmounted` flag is a button (click copies the fix) that looks like the flag. */
+button.flag-copy { display: inline-flex; padding: 0; border: none; background: none; font: inherit; cursor: pointer; }
 /* the cell's text-overflow can't ellipsis an inline-block child — see the same
    rule in branches.component.scss. 20px = branch icon + the 6px gap above. */
 .flags button.btn-link {
   max-width: calc(100% - 20px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* Links cell: two labelled action links side by side. The label carries the
-   meaning; the icon is recognition, not the affordance (a bare glyph is not
-   readable as a control). Task 104. */
+/* Links cell — LAYOUT only. The .lnk / .lnk-ico recipe moved to styles.scss when
+   the Branches tab grew the same column (task 126); two components wearing one
+   class cannot have it living inside one of their scoped stylesheets. */
 .links { white-space: nowrap; }
-.links .lnk + .lnk { margin-left: var(--app-space-4); }
-button.btn-link.lnk { font-size: 11.5px; }
-.lnk-ico { width: 11px; height: 11px; vertical-align: -1px; margin-right: 3px; }
+/* spacing, icon-only and the task slot all match the Branches tab's Links (task 156) */
+.links > * + * { margin-left: var(--app-space-3); }
+.links .lnk-ico { margin-right: 0; }
+.task-slot { display: inline-block; width: 46px; }
 
 .name { font-weight: 500; }
 .dim { color: var(--app-fg-dim); }
@@ -63,12 +69,6 @@ td.ctr, th.ctr { text-align: center; }
 /* counts are routine data — neutral; STALE/dirty carry the alert colors */
 .ahead, .behind { color: var(--app-fg-dim); font-weight: 600; }
 .dirty { color: #b45309; font-weight: 600; }
-/* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
-   .p-tag.badge outranks the Aura .p-tag defaults. */
-/* shape comes from the global .badge/.badge.caps recipe — colors only here */
-:host ::ng-deep .p-tag.badge.main { background: var(--app-surface-2); color: var(--app-fg-dim); }
-:host ::ng-deep .p-tag.badge.locked { background: var(--app-surface-2); color: var(--app-fg-dim); }
-:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
 /* Head cell = the Branches tab's commit-id chip: neutral at rest (surface chip +
    dim underline), accent only on hover. The app accent (#ea580c) at rest read as
    an error color, so these row links do NOT use btn-link's resting accent. */

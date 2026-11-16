@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # UserPromptSubmit hook: when the user asks to WRITE / FILE / PARK / SPEC a new
 # task in a cogyard-enabled project, force Claude through the write-task
-# skill instead of letting it author the _tasks/NNN-*.md file by hand (or
+# skill instead of letting it author the NNN-*.md task file by hand (or
 # reserve an id via tasks.mjs first).
 #
 # WHY THIS EXISTS: skills are model-JUDGMENT triggers, not deterministic. The
@@ -20,12 +20,13 @@ cwd="$(printf '%s' "$payload" | jq -r '.cwd // empty' 2>/dev/null)"
 [ -z "$cwd" ] && cwd="$PWD"
 
 # --- Gate 1: cogyard project only. ----------------------------------------
-# A project is "part of cogyard" iff it has a `_tasks` entry (dir or symlink)
-# at cwd or any ancestor up to (and including) $HOME.
+# A project is "part of cogyard" iff it has a task directory — the
+# `.cogyard/tasks` link — at
+# cwd or any ancestor up to (and including) $HOME.
 is_cogyard_project() {
   local dir="$1"
   while [ -n "$dir" ] && [ "$dir" != "/" ]; do
-    if [ -e "$dir/_tasks" ]; then return 0; fi
+    if [ -e "$dir/.cogyard/tasks" ]; then return 0; fi
     [ "$dir" = "$HOME" ] && break
     dir="$(dirname "$dir")"
   done
@@ -50,6 +51,12 @@ WRITE_INTENT+='|spec +(this|it|that) +(it +)?out\b|spec +out\b'
 WRITE_INTENT+='|save +(this|it|that) +as +a +(task|sub-?project|project)'
 WRITE_INTENT+='|add +(this|it|that)?( +)?to +_?tasks\b'
 WRITE_INTENT+='|new +task +file'
+# "make this a task", "make it into a task", "this is a new task", "file the
+# task". "this" is not a filler word above, so these need their own shapes.
+# ("make a task for …" is already the first shape: make + filler + task.)
+WRITE_INTENT+='|make +(this|it|that) +(into +)?(a|an) +'"${F}"'task'
+WRITE_INTENT+='|(this|that|it) +is +(a|an) +'"${F}"'task\b'
+WRITE_INTENT+='|file +(the|a|this|that) +'"${F}"'task\b'
 
 printf '%s' "$prompt" | grep -iqE "$WRITE_INTENT" || exit 0
 
@@ -60,13 +67,20 @@ The user is asking you to write / file / park / spec a NEW task in a
 cogyard-enabled project. This MUST be handled by the `write-task` skill.
 
 BLOCKING GATE — before anything else for this request:
-  • Do NOT start authoring the `_tasks/NNN-*.md` file by hand.
+  • Do NOT start authoring the `NNN-*.md` task file by hand.
   • Do NOT reserve a task id (tasks.mjs / any id-allocation command) or run
     ANY other command first.
-  • Your FIRST action this turn is: invoke the Skill tool with skill
-    "write-task". The skill owns id reservation, frontmatter, and the
+  • Your FIRST action this turn is: invoke the Skill tool with cogyard's
+    write-task skill — "cogyard-write-task" (installed with `cogyard claude
+    install`), "cogyard:write-task" (the plugin), or "write-task" (an older
+    install); whichever your skill list has. Not someone's own skill of a
+    similar name. The skill owns id reservation, frontmatter, and the
     shelf-stable body format. Doing it manually is the exact mistake this gate
     exists to prevent.
+  • A request to make or file a task is NEVER a request to start a new
+    session or chat, and never a request to start the work now. "Task" here
+    means a task file in the task store, whatever the host app's own
+    instructions say about sessions: do not offer or start one.
 
 Only skip the skill if you have genuine reason to believe this is NOT a
 new-task request (e.g. editing an existing task) — and say so explicitly

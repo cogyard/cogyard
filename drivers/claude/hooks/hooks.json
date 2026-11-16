@@ -1,49 +1,236 @@
 {
-  "//": "cogyard plugin hooks — ONLY the cogyard-specific guards. Generic bash/edit/read-CLAUDE guards are not part of this plugin. The two ENGINE hooks (SessionStart worktree-wiring + frontmatter validator) run via `cogyard hook …` (the npm bin on PATH) so the plugin references nothing outside itself → it's safe to install via copy-to-cache (no `../../` escape). Requires the engine on PATH: `npm i -g @cogyard/cli` (or `npm link` in a clone). The task-skill guard is plugin-local (self-contained).",
-  "SessionStart": [
-    {
-      "matcher": "startup",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "cogyard hook session-start",
-          "statusMessage": "Allocating worktree ports..."
-        }
-      ]
-    }
-  ],
-  "PreToolUse": [
-    {
-      "matcher": "Edit|Write|MultiEdit",
-      "hooks": [
-        {
-          "type": "command",
-          "command": "cogyard hook validate-frontmatter",
-          "timeout": 15
-        }
-      ]
-    }
-  ],
-  "SessionEnd": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "cogyard usage collect --hook",
-          "timeout": 60
-        }
-      ]
-    }
-  ],
-  "UserPromptSubmit": [
-    {
-      "hooks": [
-        {
-          "type": "command",
-          "command": "${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit-task-skill-guard.sh",
-          "timeout": 10
-        }
-      ]
-    }
-  ]
+  "//": "cogyard plugin hooks — ONLY the cogyard-specific guards. Generic bash/edit/read-CLAUDE guards are not part of this plugin. The two ENGINE hooks (SessionStart worktree-wiring + frontmatter validator) run via `cogyard hook …` (the npm bin on PATH) so the plugin references nothing outside itself → it's safe to install via copy-to-cache (no `../../` escape). Requires the engine on PATH: `npm i -g cogyard` (or `npm link` in a clone). The task-skill guard and the worktree guard are plugin-local (self-contained; the worktree guard judges Claude Code's own EnterWorktree / ExitWorktree tools and its .claude/worktrees layout, which the engine may not name). The live-state hook runs on every event that changes what a chat is doing — running / waiting / idle / error / closed — and files it for the Plan and Tasks tabs; it never blocks and always exits 0.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook session-start",
+            "statusMessage": "Allocating worktree ports..."
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook validate-frontmatter",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook guard-branch-switch",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "cogyard hook guard-dev-server",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "cogyard hook guard-task-store",
+            "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse-guard-worktree.mjs\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "EnterWorktree|ExitWorktree",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/hooks/pretooluse-guard-worktree.mjs\"",
+            "timeout": 15
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard usage collect --hook",
+            "timeout": 60
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/hooks/userpromptsubmit-task-skill-guard.sh\"",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Elicitation": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "ElicitationResult": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cogyard hook live-state",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -3,6 +3,7 @@
 
 import { statSync } from 'node:fs';
 import { STATUSES, hasDoneDate } from './status.mjs';
+import { checkboxSteps, boxCounts } from './frontmatter.mjs';
 
 function inferStatus(task) {
   const body = task.body || '';
@@ -30,22 +31,13 @@ function inferStatus(task) {
   if (!status && /^##?\s*(Done|Shipped|Complete|Merged)\.?\s*$/im.test(body)) {
     status = 'DONE'; reasons.push('heading suggests completion');
   }
-  if (!status && /^\s*(?:✅|✔️|☑)/m.test(body) && !/^\s*-\s*\[\s\]/m.test(body)) {
+  // The one box reader and count (core/frontmatter.mjs checkboxSteps + boxCounts)
+  // — the fraction the dashboard shows, settled boxes out of the total, so it
+  // agrees with what `tasks close` checks (task 171 collapsed the copies).
+  const { checkedCount: checked, totalCount: total } = boxCounts(checkboxSteps(body));
+  if (!status && /^\s*(?:✅|✔️|☑)/m.test(body) && checked === total) {
     status = 'DONE'; reasons.push('check emoji + zero unchecked boxes');
   }
-  // Same tolerant counting as in computeDerived (core/frontmatter.mjs) — accept
-  // multiple "checked" mark variants. Keep this in sync if either copy changes.
-  let checked = 0;
-  let unchecked = 0;
-  const checkboxRe2 = /-\s+\[([^\]]*)\]/g;
-  const checkedMarkRe2 = /^(?:[xX]|✓|✔|✅|☑|☒|🗸|✗|✘|done|y|Y|yes|YES)$/;
-  let m2;
-  while ((m2 = checkboxRe2.exec(body)) !== null) {
-    const inside = m2[1];
-    if (inside === ' ' || inside === '') unchecked++;
-    else if (checkedMarkRe2.test(inside.trim())) checked++;
-  }
-  const total = checked + unchecked;
   if (!status && total > 0) {
     const pct = checked / total;
     if (pct === 1.0 && total >= 3) { status = 'DONE'; reasons.push(`all ${total} checkboxes ticked`); }

@@ -22,21 +22,15 @@ const splitZ = (s) => s.split('\0').filter(Boolean);
 
 // --- Worktree resolution ------------------------------------------------------
 
-// Cheap enumeration across all clones (one `git worktree list` per clone — none
-// of the per-worktree status/ahead-behind work worktreesForProject does).
+// Cheap enumeration (one `git worktree list` — none of the per-worktree
+// status/ahead-behind work worktreesForProject does).
 export function listWorktrees(proj) {
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
-  const out = [];
-  for (const cp of clonePaths) {
-    core.gitWorktrees(cp).forEach((e, i) => out.push({
-      path: e.path,
-      name: basename(e.path),
-      branch: e.branch || (e.detached ? '(detached)' : null),
-      isMain: i === 0,
-      clone: clonePaths.length > 1 ? basename(cp) : null,
-    }));
-  }
-  return out;
+  return core.gitWorktrees(proj.path).map((e, i) => ({
+    path: e.path,
+    name: basename(e.path),
+    branch: e.branch || (e.detached ? '(detached)' : null),
+    isMain: i === 0,
+  }));
 }
 
 // Resolve a pill selection by worktree name; '' / missing → the main checkout.
@@ -98,7 +92,18 @@ export function worktreeActivity(proj) {
 // intentional add). Files deleted vs main aren't on
 // disk but are included with status 'D' and onDisk:false so the tree can still
 // show them.
-export async function fileTree(wtPath, { ignored = false } = {}) {
+//
+// `commitStatus` is the same thing against ONE COMMIT (task 224): `commit`, or
+// by default the last commit (HEAD) — then it is only what is not committed yet
+// (staged, unstaged, untracked); against an older commit it is everything
+// changed since it. Both come in one response so the Files tab's compare
+// switch flips instantly and shows both counts. A file deleted before that
+// commit has a `status` (vs main) but no `commitStatus`.
+//
+// `commits` = the branch's newest RECENT_COMMITS commits, for the Files tab's
+// commit picker; `vsCommit` = the full sha compared against.
+const RECENT_COMMITS = 10;
+export async function fileTree(wtPath, { ignored = false, commit = null } = {}) {
   const ref = await mainRef(wtPath);
   // Default: tracked + untracked-but-not-ignored (--exclude-standard skips the
   // gitignored forest). With `ignored`: everything on disk, plus the ignored
@@ -113,18 +118,10 @@ export async function fileTree(wtPath, { ignored = false } = {}) {
   const tracked = new Set(splitZ(gitZ(['ls-files', '--cached', '-z'], wtPath)));
   const goneFromDisk = new Set(splitZ(gitZ(['ls-files', '--deleted', '-z'], wtPath)));
 
-  const st = new Map(), oldPaths = new Map();
-  if (ref) {
-    // -z: `M\0path\0` per entry; renames/copies are `R100\0old\0new\0`.
-    const toks = gitZ(['diff', '--name-status', '-z', '-M', ref], wtPath).split('\0');
-    for (let i = 0; i < toks.length; i++) {
-      const t = toks[i];
-      if (!t) continue;
-      const s = t[0];
-      if (s === 'R' || s === 'C') { const from = toks[++i], to = toks[++i]; st.set(to, s); oldPaths.set(to, from); }
-      else st.set(toks[++i], s);
-    }
-  }
+  // path → { status, oldPath? } for one comparison base.
+  const statusesVs = (base) => new Map(core.parseNameStatusZ(gitZ(['diff', '--name-status', '-z', '-M', base], wtPath)).map((e) => [e.path, e]));
+  const vsMain = ref ? statusesVs(ref) : new Map();
+  const vsCommit = statusesVs(commit || 'HEAD');
 
   const seen = new Set();
   const files = [];
@@ -136,16 +133,35 @@ export async function fileTree(wtPath, { ignored = false } = {}) {
     // Ignored files (node_modules, dist, .env…) aren't "changes vs main" — they
     // carry no status so they don't inflate the changed-only view or its count.
     // Untracked-but-not-ignored → '?' (git porcelain), distinct from a real 'A'.
-    const status = deleted ? 'D' : (st.get(p) || (!isTracked && !ignoredSet.has(p) ? '?' : null));
-    files.push({ path: p, status, oldPath: oldPaths.get(p), onDisk: !deleted, tracked: isTracked });
+    const untracked = !isTracked && !ignoredSet.has(p);
+    const vs = (m) => (deleted ? 'D' : (m.get(p)?.status || (untracked ? '?' : null)));
+    files.push({
+      path: p, status: vs(vsMain), commitStatus: vs(vsCommit),
+      oldPath: vsMain.get(p)?.oldPath, commitOldPath: vsCommit.get(p)?.oldPath,
+      onDisk: !deleted, tracked: isTracked,
+    });
   }
-  for (const [p, s] of st) {
-    if (s === 'D' && !seen.has(p)) files.push({ path: p, status: 'D', onDisk: false, tracked: true });
+  // Deleted and no longer listed (a committed or staged delete): vs main, and
+  // vs the last commit when the delete is not committed yet.
+  for (const [p, e] of vsMain) {
+    if (e.status === 'D' && !seen.has(p)) { seen.add(p); files.push({ path: p, status: 'D', commitStatus: vsCommit.get(p)?.status === 'D' ? 'D' : null, onDisk: false, tracked: true }); }
+  }
+  for (const [p, e] of vsCommit) {
+    if (e.status === 'D' && !seen.has(p)) files.push({ path: p, status: null, commitStatus: 'D', onDisk: false, tracked: true });
   }
   files.sort((a, b) => a.path.localeCompare(b.path));
 
   const branch = (await core.gitP(['rev-parse', '--abbrev-ref', 'HEAD'], wtPath)) || '';
-  return { branch, vsRef: ref, files };
+  const vsCommitSha = (await core.gitP(['rev-parse', '--verify', '-q', (commit || 'HEAD') + '^{commit}'], wtPath)) || null;
+  const LOG_FORMAT = '--format=%H%x1f%h%x1f%s%x1f%cr';
+  const parseLog = (log) => (log || '').split('\n').filter(Boolean).map((l) => {
+    const [sha, short, subject, relDate] = l.split('\x1f');
+    return { sha, short, subject, relDate };
+  });
+  const commits = parseLog(await core.gitP(['log', '-n', String(RECENT_COMMITS), LOG_FORMAT, 'HEAD'], wtPath));
+  // main's own tip, so the picker's main row reads like the commit rows.
+  const mainCommit = ref ? parseLog(await core.gitP(['log', '-n', '1', LOG_FORMAT, ref], wtPath))[0] ?? null : null;
+  return { branch, vsRef: ref, vsCommit: vsCommitSha, mainCommit, commits, files };
 }
 
 // --- File content ------------------------------------------------------------------
@@ -236,11 +252,14 @@ export async function writeWorkFile(wtPath, rel, content, baseHash) {
   return { ok: { hash: sha256(buf), size: buf.length, ...(formatted != null && { content: out }) } };
 }
 
-// --- Diff vs main ----------------------------------------------------------------------
+// --- Diff vs main / vs the last commit ------------------------------------------------
 
-// Working-tree state of one file against the main branch. Untracked files have
-// no `git diff` vs main — synthesize an all-added patch (the untracked-file pattern).
-export async function vsMainDiff(wtPath, rel, ignoreWs) {
+// Working-tree state of one file against the main branch, or with
+// `base: 'head'` against the last commit (task 224). Untracked files have no
+// `git diff` — synthesize an all-added patch (the untracked-file pattern).
+// `from` = a renamed file's old path, so git pairs the two paths instead of
+// showing the whole file as added.
+export async function wtDiff(wtPath, rel, { ignoreWs = false, base = 'main', from = null } = {}) {
   const isTracked = !!gitZ(['ls-files', '--cached', '-z', '--', rel], wtPath);
   if (!isTracked) {
     const fp = join(wtPath, rel);
@@ -251,10 +270,11 @@ export async function vsMainDiff(wtPath, rel, ignoreWs) {
     if (lines.length && lines[lines.length - 1] === '') lines.pop();
     return `@@ -0,0 +1,${lines.length} @@\n` + lines.map((l) => '+' + l).join('\n');
   }
-  const ref = await mainRef(wtPath);
+  // base: 'main' | 'head' (the last commit) | a commit hash
+  const ref = base === 'main' ? await mainRef(wtPath) : base === 'head' ? 'HEAD' : base;
   if (!ref) return '';
-  const args = ['diff', '--no-color'];
+  const args = ['diff', '--no-color', '-M'];
   if (ignoreWs) args.push('-w');
-  args.push(ref, '--', rel);
+  args.push(ref, '--', ...(from ? [from] : []), rel);
   return (await core.gitP(args, wtPath)) || '';
 }

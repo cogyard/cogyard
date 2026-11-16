@@ -51,10 +51,7 @@
 .cost.approx { font-size: 12px; font-weight: 500; font-style: italic; color: var(--app-fg-muted); }
 .commits { flex: none; }
 
+/* The day's merged tasks. The chips are app-task-chip (task 126) and bring their
+   own look — the accent-outlined pill this file used to define was one of the
+   four different ways the portal drew the same #NN. */
 .badges { display: flex; flex-wrap: wrap; gap: var(--app-space-2); margin-top: auto; }
-/* type from the global .badge.mono recipe — this one is a clickable accent chip */
-.badge {
-  cursor: pointer;
-  border: 1px solid var(--app-accent); background: var(--app-accent-tint1); color: var(--app-accent-tint-fg);
-}
-.badge:hover { background: var(--app-accent); color: var(--app-accent-contrast); }

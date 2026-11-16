@@ -1,17 +1,7 @@
-.origin-link {
-  display: inline-flex; align-items: center; gap: var(--app-space-3);
-  margin-bottom: var(--app-space-5);
-  padding: 6px 12px;
-  border: 1px solid var(--app-border);
-  border-radius: 8px;
-  background: var(--app-surface);
-  color: var(--app-page-fg-strong);
-  font-size: 13px; font-weight: 600;
-  text-decoration: none;
-  transition: border-color .12s, background .12s;
-}
-.origin-link:hover { border-color: var(--app-accent, #60a5fa); background: var(--app-surface-hover, var(--app-surface)); }
+/* The pill itself is the global .repo-pill recipe (styles.scss), shared with
+   the Graph action bar's folder link. What stays here is placement: standing
+   alone at the top of a tab it keeps a gap below it; inside a bar it doesn't. */
+.repo-pill { margin-bottom: var(--app-space-5); }
+.repo-pill.in-bar { margin-bottom: 0; }
 /* .lbl wears the global .eyebrow recipe (11/600 uppercase muted) */
-.origin-link .gh { flex: none; }
-.origin-link .txt { font-family: var(--app-mono, ui-monospace, monospace); }
-.origin-link .ext { color: var(--app-fg-dim); font-weight: 400; }
+.gh { flex: none; }

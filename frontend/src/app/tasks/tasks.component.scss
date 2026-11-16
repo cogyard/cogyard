@@ -1,13 +1,25 @@
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
-/* Two control rows: row 1 = view (flat/grouped + group-by) + Type radio;
-   row 2 = Category filter + search (task 096 redesign). */
+/* Two toolbars (task 250), each led by its title: row 1 = GROUPING (flat/grouped
+   + group-by + axis); row 2 = FILTERS (Type radio + search with its ✕). */
 .filters { display: flex; flex-direction: column; gap: var(--app-space-3); margin-bottom: var(--app-space-5); }
 .filter-row { display: flex; align-items: center; gap: var(--app-space-3); flex-wrap: wrap; }
-.filters .search { min-width: 220px; flex: 1 1 220px; }
-/* pushes the Type radio to the right edge of row 1 */
-.row-gap { flex: 1 1 auto; }
+/* the row title wears the global .section-label recipe; one fixed width so the
+   two rows' controls start at the same x */
+.row-title { flex: 0 0 72px; }
+/* 220 wide where there is room; gives up to 100px so that on a narrow window the
+   filter row (title, Type buttons, the search) still fits one line */
+/* align-self: stretch makes it as tall as the Type buttons beside it — the
+   select-button's grey track sets the row's height (35px against the input's
+   own 27px), and the input fills the span */
+.filters .search { position: relative; display: flex; align-self: stretch; width: 220px; flex: 1 1 120px; max-width: 220px; }
+.filters .search input { width: 100%; padding-right: 28px; }
+/* the ✕ inside the box's right edge: the shared button.row-del look, sized to
+   fit inside the small input */
+.filters .search .search-clear {
+  position: absolute; right: 3px; top: 50%; transform: translateY(-50%);
+  width: 22px; height: 22px; border-radius: 4px;
+}
 .group-by { font-size: 11px; color: var(--app-fg-muted); }
-.ctl-label { font-size: 12px; font-weight: 600; color: var(--app-fg-muted); }
 /* the type icon shown in a group-by-Type section header, before the type name.
    25px; the flex h2 (above) handles vertical centering, so no vertical-align hack. */
 .type-hdr-icon { font-size: 25px; margin-right: 6px; line-height: 1; }
@@ -23,6 +35,8 @@
   display: flex; align-items: center;
   margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--app-page-border);
 }
+/* Grouped by status the heading leads with the status chip; the count follows it. */
+.bucket h2 app-task-chip { margin-right: var(--app-space-2); }
 /* Group-by-Category is two levels: the axis super-header (colored band) + the
    label lanes under it (indented, lighter header). */
 .axis-super {
@@ -48,19 +62,18 @@
 .col-sub { width: 80px; }
 .col-deps { width: 96px; }
 .col-cost { width: 78px; }
-.col-status { width: 180px; }
+/* 210: room for "CLAIMED" + a live state line ("needs you 12m", task 202). */
+.col-status { width: 210px; }
+.st-live { display: flex; align-items: center; min-width: 0; overflow: hidden; }
+.st-live > app-agent-state { min-width: 0; overflow: hidden; }
 /* Cost column: right-aligned tabular figures so magnitudes line up for scanning. */
 td.cost { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* Status column (task 096): a colored badge naming the status, plus the folded
    detail (claim holder · since / waiting-why / done-date). */
 td.status { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* shape/type from the global .badge.caps recipe — status colors only below */
-.st-ready   { background: color-mix(in srgb, var(--app-status-ready) 18%, var(--app-surface)); color: color-mix(in srgb, var(--app-status-ready) 62%, var(--app-fg)); }
-.st-claimed { background: color-mix(in srgb, var(--app-status-claimed) 18%, var(--app-surface)); color: color-mix(in srgb, var(--app-status-claimed) 62%, var(--app-fg)); }
-.st-waiting { background: color-mix(in srgb, var(--app-status-waiting) 22%, var(--app-surface)); color: color-mix(in srgb, var(--app-status-waiting) 60%, var(--app-fg)); }
-.st-done    { background: var(--app-border-soft); color: var(--app-fg-muted); }
-.st-unknown { background: var(--app-border-soft); color: var(--app-fg-muted); }
+/* The badge itself is app-task-chip show="status" (task 155) — its look is the
+   shared .tchip rules, not this page's. */
 .st-detail { margin-left: 7px; }
 /* headers sit over their values: numeric/short cells are centered (td.ctr),
    so their headers center too — overrides the shared left-aligned th chrome */
@@ -95,22 +108,13 @@ td.ctr { text-align: center; color: var(--app-fg); }
 /* type icon — leads the title cell; emoji glyph, no icon font */
 .type-icon { font-size: 15px; line-height: 1; cursor: default; }
 /* label chips — trail the title text; neutral pill, theme-safe */
-/* shape/type from the global .badge recipe — colors + the outline only here */
-.label-chip {
-  background: var(--app-border-soft); color: var(--app-fg-dim); border: 1px solid var(--app-border);
-}
-/* a label that belongs to an axis (task 096) wears that axis's color as a tint:
-   --chip is the axis hex, mixed against theme vars so it stays legible in both
-   light and dark. Unmapped (Ungrouped) labels keep the neutral pill above. */
-.label-chip.axis {
-  background: color-mix(in srgb, var(--chip) 16%, var(--app-surface));
-  border-color: color-mix(in srgb, var(--chip) 45%, transparent);
-  color: color-mix(in srgb, var(--chip) 60%, var(--app-fg));
-}
 /* the colored dot leading an axis section header (By-axis view) */
 .axis-dot {
   display: inline-block; width: 9px; height: 9px; border-radius: 50%;
   margin-right: 7px; vertical-align: 0px;
+  /* a hairline edge so Done's light-grey fill (task 154) still reads as a dot
+     on the grey page; on the saturated colours it is invisible */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--app-fg) 30%, transparent);
 }
 .claim-check { color: var(--app-accent); font-weight: 700; }
 /* the Who column shows a NAME, not a status: plain foreground, just bolded —
@@ -133,6 +137,9 @@ td.ctr { text-align: center; color: var(--app-fg); }
 .gb-row { margin: 3px 0; }
 .gb-row code, .gb-commits code { background: var(--app-surface-2); padding: 1px 6px; border-radius: 3px; font-family: ui-monospace, monospace; font-size: 11.5px; }
 .dim { color: var(--app-fg-muted); }
+/* FILE box (task 132) — the Open-in control sits on its own row so the shared
+   toolbar button keeps its own hit area inside a clickable task row. */
+.file-open { margin-top: 6px; }
 .gb-commits { margin: 4px 0 0; padding-left: 0; list-style: none; }
 .gb-commits li { padding: 2px 0; border-bottom: 1px solid var(--app-border-soft); }
 .gb-commits li:last-child { border-bottom: none; }
@@ -143,6 +150,10 @@ td.ctr { text-align: center; color: var(--app-fg); }
 .chat-row { display: flex; align-items: baseline; gap: var(--app-space-3); padding: 3px 4px; margin: 0 -4px; border-radius: 4px; cursor: pointer; }
 .chat-row:hover { background: var(--app-surface-2); }
 .chat-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Desktop chat title first, then the first-prompt snippet muted after it
+   (task 165); the whole line ellipsizes as one. */
+.chat-title { font-weight: 600; margin-right: var(--app-space-3); }
+.chat-snippet { color: var(--app-fg-muted); }
 .chat-date { flex-shrink: 0; font-size: 11px; }
 .chat-copy {
   flex-shrink: 0; font-size: 10px; padding: 1px 7px; border-radius: 3px; cursor: pointer;

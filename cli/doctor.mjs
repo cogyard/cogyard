@@ -10,6 +10,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, accessSync, constants } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
 
@@ -55,12 +56,35 @@ function readConfig() {
   } catch { return 'unreadable'; }
 }
 
+// Every command string registered as a hook in the active agent's settings.
+// Returns null when the file is absent or unreadable — core distinguishes
+// "nothing wired" from "couldn't look", and must not report a clean bill for
+// a file it never managed to read.
+function agentHookCommands() {
+  const settings = join(process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'), 'settings.json');
+  if (!existsSync(settings)) return null;
+  let doc;
+  try { doc = JSON.parse(readFileSync(settings, 'utf8')); } catch { return null; }
+  const out = [];
+  for (const matchers of Object.values(doc.hooks || {})) {
+    for (const m of matchers || []) {
+      for (const h of m.hooks || []) {
+        if (typeof h.command === 'string') out.push(h.command);
+      }
+    }
+  }
+  return out;
+}
+
+// Bind exactly as server/index.mjs does (no host = every address). Binding only
+// 127.0.0.1 succeeded beside a running portal on the wildcard address, so the
+// check reported a busy port as free.
 function probePortFree(port) {
   return new Promise((resolve) => {
     const srv = net.createServer();
     srv.once('error', () => resolve(false));
     srv.once('listening', () => srv.close(() => resolve(true)));
-    srv.listen(port, '127.0.0.1');
+    srv.listen(port);
   });
 }
 
@@ -73,6 +97,23 @@ const SYMBOL = {
 };
 
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    process.stdout.write(`cogyard doctor — install preflight: is this machine wired to run cogyard?
+
+Usage: cogyard doctor
+
+Checks:
+  - node and git
+  - the cogyard home folder: ${COGYARD_HOME}
+  - the project registry and the active driver
+  - the portal build, and whether port ${SERVE_PORT} is free
+  - the agent's hooks
+
+Reports only; changes nothing. Exits non-zero when any check fails (warnings don't).
+For per-project task-storage health, run \`cogyard tasks doctor\`.
+`);
+    process.exit(0);
+  }
   // Probe everything that needs I/O here, then inject plain closures so runDoctor
   // stays pure and synchronous.
   const portFree = await probePortFree(SERVE_PORT);
@@ -93,6 +134,7 @@ async function main() {
     frontendBuilt: () => existsSync(DIST),
     servePort: SERVE_PORT,
     portFree: () => portFree,
+    agentHookCommands: agentHookCommands(),
   };
 
   const report = runDoctor(ctx);

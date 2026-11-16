@@ -4,10 +4,13 @@
   <div class="empty">No worktrees for this project.</div>
 } @else {
   @for (sec of sections(); track sec.key) {
-    <div class="section-head card-title" [class.stale]="sec.key === 'stale'">{{ sec.label }} ({{ sec.count }})</div>
-    @for (g of sec.groups; track g.clone) {
-    @if (g.clone) { <div class="clone-head section-label">{{ g.clone }} ({{ g.list.length }})</div> }
-    <p-table styleClass="wt" [value]="g.list" dataKey="path" size="small">
+    <div class="section-head card-title" [class.stale]="sec.key === 'stale'">
+      {{ sec.label }} ({{ sec.count }})
+    </div>
+    <!-- What "stale" means, said ONCE for the section: every row here meets the
+         same rule, so a STALE flag on each row only repeated the heading. -->
+    @if (sec.key === 'stale' && staleWhy()) { <div class="hint sm stale-why">{{ staleWhy() }}</div> }
+    <p-table styleClass="wt" [value]="sec.list" dataKey="path" [rowTrackBy]="trackRow" size="small">
       <ng-template #header>
         <tr>
           <th class="col-name" pSortableColumn="name">Worktree <p-sortIcon field="name" /></th>
@@ -24,19 +27,34 @@
       <ng-template #body let-w>
         <tr class="wt-row" [class.stale]="w.stale" [class.active]="isActive(w)">
           <td class="name">
-            <!-- this IS the Worktrees tab, so the name goes nowhere (linked=false) -->
-            <app-git-ref kind="worktree" [name]="w.name" [linked]="false" />
+            <!-- The main checkout is the repo itself, not a worktree: it wears
+                 the main-branch chip the Branches tab gives main, rather than a
+                 worktree chip named after the project (task 150). Real
+                 worktrees: this IS the Worktrees tab, so the name goes nowhere
+                 (linked=false). -->
+            @if (w.isMain) {
+              <app-ref-chip kind="main">{{ w.branch }}</app-ref-chip>
+            } @else {
+              <app-git-ref kind="worktree" [name]="w.name" [linked]="false" />
+            }
           </td>
+          <!-- Same shape as the Branches tab's Links (task 156, owner's call): the
+               task chip first, in a fixed-width slot so the icons line up, then
+               icon-only links — the tooltip says where each goes and aria-label
+               stands in for the dropped word. -->
           <td class="links">
+            <span class="task-slot">@if (w.claimedByTaskId != null) { <app-task-chip [id]="w.claimedByTaskId" [slug]="slug()" (open)="jumpTask.emit($event)" /> }</span>
             @if (w.branch) {
               <button class="btn-link lnk" (click)="jumpBranch.emit(w.branch)"
-                      [pTooltip]="w.branch" tooltipPosition="top">
-                <img class="lnk-ico" src="assets/git-branch.svg" alt="" aria-hidden="true" />branch
+                      [attr.aria-label]="'branch ' + w.branch"
+                      [pTooltip]="w.branch + ' — open on the Branches tab'" tooltipPosition="top">
+                <img class="lnk-ico" src="assets/git-branch.svg" alt="" aria-hidden="true" />
               </button>
             }
             <button class="btn-link lnk" (click)="jumpFiles.emit({ wt: w.isMain ? '' : w.name, file: null })"
+                    [attr.aria-label]="'files of ' + w.name"
                     [pTooltip]="'Browse ' + w.name + ' on the Files tab'" tooltipPosition="top">
-              <img class="lnk-ico" src="assets/files.svg" alt="" aria-hidden="true" />files
+              <img class="lnk-ico" src="assets/files.svg" alt="" aria-hidden="true" />
             </button>
           </td>
           <td class="mono dim">
@@ -54,15 +72,23 @@
             @if (w.ports?.frontend) { <a class="portlink" href="http://localhost:{{ w.ports.frontend }}" target="_blank" rel="noopener">{{ w.ports.frontend }}</a> } @else { — }
           </td>
           <td class="flags">
-            <!-- order is fixed: task number, then stale, then locked (task 104) -->
-            @if (w.claimedByTaskId != null) { <button class="btn-link mono" (click)="jumpTask.emit('' + w.claimedByTaskId)">#{{ w.claimedByTaskId }}</button> }
-            @if (w.stale) { <p-tag styleClass="badge caps stale" value="stale" [pTooltip]="w.staleReasons?.join('; ')" /> }
-            @if (w.locked) { <p-tag styleClass="badge caps locked" value="locked" /> }
-            @if (w.isMain) { <p-tag styleClass="badge caps main" value="main" /> }
+            <!-- order is fixed: locked, main, unmounted (tasks 104, 217). The task
+                 number moved to Links (task 156). No STALE flag: the Stale section
+                 heading already says it. -->
+            @if (w.locked) { <app-flag>locked</app-flag> }
+            @if (w.isMain) { <app-flag>main</app-flag> }
+            <!-- No link to the shared task folder: sessions here can't see the
+                 tasks. Click copies the command that adds it (task 217). -->
+            @if (w.tasksMounted === false) {
+              <button type="button" class="flag-copy" (click)="copy(mountCmd, w.name)"
+                      [pTooltip]="'Sessions in this worktree can\'t see the tasks: it has no link to the task folder. Click to copy the fix — ' + mountCmd + ' — and run it inside the worktree.'"
+                      tooltipPosition="top">
+                <app-flag tone="warn">{{ copied() === w.name ? 'copied' : 'unmounted' }}</app-flag>
+              </button>
+            }
           </td>
         </tr>
       </ng-template>
     </p-table>
-    }
   }
 }

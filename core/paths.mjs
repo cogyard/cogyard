@@ -9,6 +9,10 @@ const HOME = homedir();
 const COGYARD_HOME = process.env.COGYARD_HOME || join(HOME, '.cogyard');
 const REGISTRY_PATH = join(COGYARD_HOME, 'projects.json');
 const WORKTREE_PORTS_PATH = join(COGYARD_HOME, 'ports.json');
+// Each scheduled job's agent call runs in its own empty folder here
+// (`run/<job-id>`), so the usage ledger can tell a job's transcript from a
+// project's by where it ran (task 130). Nothing is ever written inside.
+const JOB_RUN_ROOT = join(COGYARD_HOME, 'run');
 
 // PROJECTS_ROOT — the conventional parent directory that holds your project
 // clones AND the per-project shared task stores (`<PROJECTS_ROOT>/_tasks/<slug>`).
@@ -40,4 +44,4 @@ function resolveProjectsRoot() {
 
 const PROJECTS_ROOT = resolveProjectsRoot().value;
 
-export { HOME, COGYARD_HOME, PROJECTS_ROOT, REGISTRY_PATH, WORKTREE_PORTS_PATH, resolveProjectsRoot };
+export { HOME, COGYARD_HOME, PROJECTS_ROOT, REGISTRY_PATH, WORKTREE_PORTS_PATH, JOB_RUN_ROOT, resolveProjectsRoot };

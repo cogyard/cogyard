@@ -1,23 +1,21 @@
-import { Component, input, output, inject, effect, computed } from '@angular/core';
+import { Component, input, output, inject, computed, signal } from '@angular/core';
 import { GitRefComponent } from '../shared/git-ref/git-ref.component';
+import { TaskChipComponent } from '../shared/task-chip/task-chip.component';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { Tag } from 'primeng/tag';
+import { RefChipComponent } from '../shared/ref-chip/ref-chip.component';
+import { FlagComponent } from '../shared/flag/flag.component';
 import { TableModule } from 'primeng/table';
-import { ApiService } from '../services/api.service';
 import { WorktreesResponse } from '../services/models';
-import { RefreshService } from '../services/refresh.service';
 import { StoreService } from '../services/store.service';
 
 @Component({
   selector: 'app-worktrees',
-  imports: [Tag, TableModule, TooltipModule, Skeleton, GitRefComponent],
+  imports: [RefChipComponent, TableModule, TooltipModule, Skeleton, GitRefComponent, TaskChipComponent, FlagComponent],
   templateUrl: './worktrees.component.html',
   styleUrl: './worktrees.component.scss',
 })
 export class WorktreesComponent {
-  private api = inject(ApiService);
-  private refresh = inject(RefreshService);
   private store = inject(StoreService);
   slug = input.required<string>();
   activeWorktree = input<string | null>(null);
@@ -29,39 +27,50 @@ export class WorktreesComponent {
   jumpFiles = output<{ wt: string; file: string | null }>();
   jumpBranch = output<string>();
 
-  private cached = computed(() => this.store.sig<WorktreesResponse>(`worktrees|${this.slug()}`)());
+  private cached = this.store.use<WorktreesResponse>(() => (this.slug() ? `worktrees|${this.slug()}` : null));
   worktrees = computed<any[]>(() => this.cached()?.worktrees ?? []);
   loading = computed(() => this.cached() === null);
 
-  // Group by clone (planet projects); single repo => one group keyed ''.
-  private groupByClone(items: any[]) {
-    const m = new Map<string, any[]>();
-    for (const w of items) {
-      const k = w.clone || '';
-      if (!m.has(k)) m.set(k, []);
-      m.get(k)!.push(w);
-    }
-    for (const list of m.values()) {
-      list.sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0) || a.name.localeCompare(b.name));
-    }
-    return [...m.entries()].map(([clone, list]) => ({ clone, list }));
+  // Worktrees has no change code, so every check re-downloads it as new
+  // objects. PrimeNG's table tracks rows by object identity by default, so each
+  // check rebuilt every row — closing an open tooltip and dropping a click that
+  // landed mid-rebuild. Tracking by path keeps the rows and updates their cells.
+  trackRow = (_: number, w: { path: string }) => w.path;
+
+  // Main checkout first, then by name.
+  private sorted(items: any[]) {
+    return [...items].sort((a, b) => (b.isMain ? 1 : 0) - (a.isMain ? 1 : 0) || a.name.localeCompare(b.name));
   }
-  // Active (top) vs Stale (bottom); each still clone-grouped. Empty sections drop.
+  // Active (top) vs Stale (bottom). Empty sections drop.
   sections = computed(() => {
     const all = this.worktrees();
     return [
-      { key: 'active', label: 'Active', groups: this.groupByClone(all.filter((w) => !w.stale)) },
-      { key: 'stale', label: 'Stale', groups: this.groupByClone(all.filter((w) => w.stale)) },
+      { key: 'active', label: 'Active', list: this.sorted(all.filter((w) => !w.stale)) },
+      { key: 'stale', label: 'Stale', list: this.sorted(all.filter((w) => w.stale)) },
     ]
-      .map((s) => ({ ...s, count: s.groups.reduce((n, g) => n + g.list.length, 0) }))
+      .map((s) => ({ ...s, count: s.list.length }))
       .filter((s) => s.count > 0);
   });
+  // The rule every Stale row meets, as the server words it (core/worktrees.mjs:
+  // "no commits beyond <base>" + "clean working tree" ARE the definition of
+  // stale — its first two reasons). Said once under the heading instead of as a
+  // flag on each row.
+  staleWhy = computed(() => {
+    const w = this.worktrees().find((x) => x.stale);
+    return w?.staleReasons?.slice(0, 2).join(' · ') ?? '';
+  });
 
-  constructor() {
-    effect(() => {
-      const s = this.slug();
-      this.refresh.tick();
-      if (s) this.store.load(`worktrees|${s}`, this.api.worktrees(s));
-    });
+  // The fix for an `unmounted` worktree (task 217), copied by clicking its flag;
+  // the flag reads "copied" for a moment on the row that was clicked.
+  readonly mountCmd = 'cogyard tasks mount';
+  copied = signal<string | null>(null);
+  copy(text: string, row: string) {
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        this.copied.set(row);
+        setTimeout(() => { if (this.copied() === row) this.copied.set(null); }, 1500);
+      },
+      () => {},
+    );
   }
 }

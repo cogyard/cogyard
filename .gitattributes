@@ -18,10 +18,12 @@ scripts/trace-png-to-svg.py export-ignore
 bin/publish-snapshot export-ignore
 bin/backup-check export-ignore
 scripts/manifest-check.sh export-ignore
+scripts/public-scan.sh export-ignore
 scripts/secret-scan.sh export-ignore
 scripts/install-git-hooks.sh export-ignore
 scripts/githooks/pre-push export-ignore
 scripts/githooks/pre-commit export-ignore
+scripts/run-checks.sh export-ignore
 publish/public-manifest.txt export-ignore
 
 # This machine's real deploy config (owner paths). Public repo has generic examples.
@@ -31,6 +33,13 @@ local/ export-ignore
 # First-person portal design LOG (personal quotes, planet clone names, "Ben"
 # throughout). Kept in the private repo as a record; not public reference material.
 docs/PORTAL-V2-DESIGN.md export-ignore
+
+# Task 173 live-updates design: measured on the owner's machine (real project
+# names, real numbers) plus the measurement/prototype scripts that produced them.
+# Private until the design is built; a public reference can be cut from it then.
+docs/LIVE-UPDATES.md export-ignore
+scripts/live-updates/** export-ignore
+scripts/live-updates/ export-ignore
 
 # Private owner notes (*.local.md — name ratings, deployment specifics, etc.). Tracked
 # so they're in the private backup, export-ignore'd so they never reach public. This

@@ -14,7 +14,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { unlinkSync } from 'node:fs';
 import * as core from '../../core/index.mjs';
-import { json, errJson, parseGuarded, assertInProject } from '../http.mjs';
+import { json, errJson, parseGuarded, assertInProject, assertInStore } from '../http.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -26,9 +26,9 @@ function resolveCheckout(body, projects) {
   if (!proj) return { err: 'unknown project: ' + body.slug };
   if (body.worktree) {
     if (!core.projectWorktreePaths(proj).has(body.worktree)) return { err: 'unknown worktree' };
-    return { dir: body.worktree };
+    return { proj, dir: body.worktree };
   }
-  return { dir: proj.path };
+  return { proj, dir: proj.path };
 }
 
 const stderrOf = (e) => String((e && e.stderr) || (e && e.message) || e).trim();
@@ -38,10 +38,16 @@ export async function handlePost(path, req, res, projects) {
 
   const body = await parseGuarded(req, res);
   if (!body) return true;
-  const { dir, err } = resolveCheckout(body, projects);
+  const { proj, dir, err } = resolveCheckout(body, projects);
   if (err) { errJson(res, 400, err); return true; }
-  const abs = assertInProject(dir, body.path);
-  if (!abs) { errJson(res, 403, 'path outside project'); return true; }
+  // `store: true` opens a file in the project's TASK STORE rather than its
+  // checkout (task 132 — the Open-in button on a task row). Task files live
+  // behind the task-store link, i.e. outside the repo, which assertInProject
+  // rejects by design; assertInStore is the containment for that side. Discard
+  // never takes this path — it is a checkout operation by definition.
+  const store = path === '/api/open' && body.store === true;
+  const abs = store ? assertInStore(proj.path, body.path) : assertInProject(dir, body.path);
+  if (!abs) { errJson(res, 403, store ? 'path outside task store' : 'path outside project'); return true; }
 
   try {
     if (path === '/api/wt/discard') {

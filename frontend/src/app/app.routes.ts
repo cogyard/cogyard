@@ -6,13 +6,16 @@ import { Routes } from '@angular/router';
 // components into an outlet. Shapes:
 //   /                       → redirected to the first project's tasks
 //   /all                    → all-projects overview
-//   /p/:slug/:tab           → tab ∈ tasks | board | worktrees | graph
+//   /p/:slug/:tab           → tab ∈ PORTAL_TABS (shared/portal-tabs.ts); legacy ids alias forward
+//   /p/:slug/admin/:section → the Admin tab's inner tab (admin/admin.component.ts);
+//                             bare /p/:slug/admin is its Info tab
 //     ?task=NN              → filter the Tasks list to a task
 //     ?commit=hash          → open the commit side panel
 export const routes: Routes = [
   { path: 'all', children: [] },
   { path: 'settings', children: [] }, // /settings view + the empty-state setup wizard
   { path: 'p/:slug/:tab', children: [] },
+  { path: 'p/:slug/:tab/:section', children: [] },
   { path: '', pathMatch: 'full', children: [] },
   { path: '**', children: [] },
 ];

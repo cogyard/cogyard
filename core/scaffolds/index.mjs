@@ -18,10 +18,23 @@
 //     kind: 'my-kind',                 // MUST equal the folder name; can't shadow a built-in
 //     description: 'one line the New/Add drawer + /settings show',
 //     worktreePorts: true,             // default opt-in to worktree port wiring
-//     versionStamp: true,              // seed scripts/generate-version.mjs
+//     devScript: 'npm run dev',        // the dev command .cogyard/worktree.json names;
+//                                      //   omitted = 'npm run dev', null = no dev server
+//     versionStamp: true,              // true = seed scripts/generate-version.mjs (→ version.json);
+//                                      //   false = no stamper; or a function
+//                                      //   (slug) => ({ relPath: content }) — the kind's
+//                                      //   own stamping files, seeded INSTEAD of the npm one
+//     markers: ['*.xcodeproj'],        // optional: file/folder names (or `*.ext`) that mark
+//                                      //   a project as this kind's — onboard names the
+//                                      //   kind when it finds one (see platformWarnings)
 //     pkgJson(slug) { return { name: slug, version: '0.1.0', ... }; },  // object, not string
 //     skeletonFiles(slug) { return { 'README.md': '...', ... }; },      // {relPath: content}
 //   };
+//
+// `worktreePorts` and `devScript` are independent on purpose: an iOS app with a
+// Node server wants ports AND a dev command; an Xcode-only app may want ports
+// for a helper tool but has no dev server (`devScript: null`). A platform is not
+// a reason to drop either.
 //
 // Resolved once at import (top-level await, like core/drivers.mjs); a
 // newly installed scaffold takes effect on the next process start. A broken
@@ -53,6 +66,9 @@ async function resolveScaffolds() {
       const s = mod.scaffold ?? mod.default;
       if (!s || typeof s !== 'object' || s.kind !== kind) continue;
       if (typeof s.pkgJson !== 'function' || typeof s.skeletonFiles !== 'function') continue;
+      if (s.devScript !== undefined && s.devScript !== null && typeof s.devScript !== 'string') continue;
+      if (s.versionStamp !== undefined && !['boolean', 'function'].includes(typeof s.versionStamp)) continue;
+      if (s.markers !== undefined && !(Array.isArray(s.markers) && s.markers.every((m) => typeof m === 'string' && m))) continue;
       byKind.set(kind, { ...s, builtin: false });
     } catch { /* broken drop-in → skip, keep the engine alive */ }
   }
@@ -79,4 +95,70 @@ function scaffoldKinds() {
   });
 }
 
-export { SCAFFOLDS_DIR, KINDS, scaffoldFor, scaffoldKinds };
+// --- What is onboard adopting? (task 162) -------------------------------------
+// Every built-in kind assumes an npm web app: it names `npm run dev` and seeds
+// the npm stamper. A folder holding an Xcode project or PlatformIO firmware is
+// strong evidence those defaults are wrong, so onboard says so — it warns and
+// carries on with the kind it was given; it never refuses or picks for you.
+//
+// Core keeps its own short list so it can warn before any kind for that
+// platform is installed; a kind's `markers` add to it and are how a better kind
+// gets named. These are project facts, not agent ones, so they belong here.
+const NON_NPM_MARKERS = [
+  { pattern: '*.xcodeproj', label: 'an Xcode project' },
+  { pattern: '*.xcworkspace', label: 'an Xcode workspace' },
+  { pattern: 'Package.swift', label: 'a Swift package' },
+  { pattern: 'platformio.ini', label: 'a PlatformIO firmware project' },
+];
+
+function matches(name, pattern) {
+  return pattern.startsWith('*.') ? name.endsWith(pattern.slice(1)) && name.length > pattern.length - 1 : name === pattern;
+}
+
+function entries(dir) {
+  try { return readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+}
+
+// The marked paths in `dir`, looked for at the root and one folder down — an
+// iOS app beside a server commonly keeps its Xcode project in `ios/`. Hidden
+// folders and node_modules are not looked into.
+function findMarkers(dir, patterns) {
+  const found = [];
+  const check = (name, rel) => {
+    const pattern = patterns.find((p) => matches(name, p));
+    if (pattern) found.push({ path: rel, pattern });
+    return !!pattern;
+  };
+  for (const e of entries(dir)) {
+    if (check(e.name, e.name)) continue;
+    if (!e.isDirectory() || e.name.startsWith('.') || e.name === 'node_modules') continue;
+    for (const c of entries(join(dir, e.name))) check(c.name, `${e.name}/${c.name}`);
+  }
+  return found.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+// One warning per marked path the chosen kind does not claim, naming the kinds
+// that do — or saying none is installed. Empty when nothing is out of place.
+// `seeded` lists what this run wrote that may not fit (the caller knows, e.g.
+// --no-wiring); onboard is additive-only, so re-running it with a better kind
+// will not replace those files — the warning says to remove them first.
+function platformWarnings(dir, kind, { seeded = [] } = {}) {
+  const chosen = scaffoldFor(kind);
+  const label = new Map(NON_NPM_MARKERS.map((m) => [m.pattern, m.label]));
+  const patterns = [...new Set([...label.keys(), ...KINDS.flatMap((k) => SCAFFOLDS.get(k).markers || [])])];
+  const claimedBy = (pattern) => KINDS.filter((k) => (SCAFFOLDS.get(k).markers || []).includes(pattern));
+  const check = seeded.length ? ` Check what kind "${kind}" seeded — ${seeded.join(' and ')} — which may not fit.` : '';
+  const out = [];
+  for (const { path, pattern } of findMarkers(dir, patterns)) {
+    if ((chosen.markers || []).includes(pattern)) continue;
+    const what = label.get(pattern) || `a ${pattern} file`;
+    const better = claimedBy(pattern);
+    out.push(`found ${path} (${what}), but kind "${kind}" assumes an npm web app.${check}`
+      + (better.length
+        ? ` A better kind is installed: ${better.join(', ')} — remove those files and re-run onboard with --kind ${better[0]}.`
+        : ' No installed kind handles it yet.'));
+  }
+  return out;
+}
+
+export { SCAFFOLDS_DIR, KINDS, scaffoldFor, scaffoldKinds, platformWarnings };

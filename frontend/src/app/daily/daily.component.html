@@ -1,0 +1,89 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (empty()) {
+  <!-- A CORE tab, so this is an ordinary state, not a failure: most projects
+       have nothing here and never will. It says what fills the page in terms of
+       FILES, because that is the whole contract — anything that writes them
+       shows up here, including a person with an editor. Deliberately not an
+       advert for the add-ons that happen to write them today. -->
+  <div class="empty">
+    <p>Nothing here yet.</p>
+    <p class="hint">
+      This is where a project's daily record shows up: a nightly brief at
+      <code>~/.cogyard/briefs/&lt;project&gt;/YYYY-MM-DD.md</code>, and doc drift at
+      <code>~/.cogyard/drift/&lt;project&gt;.md</code>.
+      Anything that writes those files fills this page.
+    </p>
+  </div>
+} @else {
+  <!-- Where the action was (task 134). First on the page, because on a project
+       that has been quiet for a fortnight the useful question is not "what does
+       the newest brief say" but "which day is worth reading". -->
+  <section class="chart">
+    <app-activity-heatmap
+      [byDay]="commitsByDay()" [weekStart]="weekStart()" noun="commits"
+      (dayClick)="pickDay($event)" />
+    <div class="chart-note hint sm">
+      Commits per day. Click a day to read the brief covering it; <kbd>Esc</kbd> comes back to the list.
+    </div>
+  </section>
+
+  <!-- Proof something still looks at this project. The quiet version is the
+       whole point: an empty page cannot tell you "it ran and there was nothing
+       to say", and that is the normal night. One line per JOB — the brief and
+       doc drift fail independently, so a single merged line would report the
+       healthy one and hide the dead one. -->
+  @for (w of watch(); track w.text) {
+    <p class="watch" [class.alarm]="w.tone === 'alarm'">{{ w.text }}</p>
+  }
+
+  @if (selectedDay()) {
+    <!-- One day, picked out of the chart. The brief list is replaced rather than
+         pushed down: this is a different question, asked deliberately, and it
+         should own the page until Escape. -->
+    <section class="day">
+      <header class="day-head">
+        <span class="day-when">{{ selectedDayLabel() }}</span>
+        <span class="row-gap"></span>
+        <button type="button" class="day-close" (click)="onEscape()">back to all nights (Esc)</button>
+      </header>
+      @if (selectedBrief(); as b) {
+        <app-brief-card [brief]="b" [open]="true" />
+      } @else {
+        <!-- A real state, not an error: work landed after the last brief was
+             written, or before anything was watching this project. -->
+        <p class="day-none hint">
+          No brief covers this day yet — nothing has been written up since it.
+        </p>
+      }
+    </section>
+  } @else {
+    @if (drift(); as d) {
+      <!-- Docs first among the standing items: it is the shorter list and the
+           one with something to DO in it. A brief tells you where things stand;
+           drift tells you something is wrong. No report at all means no findings
+           — the job deletes the file on a clean pass — so this section simply is
+           not here on a good day. -->
+      <section class="drift" [class.closed]="!driftOpen()">
+        <header class="drift-head" (click)="toggleDrift()">
+          <span class="drift-title">Docs that may have gone stale</span>
+          <span class="drift-when hint sm">{{ driftSummary() }}</span>
+          <span class="row-gap"></span>
+          <button type="button" class="drift-toggle" [attr.aria-expanded]="driftOpen()">{{ driftOpen() ? 'hide' : 'read' }}</button>
+        </header>
+        @if (driftOpen()) {
+          <div class="drift-body" [innerHTML]="driftHtml()"></div>
+        }
+      </section>
+    }
+
+    @if (briefs().length) {
+      @if (span()) { <p class="span hint sm">{{ span() }} · newest first</p> }
+      @for (b of briefs(); track b.date; let i = $index) {
+        <!-- Open the night covering the last day something landed, which after
+             a quiet fortnight is not the same as the newest file. -->
+        <app-brief-card [brief]="b" [open]="i === openIndex()" />
+      }
+    }
+  }
+}

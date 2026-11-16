@@ -1,16 +1,123 @@
-<app-origin-link [url]="originUrl()" />
+<!-- Which repo the tab shows (task 191), on the very top: the code repo
+     (default — no ?source in the URL) or the project's task store, a separate
+     git repo agents commit into, flagged against the store rules
+     (core/store-audit.mjs). The store view is read-only. -->
+<div class="g-source">
+  <p-selectbutton size="small" [options]="sourceOptions" optionLabel="label" optionValue="value" [allowEmpty]="false"
+                  [ngModel]="taskStore()" (ngModelChange)="setTaskStore.emit($event)" />
+</div>
+
+<!-- The action bar — the SAME bar for both, so switching changes what it
+     points at, not what it looks like: where the repo's origin is (or "none"),
+     where it is on disk, then (store only) the All / Flagged filter. -->
+<div class="g-bar">
+  @if (!loading()) {
+    <app-origin-link [url]="originUrl()" [showNone]="true" [inBar]="true" />
+    @if (folder(); as fo) {
+      <button type="button" class="repo-pill" (click)="revealFolder(fo.path)" [pTooltip]="'Reveal ' + fo.path + ' in Finder'">
+        <span class="lbl eyebrow">FOLDER →</span>
+        <span class="ico folder-ico" aria-hidden="true"></span>
+        <span class="txt">{{ fo.display }}</span>
+        <span class="ext">↗</span>
+      </button>
+    }
+    <!-- Only when something is wrong with the store itself: off branch
+         `tasks`, or commits not pushed to its remote. -->
+    @if (taskStore()) {
+      <!-- …or no store to read at all: the link points nowhere, or there is
+           no task directory (task 217). -->
+      @if (linkState() === 'broken') {
+        <app-flag face="text" tone="bad" [pTooltip]="'The task link points at ' + linkTarget() + ', which doesn\'t exist'">task folder missing</app-flag>
+      } @else if (linkState() === 'missing') {
+        <app-flag face="text" tone="bad">no task folder</app-flag>
+      } @else if (linkState() === 'folder') {
+        <app-flag face="text" tone="bad" pTooltip="A real folder sits where the link to the task store should be — the project's Settings tab says how to fix it">task folder is not a link</app-flag>
+      }
+      @for (fl of storeFacts()?.flags ?? []; track fl.kind) { <app-flag face="text" [tone]="fl.tone">{{ fl.text }}</app-flag> }
+      @if (sharedWith().length) { <span class="hint">shared with {{ sharedWith().join(', ') }}</span> }
+    }
+  }
+  <span class="g-spacer"></span>
+  @if (taskStore() && storeFacts()) {
+    <p-selectbutton size="small" [options]="filterOptions()" optionLabel="label" optionValue="value" [allowEmpty]="false"
+                    [ngModel]="flagged()" (ngModelChange)="setFlagged.emit($event)" />
+  }
+</div>
 
 @if (loading()) {
   <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (noStore() && linkState() === 'broken') {
+  <div class="empty">This project's task folder is gone — its link points at {{ linkTarget() }}, which doesn't exist — so there are no tasks to show. Restore the folder or re-point the link.</div>
+} @else if (noStore() && linkState() === 'missing') {
+  <div class="empty">This project has no task folder, so there are no tasks to show.</div>
+} @else if (noStore()) {
+  <div class="empty">This project's task folder is a real folder inside the code, not a link to a task store, so there is no store history to show. The project's Settings tab says how to fix it.</div>
+} @else if (taskStore() && !rows().length) {
+  <div class="empty">{{ flagged() ? 'No flagged commits in the last ' + days() + ' days, and nothing uncommitted.' : 'The task store has no commits yet.' }}</div>
 } @else {
   <div class="dag">
     @for (r of rows(); track r.hash) {
-      @if (r.kind === 'stash') {
+      @if (r.hiddenBefore) {
+        <div class="gap-row">{{ r.hiddenBefore }} clean {{ plural(r.hiddenBefore, 'commit', 'commits') }} hidden</div>
+      }
+      @if (r.kind === 'pending') {
+        <!-- The store's uncommitted files (task 191) — the same place and mark a
+             dirty checkout gets in the code graph. -->
+        <div class="dag-row wt-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
+          <div class="dag-graph">
+            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
+              @for (s of r.segs; track $index) {
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
+              }
+              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="#fff" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
+            </svg>
+          </div>
+          <div class="dag-hash">●</div>
+          <div class="dag-msg">
+            <span class="wt-count dirty">{{ r.count }} uncommitted</span>
+            <span class="dag-subj pend-files" [title]="(r.files ?? []).join(', ')">{{ (r.files ?? []).join(', ') }}</span>
+            <span class="dag-flags">@for (f of r.flags ?? []; track f.kind) { <app-flag face="text" [tone]="f.tone">{{ f.text }}</app-flag> }</span>
+          </div>
+          <div class="dag-author"></div>
+          <div class="dag-date"></div>
+        </div>
+      } @else if (r.kind === 'worktree') {
+        <div class="dag-row wt-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
+          <div class="dag-graph">
+            <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
+              @for (s of r.segs; track $index) {
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
+              }
+              <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="#fff" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
+            </svg>
+          </div>
+          <div class="dag-hash">●</div>
+          <div class="dag-msg">
+            <!-- The main checkout is the repo itself, not a worktree — naming it
+                 (and drawing it with the worktree mark) made it read as one. Its
+                 branch alone identifies it; only real worktrees get the chip. -->
+            @if (!r.isMain) {
+              <app-git-ref kind="worktree" [name]="r.wtName"
+                (open)="jumpWorktree.emit(r.wtName!)" />
+            }
+            @if (r.branch) {
+              <app-git-ref kind="branch" [name]="r.branch"
+                (open)="jumpBranch.emit(r.branch!)" />
+            }
+            @for (id of r.taskIds; track id) {
+              <app-task-chip class="wt-task" [id]="id" [slug]="slug()" (open)="jumpTask.emit($event)" />
+            }
+            <span class="wt-count dirty">{{ r.dirtyCount }} uncommitted</span>
+          </div>
+          <div class="dag-author"></div>
+          <div class="dag-date"></div>
+        </div>
+      } @else if (r.kind === 'stash') {
         <div class="dag-row stash-row" [class.active]="isActive(r)" (click)="openCommit.emit(r.hash)">
           <div class="dag-graph">
             <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
               @for (s of r.segs; track $index) {
-                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.stash ? '3 3' : null" />
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="(s.wt || s.stash) ? '3 3' : null" />
               }
               <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" fill="none" [attr.stroke]="dotColor(r)" stroke-width="2" stroke-dasharray="2.5 2" />
             </svg>
@@ -28,7 +135,7 @@
           <div class="dag-graph">
             <svg [attr.width]="graphW(r)" [attr.height]="RH" [attr.viewBox]="'0 0 ' + graphW(r) + ' ' + RH">
               @for (s of r.segs; track $index) {
-                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" />
+                <path [attr.d]="segPath(s)" fill="none" [attr.stroke]="segColor(s)" stroke-width="2.5" [attr.stroke-dasharray]="s.wt ? '3 3' : null" />
               }
               <circle [attr.cx]="x(r.col)" [attr.cy]="RH / 2" [attr.r]="4" [attr.fill]="dotColor(r)" stroke="#fff" stroke-width="1.5" />
             </svg>
@@ -36,17 +143,29 @@
           <div class="dag-hash">{{ r.shortHash }}</div>
           <div class="dag-msg">
             @for (c of r.chips; track $index) {
-              <p-tag styleClass="badge mono dag-ref {{ c.cls }}" [value]="c.text" />
+              <app-ref-chip [kind]="c.kind">{{ c.text }}</app-ref-chip>
             }
             @for (id of r.taskIds; track id) {
-              <button class="btn-link mono" (click)="$event.stopPropagation(); jumpTask.emit(id)">#{{ id }}</button>
+              <app-task-chip [id]="id" [slug]="slug()" (open)="jumpTask.emit($event)" />
             }
             <span class="dag-subj">{{ r.cleanSubject || '(no subject)' }}</span>
+            @if (r.flags?.length) {
+              <span class="dag-flags">@for (f of r.flags; track f.kind) { <app-flag face="text" [tone]="f.tone">{{ f.text }}</app-flag> }</span>
+            }
           </div>
           <div class="dag-author">{{ r.author }}</div>
           <div class="dag-date">{{ r.date }}</div>
         </div>
       }
     }
+    @if (taskStore() && flagged() && hiddenAfter()) {
+      <div class="gap-row">{{ hiddenAfter() }} clean {{ plural(hiddenAfter(), 'commit', 'commits') }} hidden · flags cover the last {{ days() }} days</div>
+    }
   </div>
+  <!-- While a commit is open the diff dock covers the bottom of the scroller,
+       and .main-inner's reserved padding does not help: that box is height:100%
+       and the rows overflow it, so the padding sits under the rows, not after
+       them. This spacer is real scroll room after the last row, so any row —
+       an appended focused commit included — can be scrolled above the dock. -->
+  @if (activeHash()) { <div class="dock-spacer" aria-hidden="true"></div> }
 }

@@ -1,0 +1,15 @@
+/* Shape and type are the global .badge recipe (square, 10.5/600). What a flag
+   owns is its tone: fill + text, both --app-tone-* theme values (styles.scss) —
+   no hex here, and no page restyles a flag. */
+:host { display: inline-flex; flex: 0 0 auto; min-width: 0; vertical-align: baseline; }
+.flag { background: var(--app-tone-neutral); color: var(--app-tone-neutral-fg); }
+.flag[data-tone='good'] { background: var(--app-tone-good); color: var(--app-tone-good-fg); }
+.flag[data-tone='warn'] { background: var(--app-tone-warn); color: var(--app-tone-warn-fg); }
+.flag[data-tone='bad']  { background: var(--app-tone-bad);  color: var(--app-tone-bad-fg); }
+.flag[data-tone='review'] { background: var(--app-tone-review); color: var(--app-tone-review-fg); }
+.flag[data-tone='caution'] { background: var(--app-tone-caution); color: var(--app-tone-caution-fg); }
+.flag[data-tone='info'] { background: var(--app-tone-info); color: var(--app-tone-info-fg); }
+.flag.wrap { white-space: normal; overflow-wrap: anywhere; }
+/* `plain`: the tone's text colour only — no fill, no padding, the row's own
+   size, as written. Last, so it beats every tone's fill. */
+.flag.plain { background: none; padding: 0; font-size: inherit; line-height: inherit; }

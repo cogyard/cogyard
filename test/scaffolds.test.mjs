@@ -76,7 +76,15 @@ test('descriptor parity with the former hardcoded branches', () => {
   // static seeds a working dev script bound to the reserved port; Model 3 = pure
   // wiring, so the skeleton is a README only (no index.html / app files).
   const st = scaffoldFor('static');
-  assert.match(st.pkgJson('demo').scripts.dev, /FRONTEND_PORT/);
+  const stDev = st.pkgJson('demo').scripts.dev;
+  assert.match(stDev, /FRONTEND_PORT/);
+  // The seeded dev script must ASK for the port, never read a copy out of a file:
+  // a copy rots, and a rotted copy is how two worktrees bind one port silently.
+  assert.match(stDev, /cogyard env ports --shell/);
+  assert.doesNotMatch(stDev, /\.env\.worktree/);
+  // The `|| echo 'exit 1'` is load-bearing — eval reports its own status, not the
+  // command's, so without it a failed lookup falls back to the hardcoded default.
+  assert.match(stDev, /echo 'exit 1'/);
   const stFiles = st.skeletonFiles('demo');
   assert.deepEqual(Object.keys(stFiles), ['README.md']);
   assert.equal(stFiles['index.html'], undefined);

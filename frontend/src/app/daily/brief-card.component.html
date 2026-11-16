@@ -1,0 +1,19 @@
+@if (brief(); as b) {
+  <section class="brief" [class.failed]="failed()" [class.closed]="collapsed()">
+    <header class="brief-head" (click)="toggle()">
+      <span class="brief-icon" aria-hidden="true">{{ failed() ? '⚠' : '' }}</span>
+      <span class="brief-when">{{ when() }}</span>
+      @if (failed()) { <span class="brief-title">{{ alarm() }}</span> }
+      <span class="row-gap"></span>
+      @if (cost()) { <span class="brief-cost mono">{{ cost() }}</span> }
+      <button type="button" class="brief-toggle" [attr.aria-expanded]="!collapsed()">{{ collapsed() ? 'read' : 'hide' }}</button>
+    </header>
+    @if (!collapsed()) {
+      <div class="brief-body" [innerHTML]="html()"></div>
+    } @else if (!failed() && b.lead) {
+      <!-- Closed: one line of the opening paragraph, so scanning back through a
+           week is a scan of what happened, not a list of dates. -->
+      <p class="brief-peek">{{ b.lead }}</p>
+    }
+  </section>
+}

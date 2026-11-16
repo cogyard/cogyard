@@ -1,0 +1,311 @@
+<div class="cleanup-wrap">
+  <!-- No page title: the shell's topbar already renders "Cleanup" for this
+       route, the same way it does for Settings. -->
+  <!-- Data first, THEN the failure, and the skeleton only when neither is true.
+       Ordering matters: a refresh that fails while a cached report is on screen
+       must keep showing the report (the toast says what happened), and a FIRST
+       load that fails must say so rather than skeleton forever. -->
+  @if (report()) {
+
+    <!-- NO explanatory paragraph. There was one, and every clause of it was
+         already said by the page at the point it mattered: "remove the ones
+         you're done with" is the Action column's button; "the branch and the
+         chat survive" is in the confirm dialog, which is where you need that
+         reassurance; "then archive the chats" is the second section's own
+         heading. Prose that restates the UI is a sign the UI isn't finished, not
+         a feature — and no other tab in this portal (Worktrees, Tasks, Stats,
+         Graph, Branches, Plan) opens with a word of it.
+         Each table now says what it is in its heading, and nothing else. -->
+    <!-- The colour key shares the Refresh line (task 154): it decodes the chips
+         in BOTH tables below, so it belongs to the page, not one heading.
+         The swatches wear the chip's own .badge.mono.tchip classes with the
+         same data-bucket the component sets, so the key CANNOT drift from the
+         rows: restyle the chip and this restyles with it. Two groups, because
+         they are two independent axes: the fill is the task's STATUS, the ring
+         is the ACTION — and a ring can sit on any fill. -->
+    <header class="cleanup-head">
+      <span class="legend">
+        <span class="lg-group">
+          <span class="lg-label">Task status</span>
+          <span class="lg"><span class="badge mono tchip" data-bucket="ready"><span class="task-ico" aria-hidden="true"></span>12</span> idle</span>
+          <span class="lg"><span class="badge mono tchip" data-bucket="claimed"><span class="task-ico" aria-hidden="true"></span>12</span> claimed</span>
+          <span class="lg"><span class="badge mono tchip" data-bucket="waiting"><span class="task-ico" aria-hidden="true"></span>12</span> waiting</span>
+          <span class="lg"><span class="badge mono tchip" data-bucket="done"><span class="task-ico" aria-hidden="true"></span>12</span> closed: done, enough, obsolete</span>
+        </span>
+        <span class="lg-divider" aria-hidden="true"></span>
+        <span class="lg-group">
+          <span class="lg-label">Action</span>
+          <span class="lg"><span class="badge mono tchip tchip-primary" data-bucket="done"><span class="task-ico" aria-hidden="true"></span>12</span> worked on</span>
+          <span class="lg"><span class="badge mono tchip" data-bucket="done"><span class="task-ico" aria-hidden="true"></span>12</span> looked up</span>
+        </span>
+      </span>
+      <button class="btn-pill" (click)="load()">Refresh</button>
+    </header>
+
+    @for (p of projects(); track p.slug) {
+      <section>
+        @if (p.error) {
+          <p class="hint err">Could not read this project: {{ p.error }}</p>
+        } @else {
+
+          <!-- The heading says what the table IS. No count — the list is the
+               count. The colour key moved up to the Refresh line (task 154). -->
+          <div class="section-head card-title">
+            Worktrees ready to clean up
+            <!-- Task 148: the one way into removal. It turns on selecting
+                 mode rather than removing anything, and is hidden (space
+                 kept) while that mode is on — the bar below takes over.
+                 Absent when nothing in the table can be removed. -->
+            @if (selectableIn(p).length) {
+              <button class="btn-pill danger bulk-go" [class.hidden]="selecting()" (click)="startSelecting()">Remove worktrees</button>
+            }
+          </div>
+          @if (selecting()) {
+            <div class="select-bar">
+              <span class="hint">{{ selectedItems().length }} selected</span>
+              <button class="btn-pill danger" [disabled]="!selectedItems().length" (click)="askRemoveSelected()">Remove selected</button>
+              <button class="btn-pill" (click)="stopSelecting()">Cancel</button>
+            </div>
+          }
+          <p-table styleClass="cl" [value]="itemsOf(p)" dataKey="worktree.path" size="small">
+            <ng-template #header>
+              <tr>
+                <th class="col-name">Worktree</th>
+                <!-- Same column order as the Chats table below (owner,
+                     2026-09-28): Chat · Tasks · date · Status, after this
+                     table's own Worktree column. -->
+                <th class="col-chat">Chat</th>
+                <th class="col-wtasks">Tasks</th>
+                <th class="col-when">Last commit</th>
+                <th class="col-status">Status</th>
+                @if (selecting()) {
+                  <th class="col-act">Action</th>
+                }
+              </tr>
+            </ng-template>
+            <ng-template #body let-i>
+              <tr [class.done]="isRemoved(i)">
+                <!-- Name only. The branch line was cut: it is derivable from
+                     the name for every worktree on this machine (53% are
+                     literally `worktree-<name>`, the rest swap a dash for a
+                     slash), so it carried no information and doubled every
+                     row's height. The branch still appears in the confirm
+                     dialog, where "it survives" is the load-bearing fact. -->
+                <td class="name">
+                  <app-git-ref kind="worktree" [name]="i.worktree.name" (open)="jumpWorktree.emit($event)" />
+                </td>
+                <!-- The chat, and the multi-task judgement. This column is the
+                     reason the page exists: it answers "can I archive this
+                     yet" without holding the task/worktree/chat join in your head. -->
+                <td class="chat">
+                  @if (!i.chat) {
+                    <span class="dim">no chat found</span>
+                  } @else {
+                    <span class="o-title-line">
+                      <img class="o-chat" src="assets/chat.svg" alt="" aria-hidden="true" />
+                      <span class="o-title">{{ i.chat.title }}</span>
+                    </span>
+                  }
+                </td>
+
+                <!-- ONE Tasks column (owner, 2026-09-28): the worktree's own
+                     task and the tasks its chat covers used to be two columns
+                     (Task, then chips inside the Chat cell) that mostly listed
+                     the same ids. Now: the chat's tasks, every one of them, each
+                     with its state — plus the worktree's own task first when the
+                     chat's list doesn't already carry it. Same cues as the
+                     archive list: ring = the chat worked on it (no ring = only
+                     looked up, task 152), tint = that task's status. CLICKABLE,
+                     because deciding whether a chat is finished means opening
+                     the tasks it covers (task 126). -->
+                <td>
+                  @if (i.chat?.tasks?.length || i.taskId) {
+                    <span class="c-tasks">
+                      @if (ownTaskApart(i)) {
+                        <app-task-chip [id]="i.taskId" [slug]="slug()" (open)="jumpTask.emit($event)" />
+                      }
+                      @for (t of i.chat?.tasks ?? []; track t.id) {
+                        <app-task-chip [id]="t.id" [slug]="slug()"
+                                      [role]="t.worked ? 'primary' : 'referenced'" [how]="chipHow(t)" [note]="chipNote(t)"
+                                      (open)="jumpTask.emit($event)" />
+                      }
+                    </span>
+                  } @else { <span class="dim">—</span> }
+                </td>
+
+                <!-- The sort key, made visible. An invisible ordering reads as
+                     arbitrary; and "how long has this been sitting here" was
+                     a gap the task named from the start. -->
+                <td class="mono dim nw">{{ (i.lastCommitAt || '').slice(0, 10) || '—' }}</td>
+
+                <!-- Status — always shown (task 148): every row's verdict,
+                     REMOVABLE included, so the table says what state each
+                     worktree is in without entering selecting mode. -->
+                <td class="status">
+                  @if (isRemoved(i)) {
+                    <span class="removed">✓ removed</span>
+                  } @else if (i.verdict) {
+                    <app-flag [tone]="verdictTone(i.verdict)" [pTooltip]="i.verdictDetail || ''">{{ verdictLabel(i.verdict) }}</app-flag>
+                  } @else { <span class="dim">—</span> }
+                </td>
+
+                <!-- Action — only in selecting mode, at the right edge under
+                     the button that turned it on. A removable row gets a
+                     checkbox; a LOCKED row (a lock nobody is working under —
+                     core judges a lock held by a running process LIVE) gets
+                     the command that clears it, since it blocks removal
+                     until then. Everything else: nothing to do. -->
+                @if (selecting()) {
+                  <td class="act">
+                    @if (canSelect(i)) {
+                      <p-checkbox [binary]="true" [ngModel]="isSelected(i)" (ngModelChange)="toggle(i, $event)"
+                                  [ariaLabel]="'Select ' + i.worktree.name" />
+                    } @else if (i.action === 'unlock' && !isRemoved(i)) {
+                      <button class="btn-link dim" (click)="copy(i.unlockCmd, 'unlock command')">copy unlock</button>
+                    }
+                  </td>
+                }
+              </tr>
+            </ng-template>
+            <!-- Empty is a state, not an absence (task 150): the heading,
+                 legend and column headings stay, and this row says so. -->
+            <ng-template #emptymessage>
+              <tr><td [attr.colspan]="selecting() ? 6 : 5" class="dim">No worktrees to clean up.</td></tr>
+            </ng-template>
+          </p-table>
+
+          <!-- Every open chat in this project (task 144) — the full mirror of
+               what Claude Code's own sidebar shows here, not just the ones
+               already safe to archive. A held chat used to be simply ABSENT,
+               with no way to tell "deliberately kept" from "stuck" — this list
+               is what closes that gap: rows sort most recent first, the same
+               order as Claude's sidebar, under the same archive how-to as
+               before (the action happens in Claude, never
+               here — the portal has no archive button and never will, the
+               desktop app owns the flag), held rows carry a blocker chip
+               naming why, so the whole list is a checklist to work from rather
+               than a subset with the rest left to guesswork. -->
+          <div class="section-head card-title">
+            Chats
+            <span class="oh-how hint">
+              To archive a ready one: in Claude Desktop, find it by the name below — then right-click it, or open its
+              <strong>⋮</strong> menu, and choose <strong>Archive</strong>.
+            </span>
+          </div>
+          <!-- A table like the worktrees one above (task 148) — same shared
+               p-table chrome, so the two read alike and this one finally has
+               column headings. It used to be a hand-built grid list. -->
+          <p-table styleClass="cl chats" [value]="p.chats" dataKey="sessionId" size="small">
+            <ng-template #header>
+              <tr>
+                <th class="col-ctitle">Chat</th>
+                <th class="col-ctasks">Tasks</th>
+                <th class="col-cwhen">Last activity</th>
+                <th class="col-cstatus">Status</th>
+              </tr>
+            </ng-template>
+            <ng-template #body let-c>
+              <tr [class.held]="!c.ready">
+                <!-- assets/chat.svg, like every other glyph in this app
+                     (git-worktree.svg, files.svg, …) rather than an inline
+                     SVG. -->
+                <!-- The flex layout sits on an inner span, never the <td>: a
+                     cell with display:flex stops being a table cell, and its
+                     border and vertical alignment fall out of the row (task 150). -->
+                <td>
+                  <span class="o-title-line">
+                    <img class="o-chat" src="assets/chat.svg" alt="" aria-hidden="true" />
+                    <span class="o-title">{{ c.title }}</span>
+                  </span>
+                </td>
+                <!-- EVERY task, none hidden, each carrying its own state:
+                     the ring marks a task the chat WORKED on (committed,
+                     claimed, ran in its worktree, created or edited it — only
+                     these can hold the chat, task 152); no ring = only looked
+                     up. The tint marks its status. -->
+
+                <td>
+                  <span class="c-tasks">
+                    @for (t of c.tasks; track t.id) {
+                      <app-task-chip [id]="t.id" [slug]="slug()"
+                                    [role]="t.worked ? 'primary' : 'referenced'" [how]="chipHow(t)" [note]="chipNote(t)"
+                                    (open)="jumpTask.emit($event)" />
+                    }
+                  </span>
+                </td>
+                <td class="mono dim nw">{{ (c.lastActivityAt || '').slice(0, 10) || '—' }}</td>
+                <!-- The blocker kind, at a glance, without reading every
+                     task chip's tooltip. -->
+                <!-- A worktree hold names its worktree(s) with the same chip
+                     the Worktrees table uses — in their real case, and a
+                     click away from that worktree (task 152). -->
+                <td>
+                  <!-- It names what it waits on (task 152: WAITING ON #19, #33, #35), so it may
+                       wrap rather than run past its column. -->
+                  <app-flag [tone]="c.ready ? 'good' : 'warn'" [wrap]="true" [pTooltip]="c.reason">{{ blockerKind(c) }}</app-flag>
+                  @for (w of heldByWorktrees(c); track w) {
+                    <span class="c-held-tree"><app-git-ref kind="worktree" [name]="w" (open)="jumpWorktree.emit($event)" /></span>
+                  }
+                </td>
+              </tr>
+            </ng-template>
+            <ng-template #emptymessage>
+              <tr><td colspan="4" class="dim">No open chats.</td></tr>
+            </ng-template>
+          </p-table>
+        }
+      </section>
+    }
+  } @else if (loadError()) {
+    <!-- Nothing cached and the fetch failed. Says what broke and offers the one
+         action that can help; the toast that fired with it is gone in seconds. -->
+    <section class="settings-card load-error">
+      <div class="card-title">Couldn't load the cleanup report</div>
+      <p class="hint">{{ loadError() }}</p>
+      <button class="btn-pill" (click)="retry()">Try again</button>
+    </section>
+  } @else {
+    <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+  }
+</div>
+
+<!-- The gate. Task 106 asks for a confirmation no weaker than the CLI's typed
+     y/n: ticking the rows, then a modal that names every worktree it acts on,
+     then Delete, is that. It used to require typing the worktree's name (task
+     129 cut it to a checkbox), and then a "Yes — delete it" checkbox on top of
+     the Delete button — a second click saying what the first one said, gone in
+     task 148. The server still runs its own check (each request must echo its
+     worktree's NAME in `confirm`), because a dialog is client code and can be
+     skipped. Each line here appears once: what is being deleted, what survives
+     it, and the consent. -->
+<p-dialog [visible]="pending().length > 0" (visibleChange)="!$event && cancelRemove()"
+          [modal]="true" [closable]="!removing()" [style]="{ width: '520px' }"
+          [header]="pending().length === 1 ? 'Remove this worktree?' : 'Remove ' + pending().length + ' worktrees?'">
+  @if (pending().length) {
+    <div class="confirm">
+      <ul class="confirm-list">
+        @for (p of pending(); track p.worktree.path) {
+          <li class="hint"><strong>{{ p.worktree.name }}</strong> on branch <code>{{ p.worktree.branch }}</code>
+            <!-- PUSHED (task 174): say it is NOT merged, and where the work
+                 stays — so a backed-up branch is never removed as if landed. -->
+            @if (p.verdict === 'PUSHED') {
+              — <strong>not merged</strong>. The branch stays both locally and on origin (<code>{{ originOf(p) }}</code>).
+            }
+          </li>
+        }
+      </ul>
+      <p class="hint">You can recreate each worktree from its git branch, which will survive. The chats stay.</p>
+
+      <div class="set-actions">
+        <button class="btn-pill" [disabled]="removing()" (click)="cancelRemove()">Cancel</button>
+        <button class="btn-primary" [disabled]="removing()" (click)="confirmRemove()">
+          @if (removing()) {
+            Deleting {{ progress() }} of {{ pending().length }}…
+          } @else {
+            {{ pending().length === 1 ? 'Delete worktree' : 'Delete ' + pending().length + ' worktrees' }}
+          }
+        </button>
+      </div>
+    </div>
+  }
+</p-dialog>

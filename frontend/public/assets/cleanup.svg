@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The Cleanup broom (task 117). Owner-picked over trash / dustpan /
+       recycling: a bin promises a restore this page doesn't offer. Stroked to
+       match the other tab glyphs; the strip renders it as a mask, so the stroke
+       colour here only needs to be opaque. -->
+  <g transform="translate(-15.1,-15.1) scale(27.11)">
+    <g fill="none" stroke="#1f2328" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 3L11.3 8.7"/>
+      <path d="M9.6 7.4L12.6 10.4L9.9 15.3L4.7 10.1Z"/>
+      <path d="M8.2 8.8L11.2 11.8"/>
+    </g>
+  </g>
+</svg>

@@ -1,0 +1,119 @@
+<section class="settings-card">
+  <h3 class="card-title">
+    Icon
+    <!-- The rules that govern this card are real but long, and a settings card is
+         not the place to print them: every sibling card-hint in the portal is one
+         sentence. They live behind this toggle instead. -->
+    <button type="button" class="btn-toggle ico-help" [class.on]="helpOpen()"
+            (click)="helpOpen.set(!helpOpen())"
+            [attr.aria-expanded]="helpOpen()" title="What makes an icon work here">
+      &#9432; What works here
+    </button>
+  </h3>
+  <p class="card-hint">The icon shown beside this project in the sidebar — an image inside this project's repo.</p>
+
+  @if (helpOpen()) {
+    <div class="ico-help-panel">
+      <p>
+        <strong>It has to read on two backgrounds.</strong> The sidebar is indigo, but the
+        <em>selected</em> row puts a white plate behind every icon. A single-ink glyph on a
+        transparent background fails one of the two — black art vanishes on the indigo, white
+        art vanishes on the plate. The swatches below show both states at the real size.
+      </p>
+      <p>
+        <strong>White border</strong> puts that white plate behind the icon on idle rows too,
+        which rescues artwork drawn for a white background.
+      </p>
+      <p>
+        <strong>Path</strong> is relative to the repo root — no absolute paths, no
+        <code>..</code>. Leave it empty for no icon; the name still lines up either way.
+      </p>
+    </div>
+  }
+
+  <div class="icon-row">
+    <!-- Two unlabelled squares are a puzzle, not a preview: they need to say
+         they ARE the sidebar, in its two states. Captions, not tooltips — the
+         whole point is seeing the difference without hovering anything. -->
+    <span class="ico-swatches" [class.empty]="!valid()">
+      <span class="sw-cell">
+        <!-- .plated tracks the checkbox: ticking "white border" is exactly what
+             puts the plate behind the icon on an idle row, so the swatch has to
+             move with it or it is showing a state that doesn't exist. -->
+        <span class="sw sw-rail" [class.plated]="border()"
+              [title]="border() ? 'Idle row, with the white border you ticked' : 'Idle row — bare on the sidebar indigo'">
+          @if (valid()) { <img [src]="previewSrc()" alt="" /> }
+        </span>
+        <span class="sw-cap">idle</span>
+      </span>
+      <span class="sw-cell">
+        <span class="sw sw-sel plated" title="Selected row — accent fill, and a white plate every icon gets here whatever the checkbox says">
+          @if (valid()) { <img [src]="previewSrc()" alt="" /> }
+        </span>
+        <span class="sw-cap">selected</span>
+      </span>
+    </span>
+
+    <span class="ico-field">
+      <input pInputText pSize="small" class="set-input" [ngModel]="path()"
+             (ngModelChange)="setPath($event)" name="icon-path"
+             placeholder="public/favicon.svg" />
+      @if (problem()) {
+        <span class="hint sm bad">{{ problem() }}</span>
+      } @else if (checking()) {
+        <span class="hint sm">checking…</span>
+      } @else if (valid() && dirty()) {
+        <span class="hint sm">found — not saved yet</span>
+      }
+    </span>
+
+    <button type="button" class="btn-pill" [class.active]="pickerOpen()"
+            [disabled]="!images().length" (click)="togglePicker()"
+            [title]="images().length ? 'Choose from this repo\'s images' : 'No images found in this repo'">
+      Browse{{ images().length ? ' (' + images().length + ')' : '' }}
+    </button>
+
+    <label class="ico-border">
+      <p-checkbox [binary]="true" size="small" name="icon-border"
+                  [disabled]="!path().trim()"
+                  [ngModel]="border()" (ngModelChange)="border.set($event)" />
+      <span class="hint">white border</span>
+    </label>
+
+    <button type="button" class="row-del" title="Clear icon" [disabled]="!path().trim()" (click)="clear()">
+      <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+        <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+              d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6"/>
+      </svg>
+    </button>
+  </div>
+
+  @if (pickerOpen()) {
+    <!-- Every image in the repo, each shown rendered on the indigo it has to sit
+         on. Nothing here is ranked or pre-selected — the list offers, you pick. -->
+    <div class="ico-picker">
+      @for (img of images(); track img) {
+        <button type="button" class="pick" [class.on]="img === path().trim()" (click)="choose(img)">
+          <span class="pick-sw"><img [src]="thumbUrl(img)" alt="" /></span>
+          <span class="pick-path">{{ img }}</span>
+        </button>
+      }
+    </div>
+  }
+
+  <!-- The button sits WITH the line that explains it: on its own in the actions
+       row, "Copy instructions" said nothing about who the instructions were for. -->
+  <div class="ico-brief">
+    <span class="hint">Need one made? Copy a brief for an agent in this project.</span>
+    <button type="button" class="btn-pill" (click)="copyInstructions()"
+            title="Copies the full spec — both backgrounds, size, formats, where to save it">
+      Copy instructions
+    </button>
+  </div>
+
+  <div class="set-actions">
+    <button type="button" class="btn-primary" [disabled]="saving()" (click)="save()">
+      {{ saving() ? 'Saving…' : 'Save icon' }}
+    </button>
+  </div>
+</section>

@@ -1,0 +1,6 @@
+<span class="badge label" [class.axis]="color()" [style.--chip]="color()" [class.removable]="removable()">
+  {{ label() }}
+  @if (removable()) {
+    <button type="button" class="label-x" (click)="$event.stopPropagation(); remove.emit()" title="remove">×</button>
+  }
+</span>

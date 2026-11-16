@@ -1,4 +1,43 @@
 .empty { color: var(--app-page-fg); font-style: italic; padding: 24px; text-align: center; }
+
+/* The nightly briefs (task 120), above the table. Collapsed into a "Daily
+   Overview" panel in task 134: a paragraph per project answers "where does
+   everything stand" better than a row of counts does, but twelve of them
+   unfurled above the table made the table — the actual point of this page —
+   something you scroll past. Same header/toggle idiom as the Daily tab's drift
+   panel, so the two collapsibles in the portal read as one control. */
+.daily {
+  border: 1px solid var(--app-border);
+  border-radius: 10px; background: var(--app-surface);
+  margin: 0 0 var(--app-space-5); overflow: hidden;
+}
+.daily-head {
+  display: flex; align-items: baseline; gap: var(--app-space-3);
+  padding: 10px var(--app-space-5); cursor: pointer;
+  border-bottom: 1px solid var(--app-border-soft);
+}
+.daily.closed .daily-head { border-bottom-color: transparent; }
+.daily-head:hover { background: var(--app-hover); }
+.daily-title { font-weight: 700; color: var(--app-page-fg-strong); }
+.row-gap { flex: 1 1 auto; }
+
+/* Two columns on a wide screen, because twelve of these stacked full-width is a
+   scroll, not a glance. */
+.briefs {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+  gap: var(--app-space-4);
+  padding: var(--app-space-5);
+}
+.brief-lead {
+  border: 1px solid var(--app-border); border-left: 3px solid var(--app-accent);
+  border-radius: 8px; background: var(--app-surface); padding: 12px 14px;
+}
+.brief-lead.failed { border-color: #f3c6c6; border-left-color: #b91c1c; background: #fef6f6; }
+.bl-name { font-weight: 700; font-size: 13.5px; }
+.brief-lead.failed .bl-name { color: #b91c1c; }
+.bl-when { margin-left: 8px; }
+.bl-text { margin: 6px 0 0; font-size: 13px; line-height: 1.55; color: var(--app-fg); }
+.brief-lead.failed .bl-text { color: #b91c1c; }
 /* table chrome (box/table/th) is shared — see styles.scss */
 
 /* The overview table has the most columns of any portal table — project, tasks,
@@ -49,14 +88,29 @@ td.ctr { text-align: center; }
 }
 .totals-row td.num { font-variant-numeric: tabular-nums; }
 
+/* Scheduled tasks + outside any project (task 130): <tfoot> rows, so they stay
+   below the projects whatever the sort. The theme styles tfoot cells as a bold
+   tinted footer; these are data rows, so they restate the body row's look. */
+.ov-foot > td {
+  height: 30px; font-size: 12.5px; font-weight: 400;
+  padding: 5px 10px; background: var(--app-surface); color: var(--app-fg);
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden; white-space: nowrap;
+}
+.ov-foot.group-head > td { font-weight: 600; border-top: 2px solid var(--app-border); }
+.ov-foot.group-head + .ov-foot.member > td,
+.ov-foot.member + .ov-foot.member > td { border-top: 0; }
+.ov-foot.member > td:first-child { padding-left: 26px; }
+.ov-foot td.num { font-variant-numeric: tabular-nums; }
+.ov-foot td.num.strong { font-weight: 600; }
+.ov-foot .hint { margin-left: 8px; font-weight: 400; }
+.fold-toggle { margin-left: 8px; font-weight: 400; }
+
 .dim { color: var(--app-fg-muted); }
 .tasks .total { color: var(--app-fg); font-weight: 600; }
 .tasks .ready { color: #047857; font-weight: 600; }
 .dirty { color: #b45309; font-weight: 600; }
 
-/* p-tag badge — ng-deep; .p-tag.badge outranks the Aura .p-tag defaults */
-/* shape comes from the global .badge recipe — color only here */
-:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
 
 /* skeleton loading rows (layout only) */
 .skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

@@ -11,22 +11,27 @@
 
     @if (c.addons.length) {
       <div class="addon-list">
-        @for (a of c.addons; track a.id) {
+        @for (a of listedAddons(c.addons); track a.id) {
           <div class="addon-row" [class.inert]="!a.active || !a.supported">
             <span class="addon-icon">{{ a.icon || '🧩' }}</span>
             <div class="addon-titles">
               <span class="addon-name">{{ a.label }}
-                @if (a.thirdParty) { <span class="badge third-party">3rd-party</span> }
-                @if (prereqBroken(a)) { <span class="badge caps warn" title="A prerequisite is missing — open Configure">prereq missing</span> }
+                @if (a.thirdParty) { <app-flag face="text">3rd-party</app-flag> }
+                @if (prereqBroken(a)) { <app-flag tone="warn" title="A prerequisite is missing — open Configure">prereq missing</app-flag> }
               </span>
               <span class="addon-summary">{{ a.active && a.supported ? (statusFor(a.id)?.summary || a.description) : a.description }}</span>
             </div>
-            <span class="badge caps" [class.on]="pillFor(a).cls === 'on'" [class.warn]="pillFor(a).cls === 'warn'" [class.off]="pillFor(a).cls === 'off'">{{ pillFor(a).text }}</span>
+            <app-flag [tone]="pillFor(a).tone">{{ pillFor(a).text }}</app-flag>
             <button type="button" class="btn-pill" [disabled]="!a.active || !a.supported" (click)="openDialog(a)">Configure</button>
             <p-toggleswitch [ngModel]="a.active" (ngModelChange)="setActive(a, $event)"
                             [disabled]="savingToggle() === a.id || !a.supported" [name]="'active-' + a.id"
                             [title]="a.supported ? (a.active ? 'Switch off (installed but inert)' : 'Switch on') : 'Not available on this OS'" />
           </div>
+          <!-- Declared a schedule → its runs live under its own row, not in a
+               second section that made one capability appear twice. -->
+          @if (jobFor(a.id); as j) {
+            <app-settings-job [job]="j" (changed)="reloadJobs()" />
+          }
         }
       </div>
     }
@@ -40,7 +45,7 @@
               <span class="addon-name">{{ b.id }}</span>
               <span class="addon-summary">broken install — {{ b.error }}</span>
             </div>
-            <span class="badge caps off">broken</span>
+            <app-flag>broken</app-flag>
           </div>
         }
       </div>
@@ -71,6 +76,51 @@
         </div>
       }
 
+      <!-- A one-time setup walkthrough the add-on declares (task 127): lead
+           paragraphs, numbered steps, a copyable command per step. Same shape
+           for any add-on that needs a human to do something outside cogyard;
+           it disappears once the add-on reports setup is done. -->
+      @if (a.setup; as g) {
+        <div class="addon-setup">
+          @for (para of g.intro || []; track $index) { <p class="card-hint">{{ para }}</p> }
+
+          <ol class="setup-steps">
+            @for (st of g.steps; track $index) {
+              <li>
+                <span class="step-what">{{ st.what }}</span>
+                @if (st.why) { <span class="hint sm">{{ st.why }}</span> }
+                @if (st.input) {
+                  <label class="field setup-input">
+                    <span class="eyebrow">{{ st.input.label }}</span>
+                    <input pInputText pSize="small" class="set-input" [placeholder]="st.input.placeholder || ''"
+                           [ngModel]="setupInput(a.id, $index)" (ngModelChange)="setSetupInput(a.id, $index, $event)"
+                           [name]="a.id + '-setup-' + $index" autocomplete="off" spellcheck="false" />
+                    <span class="hint sm">Stays in this browser — it is only used to build the line below. cogyard never receives it.</span>
+                  </label>
+                }
+                @if (st.command) {
+                  <div class="command-row">
+                    <code class="command">{{ stepCommand(a.id, $index, st) }}</code>
+                    <button type="button" class="btn-pill" [disabled]="!stepReady(a.id, $index, st)"
+                            (click)="copyCommand(a.id + ':s' + $index, stepCommand(a.id, $index, st))">{{ copiedFor() === a.id + ':s' + $index ? 'Copied' : 'Copy' }}</button>
+                  </div>
+                }
+              </li>
+            }
+          </ol>
+
+          @if (g.warning) {
+            <p class="hint sm setup-warn">{{ g.warning }}</p>
+            @if (g.warningCommand) {
+              <div class="command-row">
+                <code class="command">{{ g.warningCommand }}</code>
+                <button type="button" class="btn-pill" (click)="copyCommand(a.id + ':warn', g.warningCommand)">{{ copiedFor() === a.id + ':warn' ? 'Copied' : 'Copy' }}</button>
+              </div>
+            }
+          }
+        </div>
+      }
+
       @if (a.configSchema.length) {
         <div class="addon-config">
           @for (f of a.configSchema; track f.key) {
@@ -96,6 +146,14 @@
             </label>
           }
         </div>
+      }
+
+      @if (a.configSchema.length) {
+        <span class="hint sm save-state">
+          @if (saving() === a.id) { Saving… }
+          @else if (savedFor() === a.id) { Saved — these settings are what the nightly run uses. }
+          @else { Saved automatically to <code>~/.cogyard/config.json</code>; the nightly run uses them. }
+        </span>
       }
 
       <div class="addon-actions">

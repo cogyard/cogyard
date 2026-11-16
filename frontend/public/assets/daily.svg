@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- The Brief glyph (task 120): a page with lines of prose on it. Deliberately
+       PROSE, not a clipboard or a checklist — the whole point of this tab is that
+       it is paragraphs to read, not items to tick, and the Tasks glyph next to it
+       already owns ticks. Stroked to match the other tab glyphs; the strip renders
+       it as a mask, so the stroke colour here only needs to be opaque. -->
+  <g transform="translate(-20.48,-20.48) scale(23.04)">
+    <g fill="none" stroke="#1f2328" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M5 3 H15 L19 7 V21 H5 Z"/>
+      <path d="M15 3 V7 H19"/>
+      <path d="M8 12 H16"/>
+      <path d="M8 15.5 H16"/>
+      <path d="M8 19 H13"/>
+    </g>
+  </g>
+</svg>

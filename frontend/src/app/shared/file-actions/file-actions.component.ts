@@ -35,6 +35,10 @@ export class FileActionsComponent {
   worktreeName = input<string | null>(null); // worktree name (for cogyard nav)
   line = input<number | null>(null);
   onGraph = input(false);                    // adds "Open in cogyard"
+  // The file lives in the project's TASK STORE, not its checkout (task 132 — the
+  // task row's Open in). `path` is then the bare filename; the store is flat, and
+  // the server contains it with assertInStore instead of assertInProject.
+  store = input(false);
   // The file's working-tree group ('staged'|'unstaged'|'untracked') — set only
   // by the Graph worktree panel. null = no Discard button (e.g. Files page).
   discardKind = input<string | null>(null);
@@ -61,7 +65,10 @@ export class FileActionsComponent {
   }
 
   private runOpen(targetId: string) {
-    this.api.openFile(this.slug(), this.path(), targetId, this.line(), this.worktree()).subscribe({
+    const req = this.store()
+      ? this.api.openTaskFile(this.slug(), this.path(), targetId)
+      : this.api.openFile(this.slug(), this.path(), targetId, this.line(), this.worktree());
+    req.subscribe({
       next: () => {},
       error: (e) => this.toastErr(e),
     });

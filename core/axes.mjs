@@ -3,7 +3,7 @@
 // themselves stay 100% free-form; the axis map is a thin, OPTIONAL grouping layer
 // the portal renders on top of them. Two layers resolve into one per-project view:
 //   · shared  — $COGYARD_HOME/axes.json    (universal axes, e.g. Surface)
-//   · project — <repo>/_tasks/axes.json    (that project's domain axes; lives in the task store, travels with the tasks)
+//   · project — <task link>/axes.json   (that project's domain axes; lives in the task store, travels with the tasks)
 // Project wins on conflict: a project axis of the same NAME replaces the shared
 // one in its slot; new project axes append. A label in NO axis is "Ungrouped" —
 // the portal shows those as the un-curated backlog. When neither file exists the
@@ -16,6 +16,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { COGYARD_HOME } from './paths.mjs';
+import { tasksDirOf } from './tasks-dir.mjs';
 
 // The one shipped default (task 096): a universal Surface axis. It is SEEDED as a
 // real file at $COGYARD_HOME/axes.json (see seedSharedAxes) rather than baked in,
@@ -30,10 +31,10 @@ const DEFAULT_AXIS_COLOR = '#8a8f98';
 
 const sharedAxesPath = () => join(COGYARD_HOME, 'axes.json');
 // The project axis map lives IN the project's task store, next to the task files
-// it groups (<repo>/_tasks/axes.json). For shared-store projects `_tasks` is a
+// it groups (<task link>/axes.json — .cogyard/tasks, or _tasks before task 160). For shared-store projects the link is a
 // symlink, so this resolves into the canonical store — the map travels with the
 // tasks, is shared across every checkout, and never lands in a project's code main.
-const projectAxesPath = (projectPath) => join(projectPath, '_tasks', 'axes.json');
+const projectAxesPath = (projectPath) => join(tasksDirOf(projectPath), 'axes.json');
 
 // Parse one axes.json → array of clean axis rows, or [] on ANY problem (missing
 // file, bad JSON, wrong shape). Never throws: a hand-corrupted file degrades to
@@ -152,8 +153,9 @@ export function writeSharedAxes(list) {
   return axes;
 }
 
-// Persist a project's committed map (<repo>/_tasks/axes.json, in the task store).
-// Commit it with `cogyard tasks sync push`, same as the task files it sits beside.
+// Persist a project's committed map (<task link>/axes.json, in the task store).
+// Commit it with `cogyard tasks sync push "<msg>" -- axes.json`; no task claims it,
+// so a chat's push that names nothing leaves it pending.
 // Returns the sanitized list that was written.
 export function writeProjectAxes(projectPath, list) {
   const axes = sanitizeAxes(list);

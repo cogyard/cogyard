@@ -1,0 +1,42 @@
+:host { display: block; }
+
+/* Layout only — text styling comes from the shared recipes in styles.scss
+   (.eyebrow / .hint / .settings-card / .card-title / .card-hint / .ro-value /
+   .command-row). Never re-declare font-size/weight/color here. */
+.ps-wrap { display: flex; flex-direction: column; gap: var(--app-space-5); }
+
+/* Label-beside-value rows, not the global .field stack: every value here is a
+   read-only fact, and a stacked label over each one turns five short facts into
+   a column of ten lines. The label column is fixed so the values line up. */
+.ps-rows { display: flex; flex-direction: column; gap: var(--app-space-3); }
+.ps-row {
+  display: grid; grid-template-columns: 110px minmax(0, 1fr);
+  align-items: baseline; gap: var(--app-space-4);
+}
+.ps-val {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: var(--app-space-2) var(--app-space-3);
+  min-width: 0; font-size: 12.5px; color: var(--app-page-fg-strong);
+}
+/* Paths are the point of this card and they are long — let them wrap inside the
+   value cell rather than pushing the page into a horizontal scroll. */
+.ps-val .ro-value { overflow-wrap: anywhere; }
+
+
+.dim { color: var(--app-fg-muted); }
+.ps-warn { color: var(--app-danger, #d9534f); }
+.cp { margin-left: var(--app-space-2); font-size: 11.5px; }
+
+/* Location on disk's two sections, Code and Tasks (task 217), with a rule
+   between them. */
+.loc-sec { display: flex; flex-direction: column; gap: var(--app-space-3); }
+.loc-sec + .loc-sec { padding-top: var(--app-space-5); border-top: 1px solid var(--app-border-soft); }
+.loc-head { display: flex; flex-direction: column; gap: var(--app-space-1); }
+
+/* Problems sit under their section's facts with a rule between: they are the
+   "something needs doing" half, and they are usually empty. */
+.ps-flags {
+  display: flex; flex-direction: column; gap: var(--app-space-3);
+  padding-top: var(--app-space-3); border-top: 1px solid var(--app-border-soft);
+}
+.fl { display: flex; flex-direction: column; gap: var(--app-space-2); }

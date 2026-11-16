@@ -5,7 +5,7 @@
 // edits through the same http.mjs write seam every other write uses.
 //
 // GET  /api/axes?scope=shared            → raw shared map ($COGYARD_HOME/axes.json)
-// GET  /api/axes?scope=project&p=<slug>  → raw project map (<repo>/_tasks/axes.json)
+// GET  /api/axes?scope=project&p=<slug>  → raw project map (<task link>/axes.json)
 // POST /api/axes  { scope, slug?, axes } → persist that layer (guarded)
 //
 // Writes go through parseGuarded (origin gate + capped JSON body); the project
@@ -52,7 +52,7 @@ export async function handlePost(path, req, res) {
     const proj = projectForSlug(body.slug);
     if (!proj) return errJson(res, 404, 'unknown project');
     // Containment: the only file this scope may ever write is <store>/axes.json,
-    // resolved from the project's own _tasks store. Null = no store → refuse.
+    // resolved from the project's own task store. Null = no store → refuse.
     if (!assertInStore(proj.path)) {
       return errJson(res, 403, 'project has no task store');
     }

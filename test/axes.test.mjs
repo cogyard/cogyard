@@ -21,10 +21,10 @@ const { resolveAxes, axisLookup, registeredLabels, seedSharedAxes, DEFAULT_SHARE
   readSharedAxes, readProjectAxes, sanitizeAxes, writeSharedAxes, writeProjectAxes } =
   await import('../core/axes.mjs');
 
-// A throwaway "project" dir with its axis map in its task store (_tasks/axes.json).
+// A throwaway "project" dir with its axis map in its task store (.cogyard/tasks/axes.json).
 const PROJ = mkdtempSync(join(tmpdir(), 'cogyard-axproj-'));
-mkdirSync(join(PROJ, '_tasks'), { recursive: true });
-const PROJ_AXES = join(PROJ, '_tasks', 'axes.json');
+mkdirSync(join(PROJ, '.cogyard', 'tasks'), { recursive: true });
+const PROJ_AXES = join(PROJ, '.cogyard', 'tasks', 'axes.json');
 
 const writeShared = (obj) => writeFileSync(SHARED, JSON.stringify(obj));
 const writeProject = (obj) => writeFileSync(PROJ_AXES, JSON.stringify(obj));
@@ -139,7 +139,7 @@ test('writeSharedAxes round-trips through readSharedAxes and drops a null color 
   clearShared();
 });
 
-test('writeProjectAxes persists to _tasks/ and readProjectAxes reads it back', () => {
+test('writeProjectAxes persists to the task store and readProjectAxes reads it back', () => {
   clearProject();
   assert.deepEqual(readProjectAxes(PROJ), []);
   writeProjectAxes(PROJ, [{ name: 'Domain', color: '#2fae7a', labels: ['w'] }]);

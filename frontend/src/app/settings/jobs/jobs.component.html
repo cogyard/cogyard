@@ -1,0 +1,83 @@
+<!-- One add-on's scheduling block, rendered inside its row. Everything here is
+     about a RUN — when it happens, when it last did, what it cost — as opposed
+     to the row above, which is about the capability being installed and on. -->
+@if (job(); as j) {
+  <div class="job-block" [class.inert]="!j.active || !j.supported">
+    <div class="job-facts">
+      <span class="job-when">
+        {{ scheduleText(j.schedule) }}
+        @if (j.overridden && j.declaredSchedule) {
+          <span class="hint sm">· add-on default {{ j.declaredSchedule.at }}</span>
+        }
+      </span>
+      <span><span class="eyebrow">Last run</span> {{ when(j.lastRunAt) }}
+        @if (j.lastOutcome === 'error') { <span class="job-err">— {{ j.lastError }}</span> }
+        @else if (j.lastSummary) { <span class="dim">— {{ j.lastSummary }}</span> }
+      </span>
+      <span><span class="eyebrow">Next</span> {{ j.active && j.supported ? when(j.nextRunAt) : '—' }}</span>
+      <span><span class="eyebrow">Runs</span> {{ j.runs }}</span>
+      <span><span class="eyebrow">Cost</span> {{ cost(j.totalCost) }}</span>
+      @if (j.log.length) {
+        <button type="button" class="btn-link dim" (click)="toggleLog(j.id)">{{ openLog() === j.id ? 'hide log' : 'log' }}</button>
+      }
+    </div>
+
+    <div class="job-controls">
+      <button type="button" class="btn-pill" (click)="edit(j)" [disabled]="!j.active || !j.supported">
+        {{ editing() === j.id ? 'Close' : 'Change time' }}
+      </button>
+      <button type="button" class="btn-pill" (click)="runNow(j)"
+              [disabled]="!j.active || !j.supported || !j.runnable || !!running()"
+              [title]="j.runnable ? 'Run this now, out of band' : 'This add-on declares a schedule but has no runScheduled()'">
+        {{ running() === j.id ? 'Running…' : 'Run now' }}
+      </button>
+    </div>
+
+    <!-- The credential is SET in the store and USED here. This is where someone
+         looks in the morning, so when it is missing it has to say so AND say
+         where to fix it — "it failed" on its own leaves the reader at the wrong
+         end of the problem. The setup itself belongs to the capability's own
+         row, not repeated here where it would drift. -->
+    @if (j.active && j.supported && j.credential && !j.credential.set) {
+      <div class="job-missing-cred">
+        <app-flag tone="warn">credential missing</app-flag>
+        <span>This calls the agent, which cannot sign in without {{ j.credential.label }}.
+          Set it up on the <strong>Scheduled tasks with LLM analysis</strong> row.</span>
+      </div>
+    }
+
+    @if (editing() === j.id) {
+      <div class="job-edit">
+        <label class="field">
+          <span class="eyebrow">Repeat</span>
+          <p-select size="small" [options]="everyOptions" optionLabel="label" optionValue="value"
+                    [ngModel]="draft().every" (ngModelChange)="setDraft('every', $event)" [name]="j.id + '-every'" appendTo="body" />
+        </label>
+        @if (draft().every === 'week') {
+          <label class="field">
+            <span class="eyebrow">Day</span>
+            <p-select size="small" [options]="weekdayOptions" optionLabel="label" optionValue="value"
+                      [ngModel]="draft().weekday" (ngModelChange)="setDraft('weekday', $event)" [name]="j.id + '-weekday'" appendTo="body" />
+          </label>
+        }
+        <label class="field">
+          <span class="eyebrow">At</span>
+          <input type="time" class="set-input time" [ngModel]="draft().at" (ngModelChange)="setDraft('at', $event)" [name]="j.id + '-at'" />
+        </label>
+        <button type="button" class="btn-pill primary" (click)="saveSchedule(j)" [disabled]="savingTime() === j.id">Save</button>
+        @if (j.overridden) {
+          <button type="button" class="btn-pill" (click)="resetSchedule(j)" [disabled]="savingTime() === j.id"
+                  title="Fall back to the schedule the add-on declares">Reset to default</button>
+        }
+      </div>
+    }
+
+    @if (openLog() === j.id) {
+      <div class="job-log">
+        @for (l of j.log.slice().reverse(); track $index) {
+          <div class="job-log-line"><code class="dim">{{ when(l.at) }}</code> {{ l.line }}</div>
+        }
+      </div>
+    }
+  </div>
+}

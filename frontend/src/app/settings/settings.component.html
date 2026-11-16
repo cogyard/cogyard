@@ -1,12 +1,13 @@
 <div class="settings-wrap">
+  <!-- No page title here on purpose: the shell's topbar already renders
+       "Settings" / "Welcome" for this route (app.component.html's .all-label),
+       and a second <h2> underneath it read as two titles for the same page. -->
   @if (wizard()) {
     <header class="settings-head">
-      <h2 class="page-title">Welcome to cogyard</h2>
       <p class="hint">Set your defaults below, then add your first project. You can change any of this later under Settings.</p>
     </header>
   } @else {
     <header class="settings-head">
-      <h2 class="page-title">Settings</h2>
       <p class="hint">Every setting is pre-filled with its resolved value. Saved to <code>~/.cogyard/config.json</code>.</p>
     </header>
   }
@@ -25,6 +26,16 @@
             <span>{{ t.label }}</span>
           </label>
         }
+      </div>
+
+      <div class="landing-row">
+        <span class="landing-label">
+          <span class="eyebrow">Open projects on</span>
+          <span class="info-ico" tabindex="0" role="img" aria-label="The tab you land on when you switch to a project. Only ticked tabs are offered."
+                pTooltip="The tab you land on when you switch to a project. Only ticked tabs are offered." tooltipPosition="top"></span>
+        </span>
+        <p-select size="small" styleClass="landing-select" [options]="defaultTabOptions()" optionLabel="label" optionValue="value"
+                  ariaLabel="Open projects on" [ngModel]="defaultTab()" (ngModelChange)="defaultTab.set($event)" name="defaultTab" appendTo="body" />
       </div>
 
       <div class="set-actions">
@@ -90,25 +101,32 @@
         </div>
         @for (t of targets(); track $index) {
           <div class="target-row">
-            <input pInputText pSize="small" [ngModel]="t.id" (ngModelChange)="setTargetField($index, 'id', $event)" [name]="'tid' + $index" placeholder="vscode" />
-            <input pInputText pSize="small" [ngModel]="t.label" (ngModelChange)="setTargetField($index, 'label', $event)" [name]="'tlabel' + $index" placeholder="VS Code" />
-            <input pInputText pSize="small" [ngModel]="t.exec" (ngModelChange)="setTargetField($index, 'exec', $event)" [name]="'texec' + $index" placeholder="code" />
-            <input pInputText pSize="small" [ngModel]="argsText(t)" (ngModelChange)="setTargetArgs($index, $event)" [name]="'targs' + $index" placeholder="-g {file}:{line}" />
-            <button type="button" class="btn-pill" title="Remove" (click)="removeTarget($index)">✕</button>
+            <input pInputText pSize="small" class="set-input" [ngModel]="t.id" (ngModelChange)="setTargetField($index, 'id', $event)" [name]="'tid' + $index" placeholder="vscode" />
+            <input pInputText pSize="small" class="set-input" [ngModel]="t.label" (ngModelChange)="setTargetField($index, 'label', $event)" [name]="'tlabel' + $index" placeholder="VS Code" />
+            <input pInputText pSize="small" class="set-input" [ngModel]="t.exec" (ngModelChange)="setTargetField($index, 'exec', $event)" [name]="'texec' + $index" placeholder="code" />
+            <input pInputText pSize="small" class="set-input" [ngModel]="argsText(t)" (ngModelChange)="setTargetArgs($index, $event)" [name]="'targs' + $index" placeholder="-g {file}:{line}" />
+            <button type="button" class="row-del" title="Remove target" (click)="removeTarget($index)">
+              <svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+                <path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"
+                      d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6"/>
+              </svg>
+            </button>
           </div>
         }
       </div>
 
       <div class="set-actions">
         <button type="button" class="btn-pill" (click)="addTarget()">+ Add target</button>
-        <button type="button" class="btn-pill" [disabled]="savingTargets()" (click)="saveTargets()">
+        <button type="button" class="btn-primary" [disabled]="savingTargets()" (click)="saveTargets()">
           {{ savingTargets() ? 'Saving…' : 'Save targets' }}
         </button>
       </div>
     </section>
 
-    <!-- Read-only: home + driver -->
-    <section class="settings-card">
+    <!-- Read-only: where config lives + which agent drives cogyard. Each row
+         carries its own explanatory hints, so the card separates them — see
+         .machine-card. -->
+    <section class="settings-card machine-card">
       <h3 class="card-title">Machine</h3>
 
       <label class="field">
@@ -134,15 +152,17 @@
         }
         <span class="hint sm">cogyard v{{ c.version }} @if (c.commit) { ({{ c.commit }}) }</span>
       </label>
+
     </section>
 
     <!-- Add-ons — machine-level capabilities; their one home is this
          page. Hidden in wizard mode to keep first-run focused. -->
     @if (!wizard()) {
-      <app-settings-addons />
+      <app-settings-addons [openRequest]="openAddonRequest()" (changed)="addonsChanged.update(n => n + 1)" />
     }
 
-    <!-- Label axes — group/color task labels (task 096). Hidden in wizard mode. -->
+    <!-- Label axes — the SHARED layer only (task 096). A project's own layer is
+         edited on that project's settings tab (task 135). Hidden in wizard mode. -->
     @if (!wizard()) {
       <app-settings-axes />
     }
@@ -160,3 +180,4 @@
     <p class="hint">Loading config…</p>
   }
 </div>
+

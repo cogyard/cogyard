@@ -3,11 +3,12 @@
 // Read-only: ahead/behind vs the main worktree's branch, dirty state, a
 // staleness flag, and any allocated ports from worktree-ports.json. No actions.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, lstatSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { WORKTREE_PORTS_PATH } from './paths.mjs';
 import { tryExec, gitP } from './exec.mjs';
 import { loadTasks } from './frontmatter.mjs';
+import { tasksDirOf } from './tasks-dir.mjs';
 
 function loadPortAllocations() {
   try { return JSON.parse(readFileSync(WORKTREE_PORTS_PATH, 'utf8')).allocations || {}; }
@@ -84,52 +85,72 @@ async function computeWorktrees(repoPath, allocations) {
   }));
 }
 
-// Build the worktree-name -> task id maps for a project. Live claims
-// (claimed_by_session is "<worktree-name>-<timestamp>") win; the durable
-// env.worktree record fills in after release so the association outlives the
-// claim, like the worktrees/sessions themselves do.
+// Build the worktree-name -> task id maps for a project. Live claims win; the
+// durable env.worktree record fills in after release so the association
+// outlives the claim, like the worktrees/sessions themselves do.
+//
+// A claim is live when it holds a session, and it lives where `env claim`
+// recorded it: env.worktree, written by the same claim. claimed_by_session is
+// a session id (a UUID), not a worktree name, so it can't be the key. The
+// "<worktree-name>-<timestamp>" session shape is still read for old claims.
 function taskIdMaps(proj) {
   const claimMap = {};
   const recordMap = {};
   try {
-    for (const t of loadTasks(join(proj.path, '_tasks'))) {
+    for (const t of loadTasks(tasksDirOf(proj.path))) {
       const fm = t.frontmatter || {};
       const id = fm.id;
       if (id == null) continue;
       const sess = fm.env && fm.env.claimed_by_session;
-      if (sess) claimMap[String(sess).replace(/-\d+$/, '')] = id;
       const wt = fm.env && fm.env.worktree;
+      if (sess) {
+        claimMap[String(sess).replace(/-\d+$/, '')] = id;
+        if (wt) claimMap[wt] = id;
+      }
       if (wt) recordMap[wt] = id; // later (higher) task ids overwrite — most recent wins
     }
   } catch {}
   return { claimMap, recordMap };
 }
 
-// Top-level: enumerate worktrees for a project, spanning all clones of a
-// collapsed multi-clone (planet) project and tagging each with its clone name.
+// Top-level: enumerate a project's worktrees, each tagged with the task that
+// claims (or last recorded) it.
+//
+// The main checkout takes a live claim only, never the record. Every task
+// ever worked or filed on main records `worktree: <main's folder name>`, so
+// the record would hand main whichever of those has the highest id — a task
+// nobody is working there now.
+//
+// `tasksMounted` (task 217): whether the worktree has the task link — false
+// means sessions there can't see the tasks. Shared stores only (the project's
+// own task directory is a link); null otherwise, since an in-repo task folder
+// travels with every checkout. Same test as the storage report's mounted count
+// (core/store-health.mjs): the link is present, lstat, broken or not.
 async function worktreesForProject(proj) {
   const allocations = loadPortAllocations();
   const { claimMap, recordMap } = taskIdMaps(proj);
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
-  const perClone = await Promise.all(clonePaths.map(async (cp) => {
-    const cloneLabel = clonePaths.length > 1 ? basename(cp) : null;
-    const wts = await computeWorktrees(cp, allocations);
-    return wts.map((wt) => ({
+  const wts = await computeWorktrees(proj.path, allocations);
+  const shared = isLink(tasksDirOf(proj.path));
+  return wts.map((wt) => {
+    const live = claimMap[wt.name] != null ? claimMap[wt.name] : null;
+    const recorded = !wt.isMain && recordMap[wt.name] != null ? recordMap[wt.name] : null;
+    return {
       ...wt,
-      clone: cloneLabel,
-      claimedByTaskId: claimMap[wt.name] != null ? claimMap[wt.name] : (recordMap[wt.name] != null ? recordMap[wt.name] : null),
-      claimLive: claimMap[wt.name] != null,
-    }));
-  }));
-  return perClone.flat();
+      claimedByTaskId: live != null ? live : recorded,
+      claimLive: live != null,
+      tasksMounted: shared ? present(tasksDirOf(wt.path)) : null,
+    };
+  });
 }
 
-// Every real checkout dir of a project (spanning clones). The validation set for
+function isLink(p) { try { return lstatSync(p).isSymbolicLink(); } catch { return false; } }
+function present(p) { try { lstatSync(p); return true; } catch { return false; } }
+
+// Every real checkout dir of a project. The validation set for
 // any caller-supplied `worktree=` param — git must never run in an arbitrary cwd.
 function projectWorktreePaths(proj) {
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
   const out = new Set();
-  for (const cp of clonePaths) for (const e of gitWorktrees(cp)) out.add(e.path);
+  for (const e of gitWorktrees(proj.path)) out.add(e.path);
   return out;
 }
 

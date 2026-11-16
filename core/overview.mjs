@@ -15,6 +15,8 @@ import { gitWorktrees } from './worktrees.mjs';
 import { gitCommits, parseTaskTags } from './git-views.mjs';
 import { satisfiesDeps } from './status.mjs';
 import { projectUnmerged } from './unmerged.mjs';
+import { briefSummary } from './briefs.mjs';
+import { tasksDirOf } from './tasks-dir.mjs';
 
 const execFileP = promisify(execFile);
 
@@ -94,9 +96,8 @@ function taskCountsFromFrontmatter(tasks) {
 async function projectOverview(proj) {
   // Broken-symlink projects (flagged by discoverProjects) render as error rows.
   if (proj.error) return { slug: proj.slug, label: proj.label, error: true, errorDetail: proj.error };
-  const tasks = loadTasks(join(proj.path, '_tasks')); // file read only, no git
+  const tasks = loadTasks(tasksDirOf(proj.path)); // file read only, no git
   const counts = taskCountsFromFrontmatter(tasks); // always fresh — claims change counts with no git change
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
 
   // Memoize the GIT summary (latest commit / dirty / worktrees / size). The
   // change-signal is read entirely from ref files — ZERO git spawns on a hit —
@@ -126,13 +127,13 @@ async function projectOverview(proj) {
       return keyOf(state) + '\x1f' + idxMtime;
     },
     async () => {
-      const [latestRaw, statusOut, size, ...wtStats] = await Promise.all([
+      const [latestRaw, statusOut, size, wtStat] = await Promise.all([
         gitP(['log', '-n', '1', '--no-merges', '--pretty=format:%h%x1f%ar%x1f%s%x1f%ad', '--date=short'], proj.path),
         gitP(['status', '--porcelain'], proj.path),
         projectSize(proj.path),
-        ...clonePaths.map((cp) => lightWorktreeStats(cp)),
+        lightWorktreeStats(proj.path),
       ]);
-      const wt = wtStats.reduce((acc, s) => ({ count: acc.count + s.count, stale: acc.stale + s.stale }), { count: 0, stale: 0 });
+      const wt = { count: wtStat.count, stale: wtStat.stale };
       const dirty = statusOut ? statusOut.split('\n').filter(Boolean).length : 0;
       let latestCommit = null;
       if (latestRaw) { const [shortHash, relDate, subject, date] = latestRaw.split('\x1f'); latestCommit = { shortHash, relDate, subject, date }; }
@@ -144,16 +145,20 @@ async function projectOverview(proj) {
   // lag. Same source the sidebar + badges read, so all surfaces agree.
   const unmerged = await projectUnmerged(proj);
   const worktrees = { ...(gitSummary.worktrees || { count: 0, stale: 0 }), unmerged };
-  return { slug: proj.slug, label: proj.label, tasks: counts, ...gitSummary, worktrees };
+  // The newest brief's opening paragraph (task 120), so /all can be twelve
+  // paragraphs rather than a table of counts. Null for a project with no brief,
+  // which renders as nothing. NOT memoized with the git summary above: a brief
+  // appears without any ref or index changing.
+  const brief = briefSummary(proj.slug);
+  return { slug: proj.slug, label: proj.label, tasks: counts, ...gitSummary, worktrees, brief };
 }
 
-// Set of real worktree names for a project (across clones) — used to validate
+// Set of real worktree names for a project — used to validate
 // task -> worktree links so a generic session id (e.g. "session-123") that isn't
 // actually a worktree doesn't produce a dead link.
 function worktreeNamesForProject(proj) {
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
   const set = new Set();
-  for (const cp of clonePaths) for (const e of gitWorktrees(cp)) set.add(basename(e.path));
+  for (const e of gitWorktrees(proj.path)) set.add(basename(e.path));
   return set;
 }
 
@@ -162,9 +167,8 @@ function worktreeNamesForProject(proj) {
 // but worktrees/sessions live on as the feature's history) and the commits
 // tagged [#<id>] across ALL refs, so unmerged task branches show their commits.
 function annotateWorktree(taskData, proj) {
-  const clonePaths = proj.clones && proj.clones.length ? proj.clones : [proj.path];
   const wtBranch = {}; // worktree name -> branch
-  for (const cp of clonePaths) for (const e of gitWorktrees(cp)) wtBranch[basename(e.path)] = e.branch || null;
+  for (const e of gitWorktrees(proj.path)) wtBranch[basename(e.path)] = e.branch || null;
   const byTask = {}; // task id -> [commits]
   for (const c of gitCommits(proj.path, 300, { all: true })) {
     for (const id of c.taskIds) {

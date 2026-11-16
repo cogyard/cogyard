@@ -1,0 +1,26 @@
+@if (groups().length) {
+  <div class="rd">
+    <div class="strip">
+      <span class="widget-title lead rule" [pTooltip]="rule" tooltipPosition="right">Recently done</span>
+      <div class="tray">
+        <div class="row">
+          @for (g of groups(); track g.label; let first = $first) {
+            <span class="when">@if (!first) { <i class="sep"></i> }<span class="hint">{{ g.label }}</span></span>
+            @for (t of g.tasks; track t.id) { <app-task-chip [id]="t.id" [slug]="slug()" [note]="t.note" (open)="jumpTask.emit($event)" /> }
+          }
+        </div>
+      </div>
+      <button class="btn-pill more" (click)="open.set(!open())" [attr.aria-expanded]="open()">{{ open() ? 'less ▲' : '… more' }}</button>
+    </div>
+    @if (open()) {
+      @for (g of groups(); track g.label) {
+        <fieldset class="wait">
+          <legend>{{ g.label }}</legend>
+          <div class="cards">
+            @for (t of g.tasks; track t.id) { <app-plan-card [task]="t" [slug]="slug()" [labelColors]="labelColors()" (select)="jumpTask.emit(t.id)" (openTask)="jumpTask.emit($event)" /> }
+          </div>
+        </fieldset>
+      }
+    }
+  </div>
+}

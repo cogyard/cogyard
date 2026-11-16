@@ -29,7 +29,7 @@
             @if (cell.taskIds.length) {
               <div class="badges">
                 @for (id of cell.taskIds; track id) {
-                  <button class="badge mono" (click)="$event.stopPropagation(); taskClick.emit(id)" [title]="'task ' + id + ' merged this day — open on Tasks'">#{{ id }}</button>
+                  <app-task-chip [id]="id" [slug]="slug()" (open)="taskClick.emit($event)" />
                 }
               </div>
             }

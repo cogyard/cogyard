@@ -14,19 +14,33 @@
 :host ::ng-deep .bt .p-datatable-table-container { margin-bottom: var(--app-space-3); }
 /* Below this the container scrolls instead of crushing columns (shared chrome
    owns the overflow-x). Sum of the column minimums below. */
-/* sum of the column minimums: 290 + 260 + 88 + 88 + 96 + 260 */
-:host ::ng-deep p-table table { min-width: 1082px; }
-/* the two name columns get the lion's share: a p50 branch name measures 251px
-   and needs +20px cell padding. LAST COMMIT absorbs the remainder — its
-   subject is the one cell that reads fine truncated. */
-.col-branch { width: 26%; min-width: 290px; }
+/* Sum of the column minimums: 260 + 120 + 210 + 50 + 50 + 140 = 830. Dropping the
+   worktree column is what buys this — at 1082 the table scrolled sideways in a
+   939px content area, and it now fits without one. Task 156 gave Tracking the
+   44px it needed for two flags by making the Links icons wordless and the
+   Ahead/Behind headers arrows, so Branch and Last commit came out wider. */
+:host ::ng-deep p-table table { min-width: 830px; }
+/* The branch NAME is the row's identity and it is the long one, so it takes the
+   width the worktree column used to spend printing a near-copy of it. */
+.col-branch { width: 34%; min-width: 260px; }
+/* Links: the same column the Worktrees tab carries — the task chip · worktree ·
+   files (task first since task 156). Icon-only since task 156: 120px holds both icons and a 4-digit
+   task chip on one line (measured 98 with a 3-digit chip, plus 20px padding); it
+   must never be the column that squeezes, since a chip squeezed out of a shared
+   cell is the bug this column exists to end. */
+.col-links { width: 120px; min-width: 120px; }
 /* the commit cell needs room for hash + subject + relative date; with no
    width rule at all it absorbed every squeeze and collapsed to one glyph */
-.col-commit { width: 24%; min-width: 260px; }
-.col-ahead, .col-behind { width: 88px; }
-.col-tracking { width: 96px; }
-/* renamed from Flags: it holds only the worktree ref now */
-.col-worktree { width: 22%; min-width: 260px; }
+.col-commit { width: 32%; min-width: 210px; }
+/* headers are "↑ ⇅" / "↓ ⇅" (the words live in the header tooltip); 50px fits
+   that and a three-digit count (~41 with padding) */
+.col-ahead, .col-behind { width: 50px; }
+/* Tracking holds a tracking flag AND, on a stale branch, STALE. At 96px it fit
+   one, so the cell ellipsized to "ORIGIN …" and STALE vanished (task 156).
+   140 = the widest pair (UNPUSHED 68 + STALE 48) + the 4px gap + 20px padding. */
+.col-tracking { width: 140px; min-width: 140px; }
+/* the two flags touched with no space between them — layout only, app-flag keeps its look */
+.tracking > app-flag + app-flag { margin-left: 4px; }
 /* height/padding/font-size come from the shared table chrome in styles.scss */
 .bt-row > td {
   border-bottom: 1px solid var(--app-border); background: var(--app-surface);
@@ -34,20 +48,30 @@
 }
 /* no display:flex on td — consecutive non-table-cell tds merge into one
    anonymous cell and shift every column after them */
-:is(.bname, .worktree) > * + * { margin-left: 7px; }
-:is(.bname, .worktree) > * { vertical-align: middle; }
+.bname > * + * { margin-left: 7px; }
+.bname > * { vertical-align: middle; }
 /* The cell's own text-overflow can't ellipsis an inline-block child — it just
-   clips the box, so long worktree names were chopped mid-word with no "there's
-   more" affordance. The link has to truncate itself. The 22px reserves the
-   branch icon (11px + 3px margin) plus the 7px inter-child gap above. */
-:is(.bname, .worktree) button.btn-link {
+   clips the box, so long names were chopped mid-word with no "there's more"
+   affordance. The link has to truncate itself. The 22px reserves the branch
+   icon (11px + 3px margin) plus the 7px inter-child gap above.
+   The old companion rule — reserving 79px when a chip shared this cell — is
+   gone with the chip: it selected `button.btn-link` in THIS component's
+   template, while the name is rendered by app-git-ref, whose button carries
+   that component's scope attribute, so it never applied to the thing it was
+   written for. That is why the chip vanished off the end of long branch names.
+   Nothing shares this cell now; the Links column holds the rest. */
+.bname button.btn-link {
   max-width: calc(100% - 22px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-/* …and when a STALE chip shares the cell, the link has to yield its width too
-   (chip renders at a fixed 50px + the 7px gap). Inline-blocks can't share
-   remaining space the way flex children would, and the td can't become a flex
-   container without losing its table-cell role — hence the explicit reserve. */
-:is(.bname, .worktree):has(.badge) button.btn-link { max-width: calc(100% - 79px); }
+
+/* Links cell — layout only; .lnk / .lnk-ico are the shared recipe in styles.scss. */
+.links { white-space: nowrap; }
+.links > * + * { margin-left: var(--app-space-3); }
+/* icon-only links: the recipe's 3px icon-to-word gap has no word to separate */
+.links .lnk-ico { margin-right: 0; }
+/* the widest chip today (a 3-digit #NNN, measured 46px), so the icons after it
+   start at the same x on every row, with or without a task */
+.task-slot { display: inline-block; width: 46px; }
 .bt-row:last-child > td { border-bottom: none; }
 /* no row-wide hover wash: the row is not clickable — only the commit cell and links are */
 .bt-row.stale > td { background: #fffafa; }
@@ -85,20 +109,8 @@ td.ctr, th.ctr { text-align: center; }
 /* counts are routine data — neutral; STALE/dirty carry the alert colors */
 .ahead, .behind { color: var(--app-fg-dim); font-weight: 600; }
 
-/* p-tag badges — ng-deep because styleClass lands on PrimeNG's element;
-   .p-tag.badge outranks the Aura .p-tag defaults. (The branch-icon chip is a p-button
-   with its own button.badge.wt rules above.) */
-/* shape comes from the global .badge/.badge.caps recipe — colors only here */
-:host ::ng-deep .p-tag.badge.origin { background: #dcfce7; color: #166534; }
-:host ::ng-deep .p-tag.badge.unpushed { background: #fef3c7; color: #92400e; }
-:host ::ng-deep .p-tag.badge.localonly { background: var(--app-surface-2); color: var(--app-fg-dim); }
-:host ::ng-deep .p-tag.badge.stale { background: #fde8e8; color: #b91c1c; }
-/* main renders like the Graph page's main ref chip (inverse, trunk-black) —
-   the chip IS the marker, so the row keeps the normal background and no dot */
-:host ::ng-deep .p-tag.badge.main-ref {
-  background: #111827; color: #fff; border-radius: 3px; text-transform: none;
-  font-family: ui-monospace, monospace;
-}
+/* main's chip is app-ref-chip kind="main" — the Worktrees tab wears it too
+   (task 150, a shared component since task 155). */
 /* Blueprint git-branch icon — inherits the link's accent via currentColor */
 .branch-ico { width: 11px; height: 11px; fill: currentColor; vertical-align: -1px; margin-right: 3px; }
 /* skeleton loading rows (layout only) */

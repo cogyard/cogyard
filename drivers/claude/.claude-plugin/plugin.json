@@ -1,6 +1,6 @@
 {
   "name": "cogyard",
-  "description": "Drive cogyard from Claude Code — the markdown-task + claims + worktree-ports task system. Skills (pickup-task, write-task, handoff, commit, …), the /cogyard portal command, and the SessionStart worktree-wiring + frontmatter-validator + task-skill hooks.",
+  "description": "Drive cogyard from Claude Code — the markdown-task + claims + worktree-ports task system. Skills (pickup-task, write-task, merge-to-main, autopilot, handoff, commit, debt-cleanup), the /cogyard portal command, /task-chats and /lookup-chat to find and read chats, /cleanup-chat, and the hooks: SessionStart worktree wiring, frontmatter validation, and the branch-switch and dev-server guards.",
   "author": { "name": "Ben Dehghan" },
   "homepage": "http://cogyard"
 }

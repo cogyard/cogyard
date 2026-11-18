@@ -179,6 +179,39 @@ to write instead:
 Fixing a typo is mechanical. Choosing what a box becomes — `(optional)`,
 `(moved: <id>)` or `(dropped: why)` — is the owner's decision.
 
+## Boxes the write-task skill forbids — checked by what they say
+
+The `write-task` skill forbids three kinds of box, whatever marker they carry:
+
+- "**No box for the owner looking at the work.**" The owner's "merge it" is
+  their review and sign-off.
+- "**No box for anything after a deploy.** Deploying is the owner's."
+- On `(after merge)`: "**Never for something that needs a production
+  deploy.**"
+
+`cogyard tasks validate` reads the text of every open box (`[ ]`, not settled)
+in a task that is still OPEN or PARKED, and reports:
+
+| box | example | reported as |
+|---|---|---|
+| a deploy, or a check against the live site, with or without `(after merge)` | `- [ ] npx wrangler deploy run, the docs page reloaded, the new copy visible there` | an **error**, like a badly written marker above: the write hook refuses a new one, `validate` exits 1, `doctor` and the portal flag the file, `close` refuses |
+| the owner looking at, trying or confirming the work | `- [ ] Owner reviews the rendered page before deploy` | a **warning**: shown by `validate`, exit code unchanged |
+
+The deploy check matches phrases, not words — "after the deploy", "deploy
+run", "check it live", "live-verifies", "on the production site", "the owner
+deploys". "Deploy", "production" and "live" alone appear in many legitimate
+boxes (an infrastructure task's own "Deploy Redis instance", "copy
+`.env.production`"). The owner check is a guess about wording, so it is only a
+warning: the box has to open with the owner or user looking, reviewing,
+trying, confirming or approving; a `(you: …)` box, and one that also says
+"decide", are owner decisions and are not flagged. Both lists are in
+`core/validate.mjs`; when in doubt the check stays silent.
+
+A ticked or settled box is never flagged — a settled one often quotes the rule
+in its reason — and neither is a closed task. The fix is to describe the
+deploy in prose under the task's "Deploy verify" heading, or settle the box
+`(dropped: <why>)`; the check reports and never edits the file.
+
 ## Closing a task — `cogyard tasks close <id>`
 
 One command does all three closing steps: `status` + today's `done_date`, the

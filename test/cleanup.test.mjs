@@ -224,6 +224,106 @@ test('two chats ran in the same worktree — the one that ran there MORE drove i
   assert.equal(chatForWorktree(chats, 'task-012-x', '12').sessionId, 'worked');
 });
 
+// --- chats started by other chats (task 258) --------------------------------
+// The driver MAY say which chat started which. A child run in a folder no
+// registered project contains goes under its top chat's project; a parent is
+// held while a chat it started is held; children follow their parent. With no
+// parent links, every answer is the one the report gave before.
+
+const { chatProject, holdParentsOnChildren, nestChats } = await import('../core/cleanup.mjs');
+const projectOfPath = (p) => (p.startsWith('/repo/cogyard') ? 'cogyard' : p.split('/').pop());
+const registered = new Set(['cogyard']);
+const rowsById = (rows) => new Map(rows.map((r) => [r.sessionId, r]));
+
+test('a child run in an unregistered folder goes under its top chat\'s project', () => {
+  const top = { sessionId: 'top', cwd: '/repo/cogyard' };
+  const mid = { sessionId: 'mid', cwd: '/tmp/scratch/ap-rehearsal-site', parentSessionId: 'top', rootSessionId: 'top' };
+  const leaf = { sessionId: 'leaf', cwd: '/tmp/scratch/ap-rehearsal-site-2', parentSessionId: 'mid', rootSessionId: 'top' };
+  const by = rowsById([top, mid, leaf]);
+  assert.equal(chatProject(mid, by, projectOfPath, registered), 'cogyard');
+  assert.equal(chatProject(leaf, by, projectOfPath, registered), 'cogyard');
+});
+
+test('a chat in a registered folder keeps its own project, whatever its parent', () => {
+  const top = { sessionId: 'top', cwd: '/repo/other' };
+  const kid = { sessionId: 'kid', cwd: '/repo/cogyard/x', parentSessionId: 'top', rootSessionId: 'top' };
+  assert.equal(chatProject(kid, rowsById([top, kid]), projectOfPath, new Set(['cogyard', 'other'])), 'cogyard');
+});
+
+test('no parent link, or a top chat that is unregistered too → the folder\'s answer stands', () => {
+  const lone = { sessionId: 'lone', cwd: '/tmp/scratch/notes' };
+  assert.equal(chatProject(lone, rowsById([lone]), projectOfPath, registered), 'notes');
+  const top = { sessionId: 'top', cwd: '/tmp/elsewhere' };
+  const kid = { sessionId: 'kid', cwd: '/tmp/scratch/site', rootSessionId: 'top' };
+  assert.equal(chatProject(kid, rowsById([top, kid]), projectOfPath, registered), 'site');
+});
+
+const row = (sessionId, extra = {}) => ({
+  sessionId, title: sessionId, ready: true, reason: 'worked on no task', waitingOn: [], lastActivityAt: '2026-11-17T10:00:00Z', ...extra,
+});
+const heldRow = (sessionId, extra = {}) => row(sessionId, {
+  ready: false, waitingOn: [{ taskId: '5', why: 'status OPEN' }], reason: 'waiting on #5', ...extra,
+});
+
+test('a parent is held while a chat it started is held, and the reason names that chat', () => {
+  const rows = [row('top'), heldRow('kid', { parentSessionId: 'top', title: 'Rehearsal' })];
+  holdParentsOnChildren(rows);
+  assert.equal(rows[0].ready, false);
+  assert.deepEqual(rows[0].waitingOn, [{ chat: 'kid', title: 'Rehearsal', why: 'chat it started is still held' }]);
+  assert.equal(rows[0].reason, 'waiting on chat "Rehearsal"');
+});
+
+test('a held grandchild holds the whole line up to the top', () => {
+  const rows = [row('top'), row('mid', { parentSessionId: 'top' }), heldRow('leaf', { parentSessionId: 'mid' })];
+  holdParentsOnChildren(rows);
+  assert.deepEqual(rows.map((r) => r.ready), [false, false, false]);
+  assert.equal(rows[0].waitingOn[0].chat, 'mid');
+});
+
+test('a held parent adds the child to what it already waits on', () => {
+  const rows = [heldRow('top'), heldRow('kid', { parentSessionId: 'top', title: 'Worker' })];
+  holdParentsOnChildren(rows);
+  assert.equal(rows[0].reason, 'waiting on #5, chat "Worker"');
+});
+
+test('a child is never held by its parent; a ready child holds nothing', () => {
+  const rows = [heldRow('top'), row('kid', { parentSessionId: 'top' }), row('other')];
+  holdParentsOnChildren(rows);
+  assert.equal(rows[1].ready, true);
+  assert.equal(rows[0].waitingOn.length, 1);
+});
+
+test('a cycle in the parent links does not loop', () => {
+  const rows = [row('a', { parentSessionId: 'b' }), heldRow('b', { parentSessionId: 'a' })];
+  holdParentsOnChildren(rows);
+  assert.equal(rows[0].ready, false);
+  assert.equal(nestChats(rows).length, 2);
+});
+
+test('children follow their parent, newest first; top-level stays newest first', () => {
+  const at = (h) => `2026-11-17T${h}:00:00Z`;
+  const rows = [
+    row('old-top', { lastActivityAt: at('08') }),
+    row('top', { lastActivityAt: at('12') }),
+    row('kid-1', { parentSessionId: 'top', lastActivityAt: at('09') }),
+    row('kid-2', { parentSessionId: 'top', lastActivityAt: at('11') }),
+    row('grandkid', { parentSessionId: 'kid-1', lastActivityAt: at('10') }),
+    row('orphan', { parentSessionId: 'not-listed', lastActivityAt: at('07') }),
+  ];
+  assert.deepEqual(nestChats(rows).map((r) => `${r.depth}:${r.sessionId}`),
+    ['0:top', '1:kid-2', '1:kid-1', '2:grandkid', '0:old-top', '0:orphan']);
+});
+
+test('with no parent links the chat list is exactly the old one: same order, nothing held', () => {
+  const at = (h) => `2026-11-17T${h}:00:00Z`;
+  const rows = [row('b', { lastActivityAt: at('09') }), heldRow('a', { lastActivityAt: at('11') }), row('c', { lastActivityAt: at('10') })];
+  const before = JSON.parse(JSON.stringify(rows));
+  holdParentsOnChildren(rows);
+  assert.deepEqual(rows, before);
+  const oldOrder = [...before].sort((x, y) => String(y.lastActivityAt).localeCompare(String(x.lastActivityAt)));
+  assert.deepEqual(nestChats(rows).map(({ depth, ...r }) => r), oldOrder);
+});
+
 // --- PUSHED: clean, unmerged, on origin at this exact commit (task 174) -------
 // Real git, throwaway repos: a bare repo plays "origin". The verdict reads the
 // local remote-tracking ref (the report never fetches); removal must confirm

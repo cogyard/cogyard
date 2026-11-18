@@ -303,6 +303,69 @@ test('publishStatus: an unreachable health URL and an undeclared project', async
   assert.deepEqual(u.credentials, []);
 });
 
+// --- the card's "ready" line (task 259) -------------------------------------------------
+
+test('publishStatus.ready: a declared, current project is ready; refusals are the CLI\'s own sentences', async () => {
+  const { d } = published('1.0.0');
+  declare(d, { deploysOnPush: false, manual: ['press Deploy'] });
+  assert.deepEqual((await publishStatus({ slug: 'r-ok', path: d })).ready, { ok: true, reason: null });
+
+  declare(d, { deploysOnPush: true, command: 'deploy.sh' });
+  const onPush = (await publishStatus({ slug: 'r-push', path: d })).ready;
+  assert.equal(onPush.ok, false);
+  assert.equal(onPush.reason, publishPlan(readPublishConfig(d)).reason);
+
+  declare(d, { deploysOnPush: false });
+  assert.match((await publishStatus({ slug: 'r-none', path: d })).ready.reason, /neither a "command" nor "manual"/);
+
+  assert.equal((await publishStatus({ slug: 'r-undeclared', path: published().d })).ready, null);
+  const bad = published().d;
+  declare(bad, '{nope');
+  assert.equal((await publishStatus({ slug: 'r-bad', path: bad })).ready, null);
+});
+
+test('publishStatus.ready: a version already released on another commit, and a main that is ahead', async () => {
+  const { d } = published('1.0.0');
+  declare(d, { deploysOnPush: false, manual: ['press Deploy'] });
+  git(d, 'tag', '-a', 'v1.0.0', '-m', 'r');
+  commit(d, '1.0.0', 'no bump');
+  git(d, 'push', '-q', 'origin', 'main');
+  const tagged = (await publishStatus({ slug: 'r-tagged', path: d })).ready;
+  assert.equal(tagged.ok, false);
+  assert.match(tagged.reason, /v1\.0\.0 already marks .* needs a new version/);
+
+  commit(d, '1.1.0');
+  assert.match((await publishStatus({ slug: 'r-ahead', path: d })).ready.reason, /1 ahead \/ 0 behind origin\/main/);
+});
+
+test('publishStatus.ready: "tag": false skips the version checks', async () => {
+  const d = repo();
+  writeFileSync(join(d, 'x'), 'x');
+  git(d, 'add', 'x');
+  git(d, 'commit', '-q', '-m', 'x');
+  declare(d, { deploysOnPush: false, manual: ['paste it'], tag: false });
+  assert.deepEqual((await publishStatus({ slug: 'r-notag', path: d })).ready, { ok: true, reason: null });
+});
+
+test('publishStatus.ready runs no fetch: it judges against origin/main as of the last fetch', async () => {
+  const { d, origin } = published('1.0.0');
+  declare(d, { deploysOnPush: false, manual: ['press Deploy'] });
+  // Someone else pushes to origin; this checkout has not fetched it.
+  const other = tmp('cogyard-other-');
+  git(other, 'clone', '-q', origin, '.');
+  git(other, 'config', 'user.email', 't@example.com');
+  git(other, 'config', 'user.name', 'T');
+  commit(other, '1.1.0');
+  git(other, 'push', '-q', 'origin', 'main');
+  const before = git(d, 'rev-parse', 'origin/main');
+
+  const s = await publishStatus({ slug: 'r-nofetch', path: d });
+  assert.deepEqual(s.ready, { ok: true, reason: null }, 'as of the last fetch, main matches');
+  assert.equal(git(d, 'rev-parse', 'origin/main'), before, 'origin/main was not fetched');
+  // The CLI's own preflight still fetches, and so sees the push.
+  assert.match(publishPreflight(d).reason, /0 ahead \/ 1 behind origin\/main/);
+});
+
 // --- which project ----------------------------------------------------------------------
 
 test('resolvePublishProject: exact slug, exact label, one partial match — never a guess between two', () => {

@@ -142,7 +142,12 @@ function lastRelease(projectRoot, ref = null) {
 //
 //   { ok: true, branch, sha, short, remote, version, tag, tagHere, previous }
 //   { ok: false, reason }
-function publishPreflight(projectRoot, { tag = true } = {}) {
+//
+// `fetch: false` (task 259) skips the one side effect, the fetch, and judges
+// against <remote>/<branch> as of the LAST fetch — every other check, and every
+// refusal sentence, is the same. That is how the read-only settings card asks
+// "would a publish go through?" without writing to the repo.
+function publishPreflight(projectRoot, { tag = true, fetch = true } = {}) {
   const branch = defaultBranchSync(projectRoot);
   if (!branch) return { ok: false, reason: 'no main or master branch in this checkout' };
   const current = git(['rev-parse', '--abbrev-ref', 'HEAD'], projectRoot);
@@ -154,7 +159,7 @@ function publishPreflight(projectRoot, { tag = true } = {}) {
   const sha = git(['rev-parse', 'HEAD'], projectRoot);
   const remote = (git(['remote'], projectRoot) ?? '').split('\n').includes('origin') ? 'origin' : null;
   if (remote) {
-    if (git(['fetch', '--quiet', '--tags', remote, branch], projectRoot) === null) {
+    if (fetch && git(['fetch', '--quiet', '--tags', remote, branch], projectRoot) === null) {
       return { ok: false, reason: `could not fetch ${remote} — a publish must know exactly what ${remote}/${branch} is` };
     }
     const remoteSha = git(['rev-parse', `${remote}/${branch}`], projectRoot);
@@ -381,6 +386,20 @@ async function publishStatus(project) {
     try { version = JSON.parse(git(['show', `${tipSha}:package.json`], root) ?? '').version ?? null; } catch { /* none */ }
   }
 
+  // Would `cogyard publish` go through right now? The same two checks it makes
+  // before step 1, in the same order and with the same refusal sentences — the
+  // code check WITHOUT its fetch, so this stays read-only (as of the last fetch).
+  // It cannot see checks inside the project's own deploy step.
+  let ready = null;
+  if (declaration.declared && !declaration.error) {
+    const plan = publishPlan(declaration);
+    if (!plan.ok) ready = { ok: false, reason: plan.reason };
+    else {
+      const pre = publishPreflight(root, { tag: declaration.tag, fetch: false });
+      ready = pre.ok ? { ok: true, reason: null } : { ok: false, reason: pre.reason };
+    }
+  }
+
   return {
     slug: project.slug,
     declaration,
@@ -390,6 +409,7 @@ async function publishStatus(project) {
     tip: tipSha ? { ref: tipRef, short: tipSha.slice(0, 7), version } : null,
     lastRelease: lastReleaseInfo,
     live,
+    ready,
     prePushHook: prePushHook(root),
     history: publishHistory(project.slug),
     defaults: { ...PUBLISH_DEFAULTS, branch },

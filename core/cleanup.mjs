@@ -112,26 +112,46 @@ function taskStatuses(repoPath) {
 // claim` appends to at claim time — the usage ledger only carries a claim on
 // the usage rows that fell inside its window, and dropped most of a
 // multi-claim chat's (task 152: 17 claims vs 1 on "Where-is-maya server audit").
+//
+// A chat ANOTHER chat started (task 258) often runs in a folder no registered
+// project contains — an autopilot rehearsal in its parent's scratchpad — and
+// resolveProjectForPath then names a project that doesn't exist (the folder's
+// own name), so the chat showed on no Cleanup tab. chatProject() files it
+// under its top chat's project instead. Only when the driver supplies the
+// parent link; without it nothing changes.
 function openChats(slugs = null) {
   if (!(adapter.sessions && adapter.sessions.supported)) return [];
   const usage = usageSessions();
   const claims = claimWindows();
   const inScope = (project) => !slugs || slugs.has(project);
+  const all = adapter.sessions.list();
+  // Archived rows too: a child's top chat may be archived and still names
+  // the project.
+  const byId = new Map(all.filter((s) => s.sessionId).map((s) => [s.sessionId, s]));
+  const registered = new Set(readRegistry().map((p) => p.slug));
   const out = [];
-  for (const s of adapter.sessions.list()) {
+  for (const s of all) {
     if (s.isArchived) continue;
-    const project = s.cwd ? resolveProjectForPath(s.cwd) : null;
+    const project = chatProject(s, byId, resolveProjectForPath, registered);
     if (!inScope(project)) continue;
-    const live = chatSignals(s.sessionId);
+    // Filed here only through its top chat (task 258): it ran in another
+    // folder, so the `[#1]` in its commits, the task numbers in its text and
+    // the worktree names it ran in are THAT folder's, not this project's —
+    // a rehearsal repo's task 1 is not cogyard's task 1. Only signals that
+    // name this project themselves count: a claim recorded against it, and
+    // (in workedTasks) creating or editing a file in its store.
+    const adopted = project !== (s.cwd ? resolveProjectForPath(s.cwd) : null);
+    const read = chatSignals(s.sessionId);
+    const live = adopted ? { ...read, commitTasks: {}, tasks: {}, worktrees: {}, ranIn: {} } : read;
     // The ladder's inputs, shaped as the ledger row would have been but from
     // the file. `worktree` is left null here and the worktrees visited are
     // appended after, so a chat that entered SEVERAL task worktrees credits
     // all of them — the ladder's own slot holds one.
     const chatClaims = (claims.get(s.sessionId) || [])
-      .filter((w) => w.taskId != null)
+      .filter((w) => w.taskId != null && (!adopted || w.project === project))
       .map((w) => ({ taskId: String(w.taskId), project: w.project || null }));
     const u = usage.get(s.sessionId);
-    const claimedTasks = new Set([...((u && u.claimedTasks) || []), ...chatClaims.map((c) => c.taskId)]);
+    const claimedTasks = new Set([...((!adopted && u && u.claimedTasks) || []), ...chatClaims.map((c) => c.taskId)]);
     const taskIds = sessionTaskIdsAll({ commitTasks: live.commitTasks, tasks: live.tasks, worktree: null }, { claimedTasks, worktree: null });
     for (const name of Object.keys(live.worktrees)) {
       const m = name.match(/^task-0*(\d+)/);
@@ -143,6 +163,8 @@ function openChats(slugs = null) {
       lastActivityAt: s.lastActivityAt,
       cwd: s.cwd || null,
       project,
+      // The chat that started this one, when the driver knows (task 258).
+      parentSessionId: s.parentSessionId || null,
       taskIds,
       // worktree name → lines the transcript ran there. The direct join key.
       worktrees: live.worktrees,
@@ -155,6 +177,92 @@ function openChats(slugs = null) {
       filesWritten: Object.keys(live.filesWritten || {}),
     });
   }
+  return out;
+}
+
+// --- chats started by other chats (task 258) --------------------------------
+// The driver MAY give each chat row `parentSessionId` (the chat that started
+// it) and `rootSessionId` (the top chat of that tree), as other rows'
+// sessionIds. Both are optional: with neither, every function below returns
+// exactly what the report had before.
+
+// The project a chat belongs to: its own folder's, unless that names no
+// registered project — then its top chat's (else its parent's) when THAT one
+// is registered. Otherwise the folder's answer stands, unregistered or not.
+// `projectOf` is resolveProjectForPath, passed in so this stays pure.
+function chatProject(row, rowsById, projectOf, registered) {
+  const own = row.cwd ? projectOf(row.cwd) : null;
+  if (registered.has(own)) return own;
+  for (const id of [row.rootSessionId, row.parentSessionId]) {
+    const up = id && rowsById.get(id);
+    const p = up && up.cwd ? projectOf(up.cwd) : null;
+    if (p && registered.has(p)) return p;
+  }
+  return own;
+}
+
+// A parent chat waits on its children: archiving it while a chat it started
+// is still held would bury the thread the child reports back to. A child is
+// never held by its parent. Walks the whole tree (a held grandchild holds its
+// parent, which holds the top), guarded against a cycle in the app's data.
+// Mutates the rows: adds `{ chat, title, why }` to waitingOn, clears ready,
+// rewrites reason.
+function holdParentsOnChildren(rows) {
+  const byId = new Map(rows.map((r) => [r.sessionId, r]));
+  const kids = new Map();
+  for (const r of rows) {
+    if (!r.parentSessionId || !byId.has(r.parentSessionId)) continue;
+    if (!kids.has(r.parentSessionId)) kids.set(r.parentSessionId, []);
+    kids.get(r.parentSessionId).push(r);
+  }
+  if (!kids.size) return rows;
+  const memo = new Map();
+  const treeHeld = (r, path = new Set()) => {
+    if (memo.has(r.sessionId)) return memo.get(r.sessionId);
+    if (path.has(r.sessionId)) return !r.ready;
+    path.add(r.sessionId);
+    let held = !r.ready;
+    for (const k of kids.get(r.sessionId) || []) if (treeHeld(k, path)) held = true;
+    path.delete(r.sessionId);
+    memo.set(r.sessionId, held);
+    return held;
+  };
+  for (const r of rows) treeHeld(r);
+  for (const r of rows) {
+    const heldKids = (kids.get(r.sessionId) || []).filter((k) => memo.get(k.sessionId));
+    if (!heldKids.length) continue;
+    r.waitingOn = [...r.waitingOn, ...heldKids.map((k) => ({ chat: k.sessionId, title: k.title, why: 'chat it started is still held' }))];
+    r.ready = false;
+    r.reason = heldReason(r.waitingOn);
+  }
+  return rows;
+}
+
+// Parents before their children: top-level chats newest first (as before),
+// each followed by the chats it started, newest first, at `depth` + 1. A chat
+// whose parent isn't in the list is top-level. Returns a new array.
+function nestChats(rows) {
+  const newestFirst = (a, b) => String(b.lastActivityAt || '').localeCompare(String(a.lastActivityAt || ''));
+  const ids = new Set(rows.map((r) => r.sessionId));
+  const kids = new Map();
+  const top = [];
+  for (const r of rows) {
+    if (r.parentSessionId && ids.has(r.parentSessionId) && r.parentSessionId !== r.sessionId) {
+      if (!kids.has(r.parentSessionId)) kids.set(r.parentSessionId, []);
+      kids.get(r.parentSessionId).push(r);
+    } else top.push(r);
+  }
+  const out = [];
+  const seen = new Set();
+  const walk = (r, depth) => {
+    if (seen.has(r.sessionId)) return;
+    seen.add(r.sessionId);
+    out.push({ ...r, depth });
+    for (const k of (kids.get(r.sessionId) || []).sort(newestFirst)) walk(k, depth + 1);
+  };
+  for (const r of top.sort(newestFirst)) walk(r, 0);
+  // A cycle in the parent links leaves its chats unreached: list them flat.
+  for (const r of rows.filter((x) => !seen.has(x.sessionId)).sort(newestFirst)) walk(r, 0);
   return out;
 }
 
@@ -243,17 +351,23 @@ function chatArchiveReadiness(chat, statuses, taskIdsWithLiveWorktree, liveWorkt
     if (liveWorktreeNames.has(name)) waitingOn.push({ worktree: name, why: 'worktree still on disk' });
   }
 
-  const heldTasks = waitingOn.filter((w) => w.taskId).map((w) => `#${w.taskId}`);
-  const heldTrees = waitingOn.filter((w) => w.worktree).map((w) => w.worktree);
   let reason;
   if (waitingOn.length) {
-    reason = 'waiting on ' + [...heldTasks, ...heldTrees.map((n) => `worktree ${n}`)].join(', ');
+    reason = heldReason(waitingOn);
   } else if (workedIds.length) {
     reason = workedIds.length === 1 ? `only worked on #${workedIds[0]}, and it's done` : `worked on #${workedIds.join(', #')} — all done`;
   } else {
     reason = lookedUp.length ? `worked on no task — only looked up #${lookedUp.join(', #')}` : 'worked on no task';
   }
   return { tasks, ready: waitingOn.length === 0, reason, waitingOn };
+}
+
+// "waiting on #4, worktree foo, chat "Rehearsal"" — one phrase for every hold.
+function heldReason(waitingOn) {
+  const tasks = waitingOn.filter((w) => w.taskId).map((w) => `#${w.taskId}`);
+  const trees = waitingOn.filter((w) => w.worktree).map((w) => `worktree ${w.worktree}`);
+  const chats = waitingOn.filter((w) => w.chat).map((w) => `chat "${w.title || w.chat}"`);
+  return 'waiting on ' + [...tasks, ...trees, ...chats].join(', ');
 }
 
 // Chats that touched `taskId`, best-driver-first. `taskIds` arrives from the
@@ -335,9 +449,31 @@ async function projectCleanup(proj, { chats, statusesByRepo }) {
     .map((c) => ({ ...c, worked: workedTasks(c, statuses, { slug: proj.slug, storeDir }) }));
   const dates = branchDates(repoPath);
 
+  // EVERY open chat in this project, ready or not — the full mirror of what
+  // Claude Code's own sidebar shows here (task 144). This is independent of
+  // whether the chat is also attached to a worktree row below: that column
+  // answers "which chat drove THIS worktree", this list answers "what in
+  // Claude Code can I act on" — the same chat legitimately appears in both.
+  // Built FIRST so a worktree row's chat carries the same readiness, parent
+  // holds included (task 258).
+  const chatRows = projectChats.map((ch) => ({
+    // lastActivityAt travels with the row because these are matched
+    // against Claude Desktop's own list, which is ordered by recency — a title
+    // alone is ambiguous when several chats share one ("Pick up 98").
+    sessionId: ch.sessionId, title: ch.title, taskIds: ch.taskIds,
+    lastActivityAt: ch.lastActivityAt, parentSessionId: ch.parentSessionId || null,
+    // Readiness is computed against CURRENT state: while a worktree the chat
+    // ran in is still on disk the chat is never ready, which is correct —
+    // remove first, archive after.
+    ...chatArchiveReadiness(ch, statuses, liveTaskIds, liveNames),
+  }));
+  holdParentsOnChildren(chatRows);
+  const readinessOf = new Map(chatRows.map((r) => [r.sessionId, r]));
+
   for (const c of candidates.rows) {
     const taskId = c.taskId != null ? String(c.taskId) : null;
     const chat = chatForWorktree(projectChats, c.worktree.name, taskId);
+    const ready = chat && readinessOf.get(chat.sessionId);
 
     const action = actionFor(c.verdict);
     row.items.push({
@@ -361,27 +497,8 @@ async function projectCleanup(proj, { chats, statusesByRepo }) {
         sessionId: chat.sessionId,
         title: chat.title,
         taskIds: chat.taskIds,
-        // Readiness is computed against CURRENT state: while this worktree is
-        // still on disk the chat is never ready, which is correct — remove
-        // first, archive after.
-        ...chatArchiveReadiness(chat, statuses, liveTaskIds, liveNames),
+        tasks: ready.tasks, ready: ready.ready, reason: ready.reason, waitingOn: ready.waitingOn,
       },
-    });
-  }
-
-  // EVERY open chat in this project, ready or not — the full mirror of what
-  // Claude Code's own sidebar shows here (task 144). This is independent of
-  // whether the chat is also attached to a worktree row above: that column
-  // answers "which chat drove THIS worktree", this list answers "what in
-  // Claude Code can I act on" — the same chat legitimately appears in both.
-  for (const ch of projectChats) {
-    const readiness = chatArchiveReadiness(ch, statuses, liveTaskIds, liveNames);
-    // lastActivityAt travels with the row because these are matched
-    // against Claude Desktop's own list, which is ordered by recency — a title
-    // alone is ambiguous when several chats share one ("Pick up 98").
-    row.chats.push({
-      sessionId: ch.sessionId, title: ch.title, taskIds: ch.taskIds,
-      lastActivityAt: ch.lastActivityAt, ...readiness,
     });
   }
 
@@ -396,7 +513,9 @@ async function projectCleanup(proj, { chats, statusesByRepo }) {
   // Claude's own sidebar, so a chat is found in the same place in both. It
   // used to put every READY chat first, which sent the newest chat 32nd in a
   // 46-chat project (task 152 follow-up); the Status column carries readiness.
-  row.chats.sort((x, y) => newestFirst(x.lastActivityAt, y.lastActivityAt));
+  // A chat another chat started follows its parent, as in Claude's sidebar
+  // (task 258); `depth` says how far in.
+  row.chats = nestChats(chatRows);
   return row;
 }
 
@@ -527,5 +646,6 @@ async function removeWorktree({ repoPath, worktreePath, branch, project = null, 
 
 export {
   cleanupReport, projectCleanup, chatArchiveReadiness, workedTasks, actionFor, openChats, rankChatsForTask, chatForWorktree,
+  chatProject, holdParentsOnChildren, nestChats,
   removeWorktree, removeCmd, undoCmd, unlockCmd,
 };

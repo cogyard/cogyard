@@ -43,7 +43,7 @@ All under `COGYARD_HOME`. Created on demand; safe to inspect, back up, or delete
 | `tunnels.json` | Tunnel-enabled projects + their hostnames. |
 | `config.json` | Persistent machine config (schema below). Optional. |
 | `secrets.env` | Credentials, mode **0600** (see Secrets). Optional. |
-| `usage/` | The token/cost usage ledger. |
+| `usage/` | The token/cost usage ledger: `usage.jsonl` (cost rows), `activity.jsonl` (hours and prompts), `claims.jsonl`, and the two cursor files that record how far each transcript has been counted (`cursors.json`, `cursors-activity.json`). `collect.lock` exists only while a collection runs: one collector at a time, and a lock left by a run that died is taken over. If a cursor file can't be read, collection stops with an error naming it rather than counting every transcript again; `cogyard usage repair --dry-run` shows what a rebuild would do. `counted-keys` lists every billed request already counted (one short hash per line), so a request that appears in more than one transcript — a chat copied into a worktree's folder, or a resumed or forked chat replaying earlier messages — is counted once; it is rebuilt from the transcripts if deleted. |
 | `run/<job-id>/` | One empty folder per scheduled job, created on its first run. The job's agent calls run there so the usage ledger files them under the job. Safe to delete; it is recreated. |
 | `pricing.json` | Model rates synced from upstream (`cogyard usage pricing`), keyed by driver, newest version first. Delete it and pricing falls back to the active driver's built-in seed table until the next sync. |
 | `logs/` | LaunchAgent + worktree-hook logs. |

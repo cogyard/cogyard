@@ -192,6 +192,49 @@ test('work in progress sharing a file is named in clash (what autopilot and the 
   assert.deepEqual(p.tasks[1].waitedOnBy, []);
 });
 
+// Task 256: finished work waiting for its merge stops holding a queue.
+const claimEnv = { claimed_at: '2026-11-16T00:00:00Z', worktree: 'wt-1', branch: 'b-1' };
+const sharedHtml = (one, { ahead = 2, state = 'stopped' } = {}) => plan([
+  mk(1, { paths: ['site/index.html'], env: claimEnv, ...one }),
+  mk(2, { paths: ['site/index.html'] }),
+], { liveWorktrees: new Set(['wt-1']), branchAhead: new Map([['b-1', ahead]]), liveOf: () => ({ state }) });
+
+test('a finished-but-unmerged task sharing a code file is in no other task\'s clash, and stays in progress (task 256)', () => {
+  const p = sharedHtml({ open: 0, ticked: 3 });
+  assert.equal(p.tasks[1].finished, true);
+  assert.equal(where(p, 1), 'progress', 'it keeps its claim until the merge');
+  assert.equal(where(p, 2), 'can');
+  assert.deepEqual(p.tasks[2].clash, [], 'nobody is writing the file any more');
+  // Only the owner's boxes and after-merge checks may still be open.
+  const q = plan([
+    { ...mk(1, { paths: ['site/index.html'], env: claimEnv }), body: '- [x] built\n- [ ] (you: look) check it\n- [ ] (after merge) run it from main\n- [ ] (dropped: not needed) old idea' },
+    mk(2, { paths: ['site/index.html'] }),
+  ], { liveWorktrees: new Set(['wt-1']), branchAhead: new Map([['b-1', 2]]), liveOf: () => ({ state: 'stopped' }) });
+  assert.equal(q.tasks[1].finished, true);
+  assert.deepEqual(q.tasks[2].clash, []);
+});
+
+test('the same pair while the claimed task is still being built still clashes (task 256)', () => {
+  const notBuilt = sharedHtml({ open: 3, ticked: 0 }, { ahead: 0, state: 'working' });   // claimed, no commits yet
+  const working = sharedHtml({ open: 0, ticked: 3 }, { state: 'working' });              // all ticked, chat still running
+  const waiting = sharedHtml({ open: 0, ticked: 3 }, { state: 'needs' });                // waiting on a prompt
+  const noSignal = sharedHtml({ open: 0, ticked: 3 }, { state: 'unknown' });             // no live state to go by
+  const boxesLeft = sharedHtml({ open: 1, ticked: 2 });                                 // idle, but its own box is open
+  for (const p of [notBuilt, working, waiting, noSignal, boxesLeft]) {
+    assert.equal(p.tasks[1].finished, false);
+    assert.deepEqual(p.tasks[2].clash, [{ id: '1', files: ['site/index.html'], resources: [] }]);
+  }
+});
+
+test('a shared Markdown doc is still only a soft clash, finished or not (task 256)', () => {
+  const opts = { liveWorktrees: new Set(['wt-1']), branchAhead: new Map([['b-1', 2]]), liveOf: () => ({ state: 'stopped' }) };
+  for (const open of [0, 1]) {
+    const p = plan([mk(1, { paths: ['docs/A.md', 'a.js'], env: claimEnv, open, ticked: 2 }), mk(2, { paths: ['docs/A.md', 'b.js'] })], opts);
+    assert.deepEqual(p.tasks[2].clash, []);
+    assert.deepEqual(p.tasks[2].softClash, [{ id: '1', files: ['docs/A.md'] }]);
+  }
+});
+
 test('parked tasks split into "built — needs your look" and parked by choice', () => {
   const p = plan([
     mk(1, { status: 'PARKED', open: 1, ticked: 9 }),                                  // 90% ticked

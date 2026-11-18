@@ -24,11 +24,28 @@
 //                           for history the usage cursors already consumed (the
 //                           "rebucket"; pruned transcripts stay
 //                           approximated from usage rows' firstTs/lastTs).
+//   collect.lock  — held while a collection runs (task 253). See below.
+//
+// ONE COLLECTOR AT A TIME (task 253). Collections start from many places — the
+// SessionEnd hook of every chat, the noon LaunchAgent, the portal's boot sweep,
+// the Stats tab's Refresh — and the desktop app stops chats in batches, so a
+// dozen can start in the same millisecond. The cursor files used to be read,
+// worked on and rewritten in place with no lock, and an unreadable one was
+// treated as "nothing counted yet": one run read the file while another had it
+// half written, saved a cursor file holding only its own transcript, and the
+// next full sweep re-counted every other transcript into the ledger again
+// (2026-11-10 → 16: three full re-counts, ~$72k of duplicate cost). So:
+//   · a collection holds collect.lock; a run that finds it held does nothing
+//     (the transcript is still there; the next run counts it);
+//   · cursor files are written to a temp file and renamed into place;
+//   · a cursor file that exists but can't be parsed stops the run — starting
+//     from zero is exactly the re-count this prevents.
 
 import {
   readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync,
-  statSync, renameSync, realpathSync,
+  statSync, renameSync, realpathSync, openSync, closeSync, unlinkSync,
 } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, basename } from 'node:path';
 import { COGYARD_HOME, JOB_RUN_ROOT } from './paths.mjs';
 import { readRegistry, ledgerSlugResolver } from './registry.mjs';
@@ -41,12 +58,97 @@ const CLAIMS_PATH = join(USAGE_DIR, 'claims.jsonl');
 const CURSORS_PATH = join(USAGE_DIR, 'cursors.json');
 const ACTIVITY_PATH = join(USAGE_DIR, 'activity.jsonl');
 const ACTIVITY_CURSORS_PATH = join(USAGE_DIR, 'cursors-activity.json');
+const LOCK_PATH = join(USAGE_DIR, 'collect.lock');
+const COUNTED_KEYS_PATH = join(USAGE_DIR, 'counted-keys'); // task 257: one count per billed request
+// A lock this old is from a run that died without removing it (a killed hook,
+// a crashed portal). A full sweep of ~2,000 transcripts takes ~20 s.
+const LOCK_STALE_MS = 10 * 60 * 1000;
 
 // Transcript location + per-session lookup come from the active driver.
 function transcriptsRoot() { return adapter.transcripts.root(); }
 function findTranscriptsForSession(sessionId) { return adapter.transcripts.findBySession(sessionId); }
 
 function ensureUsageDir() { mkdirSync(USAGE_DIR, { recursive: true }); }
+
+// --- one collector at a time (task 253) --------------------------------------
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; }
+  catch (err) { return err.code === 'EPERM'; } // exists, just not ours
+}
+
+// A held lock is stale when its process is gone or it is older than any real
+// run. An unreadable lock (a run killed between create and write) is judged by
+// the file's age alone.
+function lockIsStale() {
+  let holder = null;
+  try { holder = JSON.parse(readFileSync(LOCK_PATH, 'utf8')); } catch { /* torn or gone */ }
+  if (holder && !pidAlive(holder.pid)) return true;
+  try { return Date.now() - statSync(LOCK_PATH).mtimeMs > LOCK_STALE_MS; }
+  catch { return true; } // removed meanwhile — free to try again
+}
+
+// One attempt at collect.lock → a release function, or null when held.
+// O_EXCL creation is the atomic step: of any number of processes trying at
+// once, exactly one creates the file.
+function tryCollectLock() {
+  const token = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fd = openSync(LOCK_PATH, 'wx');
+      try { writeFileSync(fd, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), token })); }
+      finally { closeSync(fd); }
+      return () => {
+        // Remove it only if it is still ours (a stale takeover may have replaced it).
+        try { if (JSON.parse(readFileSync(LOCK_PATH, 'utf8')).token === token) unlinkSync(LOCK_PATH); }
+        catch { /* already gone */ }
+      };
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
+      if (attempt > 0 || !lockIsStale()) return null;
+      try { unlinkSync(LOCK_PATH); } catch { /* another run took it over first */ }
+    }
+  }
+  return null;
+}
+
+// Take collect.lock, waiting up to `waitMs` for a running collection to
+// finish → a release function, or null. The CLI waits (a SessionEnd hook in a
+// batch of a dozen gets its turn in a second or two and its chat is counted
+// now); the portal passes 0, because its calls block the server's event loop.
+function acquireCollectLock(waitMs = 0) {
+  ensureUsageDir();
+  const deadline = Date.now() + waitMs;
+  const nap = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    const release = tryCollectLock();
+    if (release || Date.now() >= deadline) return release;
+    Atomics.wait(nap, 0, 0, 25 + Math.floor(Math.random() * 75));
+  }
+}
+
+// A cursor file → its object. Missing = nothing counted yet ({}); present but
+// unparseable = stop, naming the file. Never guess {} for a file that exists.
+function readCursorFile(path) {
+  if (!existsSync(path)) return {};
+  const text = readFileSync(path, 'utf8');
+  try { return JSON.parse(text); }
+  catch (err) {
+    throw new Error(`${path} cannot be read (${err.message}). Refusing to collect: `
+      + 'starting from an empty cursor file would count every transcript again. '
+      + 'Look at the file, then run `cogyard usage repair` to rebuild it.');
+  }
+}
+
+// Write a cursor file so no reader can ever see it half written.
+function writeCursorFile(path, cursors) {
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, JSON.stringify(cursors, null, 1) + '\n');
+  renameSync(tmp, path);
+}
+
+const LOCKED = Object.freeze({ rows: 0, files: 0, skipped: 'locked' });
 
 // A ledger read for QUERIES: each row's `project` mapped to the project that
 // owns that slug now (registry aliases — see ledgerSlugResolver). The files are
@@ -169,25 +271,115 @@ function addTokens(a, b) {
 
 // Collect new transcript content into the ledger. Idempotent: cursors.json
 // remembers how far into each file we've read; running twice appends nothing.
-// opts: {files?: [abs paths], backfilled?: bool}
-// → {rows: <appended count>, files: <files with new content>, skippedModels: [...]}
+// opts: {files?: [abs paths], backfilled?: bool, waitMs?: ms to wait for a
+//        running collection (default 0 — return at once)}
+// → {rows: <appended count>, files: <files with new content>, skippedModels: [...], activity}
+//   or, when another collection is still running, {rows: 0, files: 0, skipped: 'locked', …}
+// Throws when a cursor file exists but can't be read (see readCursorFile).
 function collectUsage(opts = {}) {
   ensureUsageDir();
   // No agent transcripts (no-op adapter) → nothing to harvest. The ledger keeps
   // whatever's already there; the usage tab degrades gracefully.
   if (!adapter.transcripts.supported) return { rows: 0, files: 0, skippedModels: [] };
+  const release = acquireCollectLock(opts.waitMs || 0);
+  if (!release) return { ...LOCKED, skippedModels: [], activity: { ...LOCKED } };
+  try {
+    const result = collectUsageLocked(opts);
+    return { ...result, activity: collectActivityLocked(opts) };
+  } finally { release(); }
+}
+
+function collectUsageLocked(opts) {
   const files = opts.files && opts.files.length ? opts.files : adapter.transcripts.list();
-  let cursors = {};
-  if (existsSync(CURSORS_PATH)) {
-    try { cursors = JSON.parse(readFileSync(CURSORS_PATH, 'utf8')); } catch { cursors = {}; }
+  const cursors = readCursorFile(CURSORS_PATH);
+  const counted = loadCountedKeys(cursors);
+  const { newRows, skippedModels, touchedFiles, newKeys } = harvestUsage(files, cursors, opts, counted);
+  if (newRows.length) {
+    appendFileSync(LEDGER_PATH, newRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
+  if (newKeys.length) appendFileSync(COUNTED_KEYS_PATH, newKeys.join('\n') + '\n');
+  writeCursorFile(CURSORS_PATH, cursors);
+  return { rows: newRows.length, files: touchedFiles, skippedModels };
+}
+
+// --- one count per billed request (task 257) -------------------------------
+//
+// The same billed request can sit in several transcript files:
+//   · a chat that moves into a worktree mid-way gets a file under each project
+//     folder, the second starting as a copy of the first (helper-agent logs are
+//     copied the same way);
+//   · a resumed or forked chat starts a NEW file, under a new name, that
+//     replays the earlier chat's messages re-stamped with the new chat's id —
+//     nothing in it names the old chat.
+// Counting each file on its own charged those messages twice or more. The one
+// link between the copies is the message's dedupeKey (API request id + message
+// id), unique per billed call. So the collector keeps an index of every key it
+// has counted, `usage/counted-keys` (a 16-hex-digit hash per line, appended
+// under collect.lock), and a key already in it is skipped wherever it turns up.
+// Files are read oldest first, so a replayed message stays with the chat that
+// made it. Replayed copies keep their original timestamps, so no cost changes
+// month.
+
+function keyHash(dedupeKey) {
+  return createHash('sha1').update(dedupeKey).digest('hex').slice(0, 16);
+}
+
+// The index of counted keys. Missing (the first run after upgrading, or a
+// deleted file): rebuilt from every transcript up to its cursor — exactly what
+// the ledger has counted — and written atomically before anything is added.
+function loadCountedKeys(cursors) {
+  if (existsSync(COUNTED_KEYS_PATH)) {
+    return new Set(readFileSync(COUNTED_KEYS_PATH, 'utf8').split('\n').filter(Boolean));
+  }
+  const keys = new Set();
+  for (const [file, cur] of Object.entries(cursors)) {
+    if (!cur || !cur.offset) continue;
+    let buf;
+    try { buf = readFileSync(file); } catch { continue; } // pruned since: nothing to re-read
+    for (const line of buf.subarray(0, cur.offset).toString('utf8').split('\n')) {
+      if (!line.trim()) continue;
+      const u = adapter.transcripts.parseLine(line)?.usage;
+      if (u) keys.add(keyHash(u.dedupeKey));
+    }
+  }
+  writeCountedKeys(keys);
+  return keys;
+}
+
+function writeCountedKeys(keys) {
+  const tmp = `${COUNTED_KEYS_PATH}.${process.pid}.tmp`;
+  writeFileSync(tmp, keys.size ? [...keys].join('\n') + '\n' : '');
+  renameSync(tmp, COUNTED_KEYS_PATH);
+}
+
+// How old a file is, for reading oldest first: the earlier of its birth time and
+// its last change. macOS keeps a real birth time, which is always the earlier.
+// Linux often doesn't — it reports 0, or a value no better than the change
+// time — and then the last change is the better clue (a resumed chat's
+// original stops being written when the chat moves on). Missing files sort
+// last (they are skipped anyway).
+function fileAge(file) {
+  let st;
+  try { st = statSync(file); } catch { return Infinity; }
+  return st.birthtimeMs > 0 ? Math.min(st.birthtimeMs, st.mtimeMs) : st.mtimeMs;
+}
+
+// Count each file's content past its cursor into ledger rows. Writes nothing:
+// advances `cursors` in place, adds what it counts to `counted` (the index of
+// counted keys, see above), and returns the rows plus the new keys.
+// collectUsage appends them; repairLedger counts every on-disk transcript from
+// byte 0 this way.
+function harvestUsage(files, cursors, opts = {}, counted = new Set()) {
   const windows = claimWindows();
   const capturedAt = new Date().toISOString();
   const newRows = [];
+  const newKeys = [];
+  const sessionsRead = new Set(); // every chat id met, counted or not (repair needs it)
   const skippedModels = new Set();
   let touchedFiles = 0;
 
-  for (const file of files) {
+  const ordered = files.map((f) => [fileAge(f), f]).sort((a, b) => a[0] - b[0]).map(([, f]) => f);
+  for (const file of ordered) {
     let size;
     try { size = statSync(file).size; } catch { continue; }
     const cur = cursors[file] || { offset: 0, recent: [] };
@@ -213,11 +405,17 @@ function collectUsage(opts = {}) {
       const parsed = adapter.transcripts.parseLine(line);
       if (!parsed) continue;
       if (!sessionId && parsed.sessionId) sessionId = parsed.sessionId;
+      if (parsed.sessionId) sessionsRead.add(parsed.sessionId);
       if (!cwd && parsed.cwd) cwd = parsed.cwd;
       const u = parsed.usage;
       if (!u) continue;
       if (seen.has(u.dedupeKey)) continue; // streaming repeats the same message id
       seen.add(u.dedupeKey);
+
+      const hash = keyHash(u.dedupeKey);
+      if (counted.has(hash)) continue; // counted already, from this or another transcript file
+      counted.add(hash);
+      newKeys.push(hash);
 
       const sid = parsed.sessionId || sessionId;
       const taskId = taskForTimestamp(windows.get(sid), u.timestamp);
@@ -262,15 +460,10 @@ function collectUsage(opts = {}) {
       }
       touchedFiles += 1;
     }
+    sessionsRead.add(sessionId || basename(file, '.jsonl'));
     cursors[file] = { offset: newOffset, recent: [...seen].slice(-100) };
   }
-
-  if (newRows.length) {
-    appendFileSync(LEDGER_PATH, newRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
-  }
-  writeFileSync(CURSORS_PATH, JSON.stringify(cursors, null, 1) + '\n');
-  const activity = collectActivity(opts);
-  return { rows: newRows.length, files: touchedFiles, skippedModels: [...skippedModels], activity };
+  return { newRows, skippedModels: [...skippedModels], touchedFiles, newKeys, sessionsRead };
 }
 
 // --- repricing --------------------------------------------------------------
@@ -285,6 +478,15 @@ function collectUsage(opts = {}) {
 // Rewrites the ledger atomically (tmp + rename). Runs across every project.
 // → {scanned, repriced, byModel: {<model>: n}, stillUnpriced: {<model>: n}}
 function repriceLedger(opts = {}) {
+  // Rewrites the ledger, so a collector appending meanwhile would lose rows:
+  // same lock as collection (task 253).
+  const release = acquireCollectLock(opts.waitMs || 0);
+  if (!release) return { scanned: 0, repriced: 0, byModel: {}, stillUnpriced: {}, skipped: 'locked' };
+  try { return repriceLedgerLocked(opts); }
+  finally { release(); }
+}
+
+function repriceLedgerLocked(opts) {
   const rows = readJsonl(LEDGER_PATH); // raw: this rewrites the file
   const byModel = {};
   const stillUnpriced = {};
@@ -331,6 +533,111 @@ async function refreshPricing() {
   try { reprice = repriceLedger(); }
   catch (err) { reprice = { error: err.message }; }
   return { sync, reprice };
+}
+
+// --- ledger repair (task 253) -----------------------------------------------
+//
+// Undo re-counts. A wiped cursor file made collectors read transcripts again
+// from byte 0 and append rows for messages already in the ledger, sometimes as
+// an exact copy of an earlier row and sometimes as one row covering several
+// earlier pieces. Rows don't record which FILE they came from — a chat's helper
+// agents write their own transcripts under the chat's session id, with rows
+// that legitimately sit inside the main chat's time span — so overlaps can't be
+// judged from the rows alone. The repair goes back to the source instead:
+//   · every chat with a transcript still on disk is counted again from byte 0,
+//     exactly as a fresh collection would, and those counts REPLACE all of that
+//     chat's ledger rows;
+//   · rows of chats whose transcripts are gone (pruned by the agent's
+//     retention) are kept, minus exact copies of an earlier row.
+// The cursor file is rebuilt from the same recount, so it matches the ledger.
+// Recounted rows are priced at today's rates (price table rates per model have
+// not changed) and carry `repairedAt`.
+
+// Two rows are copies when everything the collector derived from the
+// transcript is equal; capture time, price version and backfill flag are not.
+function rowIdentity(r) {
+  const t = r.tokens || {};
+  return JSON.stringify([r.sessionId, r.model, r.taskId ?? null, r.job ?? null, r.firstTs, r.lastTs, r.messages,
+    t.input || 0, t.output || 0, t.cacheRead || 0, t.cacheWrite5m || 0, t.cacheWrite1h || 0]);
+}
+
+// Monthly totals (by firstTs) for the before/after report.
+function monthlyCost(rows) {
+  const m = {};
+  for (const r of rows) {
+    const k = (r.firstTs || r.capturedAt || '').slice(0, 7);
+    m[k] = (m[k] || 0) + (r.costUSD || 0);
+  }
+  return Object.fromEntries(Object.entries(m).sort().map(([k, v]) => [k, Math.round(v * 100) / 100]));
+}
+
+// rows (raw ledger) + recount (fresh rows for every on-disk transcript) → the
+// repaired ledger and what changed. Pure; exported for tests.
+// `onDisk` (optional) is every chat id the recount read. A chat on disk whose
+// messages were all counted under an older chat (a resumed chat that only
+// replayed) has no recount rows of its own, and its old rows must still go.
+function planLedgerRepair(rows, recount, onDisk = null) {
+  const recounted = new Set([...recount.map((r) => r.sessionId), ...(onDisk || [])]);
+  const seen = new Set();
+  const kept = [];
+  let replaced = 0, copies = 0;
+  for (const r of rows) {
+    if (recounted.has(r.sessionId)) { replaced += 1; continue; }
+    const id = rowIdentity(r);
+    if (seen.has(id)) { copies += 1; continue; }
+    seen.add(id);
+    kept.push(r);
+  }
+  return { rows: [...kept, ...recount], replaced, copies, recountedChats: recounted.size };
+}
+
+// dryRun → report only. Otherwise usage.jsonl and cursors.json are copied to
+// `<file>.before-repair-<stamp>` first, then replaced atomically — all under
+// collect.lock, so no collector runs in between.
+function repairLedger(opts = {}) {
+  if (!adapter.transcripts.supported) return { skipped: 'no-transcripts' };
+  const release = acquireCollectLock(opts.waitMs || 0);
+  if (!release) return { skipped: 'locked' };
+  try {
+    const rows = readJsonl(LEDGER_PATH); // raw: this may rewrite the file
+    const cursors = {};
+    const counted = new Set(); // rebuilt from the recount, like the cursor file
+    const repairedAt = new Date().toISOString();
+    const { newRows, sessionsRead } = harvestUsage(adapter.transcripts.list(), cursors, {}, counted);
+    const recount = newRows.map((r) => ({ ...r, repairedAt }));
+    const plan = planLedgerRepair(rows, recount, sessionsRead);
+    const sum = (rs) => Math.round(rs.reduce((n, r) => n + (r.costUSD || 0), 0) * 100) / 100;
+    const recountedIds = new Set([...recount.map((r) => r.sessionId), ...sessionsRead]);
+    const result = {
+      scanned: rows.length,
+      kept: plan.rows.length,
+      recountedChats: plan.recountedChats,
+      replacedRows: plan.replaced,
+      recountRows: recount.length,
+      goneChatCopies: plan.copies,
+      costBefore: sum(rows),
+      costAfter: sum(plan.rows),
+      recountedCostBefore: sum(rows.filter((r) => recountedIds.has(r.sessionId))),
+      recountedCostAfter: sum(recount),
+      monthlyBefore: monthlyCost(rows),
+      monthlyAfter: monthlyCost(plan.rows),
+      cursorEntries: Object.keys(cursors).length,
+      backup: null,
+    };
+    if (opts.dryRun) return result;
+
+    const stamp = repairedAt.replace(/[:.]/g, '-');
+    // No ledger yet (a fresh machine): nothing to back up.
+    const backup = existsSync(LEDGER_PATH) ? `${LEDGER_PATH}.before-repair-${stamp}` : null;
+    if (backup) writeFileSync(backup, readFileSync(LEDGER_PATH));
+    if (existsSync(CURSORS_PATH)) writeFileSync(`${CURSORS_PATH}.before-repair-${stamp}`, readFileSync(CURSORS_PATH));
+    const tmp = `${LEDGER_PATH}.repair.tmp`;
+    writeFileSync(tmp, plan.rows.map((r) => JSON.stringify(r)).join('\n') + (plan.rows.length ? '\n' : ''));
+    renameSync(tmp, LEDGER_PATH);
+    writeCursorFile(CURSORS_PATH, cursors);
+    writeCountedKeys(counted);
+    return { ...result, backup };
+  } finally { release(); }
 }
 
 // --- activity collection ------------------------------------------
@@ -474,14 +781,19 @@ function chatSignals(sessionId) {
 // and the weights that let queries spread a usage row's locked-in cost across
 // hours/days). Same incremental walk as collectUsage but on its OWN cursor file —
 // see the header comment for why. Idempotent the same way.
+// Takes collect.lock itself; collectUsage runs it under the lock it already holds.
 function collectActivity(opts = {}) {
   ensureUsageDir();
   if (!adapter.transcripts.supported) return { rows: 0, files: 0 };
+  const release = acquireCollectLock(opts.waitMs || 0);
+  if (!release) return { ...LOCKED };
+  try { return collectActivityLocked(opts); }
+  finally { release(); }
+}
+
+function collectActivityLocked(opts) {
   const files = opts.files && opts.files.length ? opts.files : adapter.transcripts.list();
-  let cursors = {};
-  if (existsSync(ACTIVITY_CURSORS_PATH)) {
-    try { cursors = JSON.parse(readFileSync(ACTIVITY_CURSORS_PATH, 'utf8')); } catch { cursors = {}; }
-  }
+  const cursors = readCursorFile(ACTIVITY_CURSORS_PATH);
   const capturedAt = new Date().toISOString();
   const newRows = [];
   let touchedFiles = 0;
@@ -550,7 +862,7 @@ function collectActivity(opts = {}) {
   if (newRows.length) {
     appendFileSync(ACTIVITY_PATH, newRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
   }
-  writeFileSync(ACTIVITY_CURSORS_PATH, JSON.stringify(cursors, null, 1) + '\n');
+  writeCursorFile(ACTIVITY_CURSORS_PATH, cursors);
   return { rows: newRows.length, files: touchedFiles };
 }
 
@@ -747,6 +1059,6 @@ function taskUsage(slug, taskId) {
 export {
   USAGE_DIR, LEDGER_PATH, CLAIMS_PATH, ACTIVITY_PATH, transcriptsRoot, findTranscriptsForSession,
   appendClaimEvent, claimWindows, resolveProjectForPath, worktreeForPath, jobForPath, chatSignals,
-  collectUsage, collectActivity, repriceLedger, refreshPricing, readUsageLedger, readActivityLedger, ledgerPlacement, usageRollup, projectUsage, taskUsage,
+  collectUsage, collectActivity, repriceLedger, repairLedger, planLedgerRepair, refreshPricing, readUsageLedger, readActivityLedger, ledgerPlacement, usageRollup, projectUsage, taskUsage,
   sessionTaskFallback, effectiveTaskId, harvestTaskRefs,
 };

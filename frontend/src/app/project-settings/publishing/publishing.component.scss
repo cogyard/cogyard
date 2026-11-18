@@ -1,9 +1,14 @@
 :host { display: block; }
 
 /* Layout only — text styling comes from the shared recipes in styles.scss
-   (.settings-card / .card-title / .card-hint / .eyebrow / .hint / .ro-value).
-   The label-beside-value rows match the Location on disk card on this page
-   (project-settings.component.scss .ps-row), so the two cards line up. */
+   (.settings-card / .card-title / .card-subtitle / .card-hint / .eyebrow /
+   .hint / .ro-value). The label-beside-value rows match the Location on disk
+   card on this page (project-settings.component.scss .ps-row), so the two
+   cards line up. */
+
+/* A subtitle and the rows under it, closer together than the card's gap. */
+.pub-group { display: flex; flex-direction: column; gap: var(--app-space-3); }
+
 .pub-rows { display: flex; flex-direction: column; gap: var(--app-space-3); }
 .pub-row {
   display: grid; grid-template-columns: 110px minmax(0, 1fr);
@@ -15,23 +20,35 @@
   min-width: 0; font-size: 12.5px; color: var(--app-page-fg-strong);
 }
 .pub-val .ro-value { overflow-wrap: anywhere; }
-
-.pub-list {
-  margin: 0; padding-left: 18px;
-  display: flex; flex-direction: column; gap: var(--app-space-2);
-}
-/* In a value cell the list starts on the value column like every other value
-   (task 217); with more than one item the number is written inline. */
-.pub-val > .pub-list { padding-left: 0; list-style: none; }
 .pub-cred { display: inline-flex; align-items: center; gap: var(--app-space-2); }
 
-/* The defaults and the history sit under the facts with a rule between, as
-   the Location card's flags do. */
+/* Each part sits under the one above with a rule between, as the Location
+   card's flags do. */
 .pub-section {
   display: flex; flex-direction: column; gap: var(--app-space-3);
   padding-top: var(--app-space-4); border-top: 1px solid var(--app-border-soft);
 }
-.pub-defaults { font-size: 12.5px; color: var(--app-page-fg-strong); }
+
+/* "To publish": whether it would go through, then the steps in run order (task 259). */
+.pub-ready {
+  display: flex; align-items: baseline; gap: var(--app-space-3);
+  font-size: 12.5px; color: var(--app-page-fg-strong);
+}
+.pub-steps {
+  margin: 0; padding-left: 20px;
+  display: flex; flex-direction: column; gap: var(--app-space-3);
+  font-size: 12.5px; color: var(--app-page-fg-strong);
+}
+.pub-steps li::marker { color: var(--app-fg-muted); font-weight: 600; }
+.pub-section code { overflow-wrap: anywhere; }
+/* The step the owner does by hand: the one thing on the card they must act on. */
+.pub-you {
+  background: var(--app-accent-tint1); border-left: 3px solid var(--app-accent);
+  border-radius: 4px; padding: 6px 10px;
+}
+.pub-you .eyebrow { display: block; color: var(--app-accent-tint-fg); }
+.pub-note { margin: 0; font-size: 12.5px; color: var(--app-page-fg-strong); }
+.pub-p { margin: 0; }
 
 .pub-history { display: flex; flex-direction: column; gap: var(--app-space-2); font-size: 12.5px; }
 .pub-hrow { display: flex; align-items: center; flex-wrap: wrap; gap: var(--app-space-2) var(--app-space-3); }

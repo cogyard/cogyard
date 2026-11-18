@@ -37,6 +37,20 @@
 // Until then a free task sharing code with a running or chosen task sat in a
 // "code" group behind it.)
 //
+// A FINISHED task is in no other task's `clash` list (task 256). The list
+// exists to stop two chats writing the same file at once, not to hold a queue
+// behind work that is only waiting to be merged — and a finished task keeps its
+// claim until the merge, so it stays in `progress` meanwhile. Finished means all
+// three of:
+//   · its branch has commits main lacks (`code` is ahead),
+//   · the chat that claimed it is idle — stopped, errored, archived or deleted
+//     (core/live-state.mjs); a chat that is working or waiting on you is still
+//     writing, and with no live signal (`unknown`) it counts as writing,
+//   · every box still open is the owner's `(you: …)` or an `(after merge)` check.
+// One signal is not enough: a branch is ahead from a task's first commit, and a
+// chat is idle between any two turns. The task's own lists are unchanged, and a
+// shared Markdown doc is still a soft clash either way. `finished` is on the task.
+//
 // A task whose status is none of the known ones lands in no group and is listed
 // in `problems` instead (kind unknown-status), so nothing open disappears.
 //
@@ -148,6 +162,14 @@ const resourcesOf = (fm) => (Array.isArray(fm.resources) ? fm.resources : fm.res
   .filter((r) => typeof r === 'string' && r.trim()).map((r) => r.trim());
 const sharedResources = (a, b) => a.resources.filter((r) => b.resources.includes(r));
 
+// Finished work (task 256; the rule in the header): claimed, ahead of main, its
+// chat idle, and nothing left open but the owner's boxes and after-merge checks.
+const IDLE_AGENT = new Set(['stopped', 'error', 'archived', 'deleted']);
+function isFinished({ claimed, code, agent, body }) {
+  if (!claimed || code.state !== 'ahead' || !IDLE_AGENT.has(agent?.state)) return false;
+  return checkboxSteps(body || '').every((s) => s.done || s.settled || s.owner || s.afterMerge);
+}
+
 // Where a task's code is (task 251; the rules in the header). `branch` is the
 // name only while the branch still exists.
 function codeState({ id, branch, branchAhead, branchBehind, lastMerge }) {
@@ -237,6 +259,8 @@ function computePlan(input) {
       ...paths, filesUnknown: paths.files.length === 0, resources: resourcesOf(fm),
       youNext, youLater, youSteps, blocksOther: [], touchesOther: paths.outside.length > 0,
     });
+    const me = all[all.length - 1];
+    me.finished = isFinished({ claimed, code, agent: me.agent, body: t.body });
     if (claimed && !live) problems.push({ id, kind: 'stale-claim', text: `claimed since ${String(env.claimed_at).slice(0, 10)} but its worktree is missing` });
     if (paths.broad.length) problems.push({ id, kind: 'broad-paths', text: `lists whole folders (${paths.broad.join(', ')}) — ignored for clashes` });
     if (!(fm.touches_paths || []).length) problems.push({ id, kind: 'no-paths', text: 'lists no files — clashes cannot be checked' });
@@ -255,10 +279,10 @@ function computePlan(input) {
 
   // Clashes are computed among the tasks that can actually run (todo + running
   // + review, whose branches are real code) — a parked-by-choice task holds
-  // nothing back.
+  // nothing back, and neither does finished work waiting for its merge.
   const active = [...todo, ...running, ...review];
   for (const t of all) {
-    t.clash = active.filter((u) => u !== t)
+    t.clash = active.filter((u) => u !== t && !u.finished)
       .map((u) => ({ id: u.id, files: hardOverlap(t, u), resources: sharedResources(t, u) }))
       .filter((c) => c.files.length || c.resources.length);
     t.softClash = active.filter((u) => u !== t && !hardOverlap(t, u).length && softOverlap(t, u).length)
@@ -310,7 +334,7 @@ function computePlan(input) {
     youNext: t.youNext, youLater: t.youLater, youSteps: t.youSteps,
     touchesOther: t.touchesOther || t.blocksOther.length > 0,
     startNow: can.includes(t), claimedBy: t.claimedBy, worktreeMissing: t.claimed && !t.live,
-    claimedAt: t.claimedAt, claimedByOther: t.claimedByOther, agent: t.agent,
+    claimedAt: t.claimedAt, claimedByOther: t.claimedByOther, agent: t.agent, finished: t.finished,
   });
   const ids = (list) => list.map((t) => t.id);
   return {

@@ -23,8 +23,9 @@ The three invariants this protects:
 
 - **Resolve the target branch FIRST.** Run `cogyard tasks default-branch` and capture the result as `<base>` (it prints `main` or `master`). If the `cogyard` CLI isn't installed, fall back to `git symbolic-ref --short refs/remotes/origin/HEAD` (strip the `origin/` prefix; if that fails too, check which of `main`/`master` exists). Every step below targets `<base>` — never hardcode `main`. "merge-to-main" is the skill's name, not an assumption about the branch.
 - Current branch is NOT `<base>`. If already on it, stop — nothing to merge.
-- In a Claude Code worktree (path contains `/.claude/worktrees/`), you cannot `git checkout <base>` — it's checked out in the primary clone. Find it with `git worktree list` (first entry) and run all base-side steps via `git -C <main-checkout>` / building in that directory.
-- **If a worktree-isolation guard refuses `git -C <main-checkout>`**, that route is closed and there is one sanctioned way out: leave the worktree with the **ExitWorktree** tool (`action: "keep"` — the worktree and branch stay on disk), then follow the normal-clone path from step 4 in the base checkout. Do not improvise a third way around the guard, and do not abandon the merge half-done.
+- **In a worktree you cannot `git checkout <base>`** — it is checked out in the main checkout (the first entry of `git worktree list`). How the base-side steps (4 onwards) reach it depends on the kind of worktree:
+  - **A Claude Code worktree** (path contains `/.claude/worktrees/`): steps 1–3 run in the worktree, on the branch. Then leave it with the **ExitWorktree** tool (`action: "keep"` — the worktree and branch stay on disk) and run steps 4 onwards in the main checkout exactly as a normal clone does. This is the normal route, not a fallback: Claude Code's worktree sandbox refuses `git -C <main-checkout>` from inside a worktree, every time. Do not improvise another way around it, and do not abandon the merge half-done.
+  - **Any other worktree:** stay in it and run every base-side step via `git -C <main-checkout>`, building in that directory.
 - If the working tree is dirty, stop and resolve with the user first.
 - **The task's file is written properly (cogyard-managed repos).** When the
   branch maps to a cogyard task (as in step 10), run `cogyard tasks validate
@@ -67,6 +68,12 @@ The three invariants this protects:
    3. **Behind check:** if `git log --oneline <base>..origin/<base>` is non-empty,
       fast-forward local `<base>` first (`git -C <main-checkout> pull origin <base>`
       — pull step 5 early; it must be a clean ff, else stop and resolve with the user).
+      In a Claude Code worktree that command is refused, so instead: when step 1.2
+      found local `<base>` NOT ahead of origin, rebase in 1.4 onto `origin/<base>`
+      (it then holds everything local `<base>` has, so this is the same target), and
+      step 5's pull fast-forwards local `<base>` to it after you leave the worktree.
+      Local `<base>` both ahead and behind is not a clean ff: stop and resolve with
+      the user.
    4. Now compare the branch against LOCAL `<base>`: `git log --oneline HEAD..<base>`.
    - **Empty** → `<base>` has not moved past this branch; go straight to step 2 (no question needed).
    - **Non-empty** → `<base>` has advanced. Read `rebase.value` from the switches:
@@ -80,13 +87,13 @@ The three invariants this protects:
    one step at a time; on conflict STOP and resolve WITH the user, whatever the
    switch says — never `git merge <base>` into the branch. No rebase: proceed
    unchanged.
-   **Sanity gate before step 6:** after the rebase, `git -C <main-checkout>
-   merge <branch>` must FAST-FORWARD. If git creates a merge commit anyway,
+   **Sanity gate before step 6:** after the rebase, step 6's merge must
+   FAST-FORWARD. If git creates a merge commit anyway,
    something was missed — STOP and show the user `git log --graph --oneline -6`
    instead of pushing.
 2. **Build on the branch.** Run the project's build (root `npm run build` if the root package.json has one; otherwise the project's documented build command). Zero errors AND zero warnings — if either exist, stop and report.
-3. **Push the branch** to origin. Skip silently if the repo has no remote.
-4. **Get on `<base>` — run the checkout, do not conclude it.** Normal clone: run `git checkout <base>`. Run it even when the branch was just read as `<base>`; it is idempotent, so running it is never wrong, and a stale read is precisely when it matters. Worktree: locate the base checkout per Preconditions and use `git -C` for every remaining step.
+3. **Push the branch** to origin. Skip silently if the repo has no remote. When the branch was already on origin and step 1 rebased it, a plain push is refused (the rebase rewrote commits origin has): push it with `git push --force-with-lease origin <branch>`, which refuses if anyone else pushed to it since. Only ever the task's own branch — never `<base>`.
+4. **Get on `<base>` — run the checkout, do not conclude it.** From a Claude Code worktree, first leave it with **ExitWorktree** (`action: "keep"`, per Preconditions); you are then in the main checkout and everything from here is the normal-clone route. Normal clone (or main checkout): run `git checkout <base>`. Run it even when the branch was just read as `<base>`; it is idempotent, so running it is never wrong, and a stale read is precisely when it matters. Any other worktree: locate the base checkout per Preconditions and use `git -C` for every remaining step.
 5. **Pull `<base>`**: `git pull origin <base>` (skip if no remote). NEVER merge without this step — merging over old commits is the exact bug it kills. "Already up to date" here while local `<base>` is AHEAD of origin is NOT confirmation of sync — that state was already surfaced in step 1.2; if step 1.2 was somehow skipped, run it now before merging.
 6. **Merge, with the branch check in the same command.** The check and the merge must be one shell command, so that nothing can move the checkout between them:
 
@@ -94,8 +101,8 @@ The three invariants this protects:
    [ "$(git branch --show-current)" = "<base>" ] && git merge <branch-name>
    ```
 
-   In a worktree, the same shape with `git -C <main-checkout>` on both halves (a literal, unquoted path — no shell variable). Run it exactly as written: no `2>&1 | tail`, no extra flags such as `--no-ff` or `-m`, nothing chained before or after it. A permission guard can then recognise this one form as the skill's own merge and let it through without asking; any variation looks like a hand-typed merge and gets the question. Reading the branch in an earlier step does not substitute for this — that reading is what step 4 already re-asserted, and this is what proves it still holds at the instant of the merge. If the check fails, the command merges nothing: stop and find out what moved the checkout.
-7. **Version bump — as the `version` switch says.** Everything here runs on `<base>`, from the REPO ROOT (in a worktree: `git -C <main-checkout>` / that directory).
+   From a worktree that isn't a Claude Code one, the same shape with `git -C <main-checkout>` on both halves (a literal, unquoted path — no shell variable). Run it exactly as written: no `2>&1 | tail`, no extra flags such as `--no-ff` or `-m`, nothing chained before or after it. A permission guard can then recognise this one form as the skill's own merge and let it through without asking; any variation looks like a hand-typed merge and gets the question. Reading the branch in an earlier step does not substitute for this — that reading is what step 4 already re-asserted, and this is what proves it still holds at the instant of the merge. If the check fails, the command merges nothing: stop and find out what moved the checkout.
+7. **Version bump — as the `version` switch says.** Everything here runs on `<base>`, from the REPO ROOT — the main checkout, where a Claude Code worktree session now is after step 4 (from any other worktree: `git -C <main-checkout>` / that directory).
    - **The merge already changed the version → skip the bump.** (Not when `version.value` is `off`: there is no file to check.) `version.file` is the file that holds the version. Check it across the merge: `git diff HEAD@{1} HEAD -- <version.file>`. If the merge itself changed the version in it, that was a deliberate version set on the branch, and bumping again would clobber it. Keep it and say so in the report.
    - Otherwise, by `version.value`:
      - **`off`** → no bump. The report says "versioning is off for this project".
@@ -180,8 +187,8 @@ The three invariants this protects:
       run git inside the task store (`revert`, `commit`, `reset`): hooks refuse
       both, and the store's history is the record of what happened.
     Skip silently when the repo isn't cogyard-managed or no task maps.
-11. **Stop the merged worktree's dev server.** Only when this session ran in a Claude Code worktree (cwd contains `/.claude/worktrees/`). A worktree's server is left running until the merge so the owner can look at the work; once merged it has nothing left to show. If one is running for this worktree — a `preview_list` entry, or a listener on the worktree's frontend port (`cogyard env detect`, then `cogyard env port-owner <port>` with `matches: true`) — stop it with `preview_stop`, or kill that one PID. Never `pkill` / `killall`: the main checkout's portal runs the same command line. Nothing running → skip silently. Never stop a server belonging to another worktree or the main checkout.
-12. **Delete the merged worktree's `node_modules` — no question.** Only when this session ran in a Claude Code worktree (cwd contains `/.claude/worktrees/`) AND `<worktree>/node_modules` exists. Worktrees share the parent repo's git objects, so `node_modules` is the only heavy thing left once the work is merged; the worktree dir and branch stay (chat-archiving removes worktrees, not this). Measure it (`du -sh <worktree>/node_modules`), delete it (`rm -rf <worktree>/node_modules`, run on its own), and put the size freed in the report. NEVER touch the base checkout's `node_modules` (the merge built from it; on `<base>` it may feed a long-running server). Regenerable: `npm install` restores it if the worktree is reopened.
+11. **Stop the merged worktree's dev server.** Only when the merged branch was worked in a Claude Code worktree (a path containing `/.claude/worktrees/` — the one this session left at step 4, or the branch's entry in `git worktree list`). A worktree's server is left running until the merge so the owner can look at the work; once merged it has nothing left to show. If one is running for this worktree — a `preview_list` entry, or a listener on the worktree's frontend port (`cogyard env detect`, then `cogyard env port-owner <port>` with `matches: true`) — stop it with `preview_stop`, or kill that one PID. Never `pkill` / `killall`: the main checkout's portal runs the same command line. Nothing running → skip silently. Never stop a server belonging to another worktree or the main checkout.
+12. **Delete the merged worktree's `node_modules` — no question.** Only when the merged branch was worked in a Claude Code worktree (as in step 11) AND `<worktree>/node_modules` exists. Worktrees share the parent repo's git objects, so `node_modules` is the only heavy thing left once the work is merged; the worktree dir and branch stay (chat-archiving removes worktrees, not this). Measure it (`du -sh <worktree>/node_modules`), delete it (`rm -rf <worktree>/node_modules`, run on its own), and put the size freed in the report. NEVER touch the base checkout's `node_modules` (the merge built from it; on `<base>` it may feed a long-running server). Regenerable: `npm install` restores it if the worktree is reopened.
 
 ## Report
 

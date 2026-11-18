@@ -396,10 +396,16 @@ async function cmdList(rest) {
     // printed twice. The portal shows both at once (its worktree table and its
     // chats list answer different questions); a text dump does not need the
     // duplication to carry the same information.
+    //
+    // A chat another chat started follows it, indented a step per level
+    // (task 258, as on the page). A chat with children is printed even when
+    // already shown above, so its children never hang under nothing.
     const shown = new Set(p.items.filter((i) => i.chat).map((i) => i.chat.sessionId));
+    const parents = new Set(p.chats.map((c) => c.parentSessionId).filter(Boolean));
     for (const c of p.chats) {
-      if (shown.has(c.sessionId)) continue;
-      process.stdout.write(`  ${c.ready ? 'ARCHIVE   ' : 'HOLD      '} "${c.title}" — ${c.reason}\n`);
+      if (shown.has(c.sessionId) && !parents.has(c.sessionId)) continue;
+      const indent = '  '.repeat(c.depth || 0);
+      process.stdout.write(`  ${c.ready ? 'ARCHIVE   ' : 'HOLD      '} ${indent}"${c.title}" — ${c.reason}\n`);
     }
   }
   process.stdout.write(`\n${report.totalRemovable} worktree(s) removable · ${report.totalArchivable} chat(s) ready to archive in Claude's own UI.\n`);

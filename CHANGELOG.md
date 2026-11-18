@@ -11,6 +11,50 @@ mirrors the `v*` release tags, not every intermediate bump.
 
 ## [Unreleased]
 
+## [2.11.0] — 2026-11-17
+
+### Added
+
+- **Cleanup shows chats under the chat that started them** — the Cleanup tab
+  and `cogyard cleanup` nest a side session or autopilot worker under its parent
+  chat, as the Claude app does. A chat run outside every registered project now
+  appears under its top chat's project instead of on no Cleanup tab at all.
+- **`cogyard tasks validate` flags boxes a task should never have** — a box
+  about a production deploy is an error, and a box for the owner looking at the
+  work is a warning, so they're caught when the task is written, not when
+  `cogyard tasks close` refuses it.
+
+### Changed
+
+- **The Publishing card reads in the order a publish runs** — what's live now,
+  then numbered steps with your hand step highlighted, and a ready / not ready
+  line that gives the same reason `cogyard publish` would print. A project that
+  goes live on every push, or lists no deploy step, says so instead of offering
+  a command that would be refused.
+
+### Fixed
+
+- **The cost ledger re-counted all history after several chats ended at once.**
+  The Claude desktop app stops chats in batches. Each stop ran a collector, the
+  collectors raced on the bookmark file (`~/.cogyard/usage/cursors.json`), and
+  one could save it listing only its own transcript, so the next run counted
+  every other transcript again from the start. Collection now runs one at a time
+  under a lock, the bookmark file is written atomically, and an unreadable one
+  stops the run instead of starting over. **If your costs look inflated**, run
+  `cogyard usage repair --dry-run` to see the correction, then
+  `cogyard usage repair`.
+- **The cost ledger counted some chats twice** — a chat whose transcript exists
+  in two project folders (it moved into a worktree partway through), and a
+  resumed or forked chat that replays earlier messages under a new chat id. Each
+  billed request now counts once across all transcripts; `cogyard usage repair`
+  fixes rows already written.
+- **Autopilot stopped for good on a backlog whose tasks all edit one file** — a
+  finished task waiting to be merged still counted as clashing with every other
+  task. A finished task no longer blocks others, tasks that share a file run one
+  after another in the same run, and the run's commands are tried out before any
+  question is asked. `merge-to-main` now leaves a Claude Code worktree before
+  doing the steps on main.
+
 ## [2.0.0] — 2026-11-15
 
 **Upgrading from 1.x.** This release changes what you type and where cogyard

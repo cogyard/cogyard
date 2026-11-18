@@ -203,7 +203,15 @@ export default {
     //   { title, sessionId, cwd, isArchived, lastActivityAt /* ISO | null */,
     //     priorSessionIds /* optional: transcript ids the chat used before
     //     its current sessionId — e.g. after a rewind. A ledger row recorded
-    //     under one of them still resolves to this chat's title. */ }
+    //     under one of them still resolves to this chat's title. */
+    //     parentSessionId /* optional: the chat that started this one (a side
+    //     session, a worker), as a sessionId of another row; null or omitted
+    //     for a chat the person started. */
+    //     rootSessionId /* optional: the top chat of that tree, as a sessionId.
+    //     The Cleanup report nests children under their parent, files a child
+    //     run in an unregistered folder under its top chat's project, and holds
+    //     a parent while a child is held. A driver that omits both: every chat
+    //     is top-level, exactly as before. */ }
     list() { return [/* rows */] },
     listArchived() { return [/* archived subset */] },
     // For each chat id, what the OWNER did with it in the app:

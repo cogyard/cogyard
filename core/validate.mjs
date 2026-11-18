@@ -8,6 +8,81 @@
 
 import { basename } from 'node:path';
 import { STATUSES, isValidStatus, isOpen, hasDoneDate, TYPES, isValidType, OWNER_STEP_KINDS, isOwnerStepKind, SETTLED_KINDS, SETTLED_KIND_NAMES, RETIRED_SETTLED_KINDS, isSettledKind, AFTER_MERGE_MARK_RE, AFTER_MERGE_NEAR_RE, blankCodeBlocks } from './status.mjs';
+import { checkboxSteps } from './frontmatter.mjs';
+
+// Boxes the write-task skill forbids (task 255). The skill
+// (drivers/claude/skills/write-task/SKILL.md) has three rules; quoted here so
+// an edit to the skill is visibly coupled to this check:
+//
+//   "No box for the owner looking at the work. … never write "the owner looks
+//    at it", "the owner tries it on their phone", "the owner lives with it for
+//    a few days" or "the owner confirms it" as a box."
+//   "No box for anything after a deploy. Deploying is the owner's."
+//   "(after merge) … Never for something that needs a production deploy."
+//
+// Which is mechanical and which is a guess:
+//   - The after-deploy rule and the (after merge) rule are ONE check: a box
+//     that is a deploy step or a check against production/the live site. The
+//     (after merge) marker only changes which rule the message quotes — 015 in
+//     cogyard-site carried its deploy box with no marker at all. Matched on
+//     PHRASES, never single words: "deploy", "production" and "live" appear in
+//     many legitimate boxes (".env.production", "One deployment serving a
+//     team", "Hand the live URL to task 029"). An ERROR (owner, 2026-11-17).
+//   - The owner-looking rule is a WORDING HEURISTIC: the box text OPENS with
+//     the owner (or user) doing the looking. Only at the start — mid-sentence,
+//     "so the owner confirms the delete" is a feature being built. A WARNING
+//     (owner, 2026-11-17): a false match must not stop a legitimate box being
+//     written. A `(you: …)` box is the sanctioned owner step and is skipped.
+// Prefer missing a case to flagging a legitimate box.
+//
+// Only OPEN boxes on a task still in play (OPEN / PARKED) are checked: a
+// ticked box is history, a settled box (`(dropped: …)` etc.) often quotes the
+// very rule in its reason, and a closed task's file is its record.
+//
+// Every phrase the deploy check matches (case-insensitive, after `*` and `` ` ``
+// are removed from the box text):
+const DEPLOY_BOX_PHRASES = [
+  /^(?:the )?(?:owner|user)(?: \([^)]*\))? (?:re)?deploys\b/, // "Owner deploys via `npx wrangler deploy` and live-verifies"
+  /\bdeploy (?:is |was )?(?:run|ran)\b/, // "`npx wrangler deploy` run, https://cogyard.com/docs.html reloaded" (cogyard-site 015)
+  /\bafter (?:the |a |each )?(?:deploy|deployment|redeploy)\b/, // "watch it after the deploy", "… returns gzip after deploy"
+  /\bpost-deploy\b/,
+  /\bonce (?:it is |it's |this is )?(?:deployed|live)\b/,
+  /\bon (?:the )?(?:production|live) site\b/,
+  /\b(?:check|checked|verify|verified|confirm|confirmed) (?:it|that it|it's|the change)(?: is)? live\b/, // "Deploy and check it live" (cogyard-site 018)
+  /\blive[- ]verif/, // "live-verifies"
+];
+// Left out on purpose, each because a real store had a legitimate box with it:
+//   - a box OPENING with "Deploy …": in an infrastructure task the deploy IS
+//     the work ("Deploy the media server via Docker Compose", "Deploy Redis instance").
+//   - "against production": the pickup skill's own live-schema check before a
+//     migration ("Confirm the schema-state query … against production").
+//   - "confirm live" with no "it": "Confirm live TV plays on a LAN client".
+//   - "deploy succeeds": an infrastructure task's own check of its deploy.
+//
+// Every phrasing the owner-looking heuristic matches — the box text must OPEN
+// with it (after `*` and `` ` `` are removed). A box that also says "decide"
+// is an owner DECISION written without its `(you: decision)` marker, not the
+// owner looking at the work, so it is skipped.
+const OWNER_LOOK_PHRASE = /^(?:the )?(?:owner|user)(?: \([^)]*\))?(?:'s)? (?:looks|reviews|review|tries|confirms|checks|approves|approval|signs off|sign-off|lives with|eyeballs|tests)\b/;
+const OWNER_DECIDES = /\bdecid/;
+const plainBoxText = (s) => String(s || '').replace(/[*`]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+const quoteBox = (s) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length <= 70 ? t : t.slice(0, 70).replace(/\s+\S*$/, '') + '…'; };
+export const DEPLOY_BOX_RULE = 'the write-task skill: "No box for anything after a deploy. Deploying is the owner\'s." Describe the deploy in prose under "Deploy verify", or settle the box: (dropped: <why>)';
+export const AFTER_MERGE_DEPLOY_RULE = 'the write-task skill, on (after merge): "Never for something that needs a production deploy." Describe the deploy in prose under "Deploy verify", or settle the box: (dropped: <why>)';
+export const OWNER_LOOK_RULE = 'the write-task skill: "No box for the owner looking at the work." The owner\'s "merge it" is their review; settle the box: (dropped: <why>)';
+function forbiddenBoxProblems(body) {
+  const errors = [], warnings = [];
+  for (const s of checkboxSteps(body)) {
+    if (s.done || s.settled) continue;
+    const t = plainBoxText(s.text);
+    if (DEPLOY_BOX_PHRASES.some((re) => re.test(t))) {
+      errors.push(`checkbox "${quoteBox(s.text)}" — a box for a deploy or a check against production; ${s.afterMerge ? AFTER_MERGE_DEPLOY_RULE : DEPLOY_BOX_RULE}`);
+    } else if (!s.owner && OWNER_LOOK_PHRASE.test(t) && !OWNER_DECIDES.test(t)) {
+      warnings.push(`checkbox "${quoteBox(s.text)}" — looks like a box for the owner looking at the work (a wording guess); ${OWNER_LOOK_RULE}`);
+    }
+  }
+  return { errors, warnings };
+}
 
 // Levenshtein distance — for "did you mean (dropped)?" on a misspelt marker word.
 function editDistance(a, b) {
@@ -203,6 +278,15 @@ export function validateTask(task, ctx = {}) {
     for (const p of m[1].match(/\([^)]*\)/g) || []) {
       if (AFTER_MERGE_NEAR_RE.test(p) && !AFTER_MERGE_MARK_RE.test(p)) boxErr(`checkbox "${p}" — write it as (after merge)`);
     }
+  }
+
+  // Boxes the write-task skill forbids (task 255) — see forbiddenBoxProblems.
+  // The deploy error starts `checkbox `, so `close`, `doctor`, the portal and
+  // the write hook treat it like every other marker problem.
+  if (fm.status != null && isOpen(fm.status)) {
+    const fb = forbiddenBoxProblems(task.body);
+    for (const e of fb.errors) boxErr(e);
+    for (const w of fb.warnings) warn(w);
   }
 
   // dangling dependencies — referenced id has no task file. A cross-project dep

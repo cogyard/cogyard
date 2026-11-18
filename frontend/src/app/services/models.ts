@@ -579,9 +579,14 @@ export interface CleanupChat {
    *  WORKED on is done (tasks it only looked up never hold it) and no worktree
    *  it ran in is still on disk (task 152). */
   ready: boolean; reason: string;
-  /** One entry per hold: a worked task (`taskId`) or a worktree the chat ran
-   *  in that is still on disk (`worktree`). */
-  waitingOn: { taskId?: string; worktree?: string; why: string }[];
+  /** One entry per hold: a worked task (`taskId`), a worktree the chat ran
+   *  in that is still on disk (`worktree`), or a chat this one started that is
+   *  still held (`chat` + its `title`, task 258). */
+  waitingOn: { taskId?: string; worktree?: string; chat?: string; title?: string | null; why: string }[];
+  /** The chat that started this one, when the agent driver knows (task 258). */
+  parentSessionId?: string | null;
+  /** In the Chats list: 0 for a top-level chat, +1 per parent above it. */
+  depth?: number;
 }
 export interface CleanupItem {
   project: string;
@@ -700,6 +705,10 @@ export interface PublishStatus {
   tip: { ref: string; short: string; version: string | null } | null;
   lastRelease: { tag: string; short: string | null; date: string | null; unreleased: number } | null;
   live: { url: string; reachable: boolean; commit: string | null; servesTip: boolean } | null;
+  /** Would `cogyard publish` go through now — its own two checks, without the
+   *  fetch (as of the last fetch); `reason` is the sentence it prints when it
+   *  refuses. Null when the project is undeclared or its file is invalid. */
+  ready: { ok: boolean; reason: string | null } | null;
   prePushHook: string | null;
   history: PublishHistoryRow[];
   defaults: {

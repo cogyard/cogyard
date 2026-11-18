@@ -212,8 +212,15 @@
                 <!-- The flex layout sits on an inner span, never the <td>: a
                      cell with display:flex stops being a table cell, and its
                      border and vertical alignment fall out of the row (task 150). -->
-                <td>
-                  <span class="o-title-line">
+                <!-- A chat another chat started sits under it (task 258):
+                     indented one step per level, with a guide line per level
+                     joining it to its parent, like Claude's own sidebar. The
+                     lines span the full cell height so they join row to row. -->
+                <td [class.c-nested]="c.depth">
+                  @for (i of guides(c); track i) {
+                    <span class="c-guide" [style.--i]="i" aria-hidden="true"></span>
+                  }
+                  <span class="o-title-line" [style.--depth]="c.depth || 0">
                     <img class="o-chat" src="assets/chat.svg" alt="" aria-hidden="true" />
                     <span class="o-title">{{ c.title }}</span>
                   </span>

@@ -16,7 +16,7 @@
 //   skills      — project skills, CLAUDE*.md, skillOverrides, how cogyard is installed
 
 import { homedir, tmpdir } from 'node:os';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync, realpathSync, lstatSync, openSync, readSync, closeSync, statSync } from 'node:fs';
 import { spawnSync, spawn } from 'node:child_process';
@@ -595,9 +595,20 @@ export default {
     // and keeps the old ids in priorCliSessionIds, which ride along as
     // priorSessionIds so a ledger row recorded under an old id still finds its
     // chat (task 208). Still ONE row per chat.
+    //
+    // PARENT CHATS (task 258). A chat another chat started (a side session, an
+    // autopilot worker) records it: `spawnedFrom.sessionId` is the chat that
+    // started it, `startChain.firstSessionId` the top chat of the tree. Both
+    // are the APP's ids (`local_…`, the file's own `sessionId`), not the
+    // transcript id every row is keyed by, so they are translated here, after
+    // every file is read. A link to a chat whose file is gone is null — the
+    // engine then treats the chat as top-level, as it does for any driver that
+    // supplies no parent at all.
     list() {
       if (!existsSync(DESKTOP_SESSIONS_ROOT)) return [];
       const rows = [];
+      const links = new Map();      // row → { parent, root } as app ids
+      const transcriptOf = new Map(); // app id → cliSessionId
       for (const rel of readdirSync(DESKTOP_SESSIONS_ROOT, { recursive: true })) {
         if (!String(rel).endsWith('.json')) continue;
         const file = join(DESKTOP_SESSIONS_ROOT, String(rel));
@@ -605,15 +616,29 @@ export default {
         try { d = JSON.parse(readFileSync(file, 'utf8')); }
         catch { continue; }
         if (!d || typeof d !== 'object' || !('cliSessionId' in d)) continue;
-        rows.push({
+        const row = {
           title: d.title || null,
           sessionId: d.cliSessionId || null,
           priorSessionIds: Array.isArray(d.priorCliSessionIds) ? d.priorCliSessionIds.filter(Boolean) : [],
           cwd: d.cwd || d.originCwd || null,
           isArchived: !!d.isArchived,
           lastActivityAt: typeof d.lastActivityAt === 'number' ? new Date(d.lastActivityAt).toISOString() : null,
+          parentSessionId: null,
+          rootSessionId: null,
           metaFile: file,
-        });
+        };
+        rows.push(row);
+        const appId = d.sessionId || basename(file, '.json');
+        if (row.sessionId) transcriptOf.set(appId, row.sessionId);
+        const parent = d.spawnedFrom && d.spawnedFrom.sessionId;
+        const root = d.startChain && d.startChain.firstSessionId;
+        if (parent || root) links.set(row, { parent, root });
+      }
+      for (const [row, { parent, root }] of links) {
+        const p = (parent && transcriptOf.get(parent)) || null;
+        const r = (root && transcriptOf.get(root)) || null;
+        row.parentSessionId = p && p !== row.sessionId ? p : null;
+        row.rootSessionId = r && r !== row.sessionId ? r : null;
       }
       rows.sort((a, b) => String(b.lastActivityAt).localeCompare(String(a.lastActivityAt)));
       return rows;

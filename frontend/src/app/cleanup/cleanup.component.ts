@@ -266,10 +266,21 @@ export class CleanupComponent {
   // reads `worktree on disk`, with the worktree itself named beside it
   // (heldByWorktrees). "No task found" is gone: a chat that worked on no task
   // and ran in no worktree still on disk is READY.
+  //
+  // Task 258: a parent chat also waits on a chat it started that is still
+  // held. The badge counts those ("waiting on #4, 2 chats") — the chats
+  // themselves are the rows right under it, and the tooltip names them.
   blockerKind(c: CleanupChat): string {
     if (c.ready) return 'ready';
     if (this.heldByWorktrees(c).length) return 'worktree on disk';
-    return `waiting on #${c.waitingOn.filter((w) => w.taskId).map((w) => w.taskId).join(', #')}`;
+    const tasks = c.waitingOn.filter((w) => w.taskId).map((w) => `#${w.taskId}`);
+    const chats = c.waitingOn.filter((w) => w.chat).length;
+    const parts = chats ? [...tasks, chats === 1 ? '1 chat' : `${chats} chats`] : tasks;
+    return `waiting on ${parts.join(', ')}`;
+  }
+  /** One guide line per level above a child chat (task 258): 0..depth-1. */
+  guides(c: CleanupChat): number[] {
+    return Array.from({ length: c.depth || 0 }, (_, i) => i);
   }
   heldByWorktrees(c: CleanupChat): string[] {
     return c.waitingOn.filter((w) => w.worktree).map((w) => w.worktree!);

@@ -123,6 +123,22 @@ tr.done { opacity: 0.72; }
    flex <td> is no longer a table cell (task 150). min-width: 0 lets the title
    still ellipsis inside the fixed-width column. */
 .o-title-line { display: flex; align-items: center; gap: var(--app-space-2); min-width: 0; }
+/* A chat another chat started (task 258): one indent step per level, and a
+   guide line per level, centred under the chat glyph of the row it hangs
+   from. The lines run the cell's full height (top/bottom 0 on a positioned
+   <td>), so consecutive rows' lines meet into one, as in Claude's sidebar.
+   --c-pad is the shared table's left cell padding (styles.scss sets
+   --p-datatable-body-cell-sm-padding: 5px 10px — a shorthand, so calc can't
+   read the 10px out of it), and +7px is half the 14px chat glyph, so the line
+   lands under the glyph's centre at any level. */
+:host ::ng-deep .p-datatable.cl.chats { --c-indent: 20px; --c-pad: 10px; }
+td.c-nested { position: relative; }
+td.c-nested .o-title-line { padding-left: calc(var(--depth, 0) * var(--c-indent)); }
+.c-guide {
+  position: absolute; top: 0; bottom: 0;
+  left: calc(var(--c-pad) + var(--i) * var(--c-indent) + 7px);
+  border-left: 1px solid var(--app-border);
+}
 /* Held rows (task 144) — not archivable yet, so the title reads at normal
    rather than strong weight; the status chip does the rest of the telling. */
 tr.held .o-title { color: var(--app-page-fg); }

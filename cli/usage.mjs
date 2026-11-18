@@ -10,17 +10,26 @@
 //                                        transcripts, rows flagged backfilled:true
 //   usage.mjs reprice [--dry-run]        price the rows a missing model left at
 //                                        costUSD:null (all projects)
+//   usage.mjs repair [--dry-run] [--out <file>]
+//                                        remove re-counted rows (task 253) and
+//                                        rebuild the cursor file to match
 //   usage.mjs pricing [sync]             show the active price table (or pull
 //                                        live rates now, then reprice)
 //   usage.mjs report [project]           rollup (all projects, or one in detail)
 //   usage.mjs --help
 
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import {
-  collectUsage, repriceLedger, refreshPricing, readUsageLedger,
+  collectUsage, repriceLedger, repairLedger, refreshPricing, readUsageLedger,
   usageRollup, projectUsage, findTranscriptsForSession, LEDGER_PATH,
 } from '../core/usage.mjs';
 import { activeVersions, pricingStatus } from '../core/pricing.mjs';
+
+// How long a command-line run waits for a collection already running (task
+// 253). The desktop app stops chats in batches; each one's SessionEnd hook
+// queues here and is counted in turn. Under the hook's 60 s timeout, and longer
+// than a full sweep (~20 s for ~2,000 transcripts).
+const WAIT_MS = 40_000;
 
 function fail(msg, code = 1) {
   process.stderr.write(`usage.mjs: ${msg}\n`);
@@ -31,7 +40,7 @@ function collectForSession(sessionId) {
   // The active driver knows where its transcripts live.
   const files = findTranscriptsForSession(sessionId);
   if (!files.length) fail(`no transcript found for session ${sessionId}`);
-  return collectUsage({ files });
+  return collectUsage({ files, waitMs: WAIT_MS });
 }
 
 function readStdin() {
@@ -137,6 +146,13 @@ Subcommands:
   reprice [--dry-run]        Fill in cost for rows whose model was missing from
                              the price table when they were collected (every
                              project). Priced rows are never touched.
+  repair [--dry-run] [--out <file>]
+                             Undo re-counts from a wiped cursor file: chats
+                             whose transcripts are on disk are counted again
+                             from scratch and replace their rows; other chats
+                             lose exact copies. Rebuilds the cursor file to
+                             match. Backs both files up first. --out writes the
+                             full report to <file> as JSON.
   pricing                    Show the active price table, where it came from,
                              and any models the ledger can't price
   pricing sync               Pull live rates now; reprice unpriced rows if the
@@ -148,29 +164,57 @@ Subcommands:
 const [, , cmd, ...rest] = process.argv;
 switch (cmd) {
   case 'collect': {
-    if (rest.includes('--hook')) {
-      const raw = await readStdin();
-      let transcriptPath = null;
-      try { transcriptPath = JSON.parse(raw).transcript_path || null; } catch {}
-      const result = transcriptPath && existsSync(transcriptPath)
-        ? collectUsage({ files: [transcriptPath] })
-        : collectUsage(); // fall back to a full sweep
+    // An unreadable cursor file stops the run (task 253): say which, exit 1.
+    try {
+      if (rest.includes('--hook')) {
+        const raw = await readStdin();
+        let transcriptPath = null;
+        try { transcriptPath = JSON.parse(raw).transcript_path || null; } catch {}
+        const result = transcriptPath && existsSync(transcriptPath)
+          ? collectUsage({ files: [transcriptPath], waitMs: WAIT_MS })
+          : collectUsage({ waitMs: WAIT_MS }); // fall back to a full sweep
+        process.stdout.write(JSON.stringify(result) + '\n');
+        break;
+      }
+      const sIdx = rest.indexOf('--session');
+      const result = sIdx !== -1 ? await collectForSession(rest[sIdx + 1]) : collectUsage({ waitMs: WAIT_MS });
       process.stdout.write(JSON.stringify(result) + '\n');
-      break;
+    } catch (err) {
+      fail(err.message);
     }
-    const sIdx = rest.indexOf('--session');
-    const result = sIdx !== -1 ? await collectForSession(rest[sIdx + 1]) : collectUsage();
-    process.stdout.write(JSON.stringify(result) + '\n');
     break;
   }
   case 'backfill': {
-    const result = collectUsage({ backfilled: true });
+    const result = collectUsage({ backfilled: true, waitMs: WAIT_MS });
     process.stdout.write(JSON.stringify(result) + '\n');
     break;
   }
   case 'reprice': {
-    const result = repriceLedger({ dryRun: rest.includes('--dry-run') });
+    const result = repriceLedger({ dryRun: rest.includes('--dry-run'), waitMs: WAIT_MS });
     process.stdout.write(JSON.stringify(result) + '\n');
+    break;
+  }
+  case 'repair': {
+    const dryRun = rest.includes('--dry-run');
+    const oIdx = rest.indexOf('--out');
+    let result;
+    try { result = repairLedger({ dryRun, waitMs: WAIT_MS }); }
+    catch (err) { fail(err.message); }
+    if (result.skipped === 'locked') fail('another collection is still running; try again in a minute');
+    if (result.skipped) fail('the active driver has no transcripts to recount');
+    if (oIdx !== -1) writeFileSync(rest[oIdx + 1], JSON.stringify(result, null, 1) + '\n');
+    const usd = (n) => `$${Math.round(n).toLocaleString('en-US')}`;
+    process.stdout.write((dryRun ? 'DRY RUN — nothing changed\n' : '')
+      + `ledger rows        ${result.scanned} → ${result.kept}\n`
+      + `chats on disk      ${result.recountedChats} recounted from their transcripts: ${result.replacedRows} rows → ${result.recountRows} rows, ${usd(result.recountedCostBefore)} → ${usd(result.recountedCostAfter)}\n`
+      + `chats not on disk  ${result.goneChatCopies} exact copies removed\n`
+      + `total cost         ${usd(result.costBefore)} → ${usd(result.costAfter)}\n`
+      + `cursor file        ${result.cursorEntries} transcripts\n`
+      + (result.backup ? `backup             ${result.backup}\n` : '')
+      + '\nmonth        before      after\n');
+    for (const m of Object.keys(result.monthlyBefore)) {
+      process.stdout.write(`${m.padEnd(8)} ${usd(result.monthlyBefore[m]).padStart(10)} ${usd(result.monthlyAfter[m] || 0).padStart(10)}\n`);
+    }
     break;
   }
   case 'pricing': {

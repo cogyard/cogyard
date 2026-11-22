@@ -121,6 +121,8 @@ const server = createServer(async (req, res) => {
     if (await reclaim.handle(path, u, projects, res) !== false) return;
     if (await cleanup.handle(path, u, projects, res) !== false) return;
     if (await storage.handle(path, u, projects, res) !== false) return;
+    // Raw worktree files (task 262) — the project comes from the path, not ?p=.
+    if (await files.handleRaw(path, u, req, projects, res) !== false) return;
 
     // Per-project endpoints below need a resolved project.
     const slug = u.searchParams.get('p');

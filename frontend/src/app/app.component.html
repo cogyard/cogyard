@@ -109,7 +109,7 @@
         @if (showSettings()) {
           <app-settings [wizard]="isWizard()" (addProject)="openNewProject()" />
         } @else if (viewAll()) {
-          <app-overview (selectProject)="selectProject($event)" />
+          <app-overview [section]="allSection()" (sectionChange)="setAllSection($event)" (selectProject)="selectProject($event)" (openTask)="jumpToProjectTask($event)" />
         } @else if (slug()) {
           @switch (tab()) {
             @case ('admin') { <app-admin [slug]="slug()" [section]="adminSection()" (sectionChange)="setAdminSection($event)" (jumpTask)="jumpToTask($event)" (jumpWorktree)="jumpToWorktree($event)" /> }

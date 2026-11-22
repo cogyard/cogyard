@@ -4,8 +4,9 @@
 // and the one write: POST /api/file (the edit → save), gated by the
 // http.mjs seam (origin + containment) with a baseHash concurrency check.
 
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { json, errJson, badRelPath, badHash, parseGuarded } from '../http.mjs';
-import { findWorktree, worktreeActivity, fileTree, readWorkFile, writeWorkFile, wtDiff } from '../files.mjs';
+import { findWorktree, worktreeActivity, fileTree, readWorkFile, readRawFile, writeWorkFile, wtDiff } from '../files.mjs';
 
 // Worktree pill param: a directory basename, never a path. '' = main checkout.
 function badWtName(w) {
@@ -55,6 +56,72 @@ export async function handle(path, u, proj, res) {
     return json(res, 200, { patch });
   }
   return false;
+}
+
+// GET /api/raw/<key>/<slug>/<worktree>/<path>[?scripts=0] (task 262) — a
+// worktree file's bytes at an address of its own, so an HTML page in the Files
+// tab loads the files beside it. Each segment is URI-encoded by the client (a
+// slug may hold a "/"). GET /api/raw-key hands the portal the key.
+//
+// Two guards make serving a project's pages safe:
+//  * The address starts with a key made at server start. The portal reads it
+//    from /api/raw-key, a same-origin JSON answer another website can't read
+//    (no CORS), and a page's relative requests carry it in their path. So
+//    another website can't pull the owner's files in through <script src> or
+//    <img src>. (A Referer check can't do this: a sandboxed page sends none.)
+//  * Every response carries `Content-Security-Policy: sandbox allow-scripts` —
+//    never allow-same-origin — so a page served here runs in an origin of its
+//    own wherever it is opened (the Files-tab frame or a tab of its own): it
+//    can't reach the portal's DOM, can't read /api (no CORS anywhere), and
+//    can't write through /api (requireSameOrigin refuses its `Origin: null`).
+//    `?scripts=0` drops allow-scripts (the Files tab's "no scripts" view); a
+//    query can only make the sandbox stricter. This header IS the frame's
+//    sandbox: the Files tab can't also set the iframe `sandbox` attribute,
+//    because the desktop app's Browser pane blocks a sandboxed frame from
+//    loading any address (net::ERR_BLOCKED_BY_CLIENT).
+const RAW_KEY = randomBytes(18).toString('base64url');
+export function rawKey() { return RAW_KEY; }
+const sameKey = (k) => typeof k === 'string' && k.length === RAW_KEY.length
+  && timingSafeEqual(Buffer.from(k), Buffer.from(RAW_KEY));
+
+export async function handleRaw(path, u, req, projects, res) {
+  if (path === '/api/raw-key') {
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify({ key: RAW_KEY }));
+    return true;
+  }
+  if (!path.startsWith('/api/raw/')) return false;
+  let segs;
+  try { segs = path.slice('/api/raw/'.length).split('/').map(decodeURIComponent); }
+  catch { return errJson(res, 400, 'bad path'); }
+  const [key, slug, wtName, ...rest] = segs;
+  if (!sameKey(key)) return errJson(res, 403, 'bad or missing key');
+  const rel = rest.join('/');
+  if (!slug || rest.length === 0) return errJson(res, 400, 'expected /api/raw/<key>/<project>/<worktree>/<path>');
+
+  const proj = projects.find((p) => p.slug === slug);
+  if (!proj) return errJson(res, 404, 'unknown project: ' + slug);
+  const badWt = badWtName(wtName);
+  if (badWt) return errJson(res, 400, badWt);
+  const wt = findWorktree(proj, wtName);
+  if (!wt) return errJson(res, 404, 'unknown worktree: ' + wtName);
+  const badPath = badRelPath(rel) || (rel.includes('\0') ? 'bad path' : null);
+  if (badPath) return errJson(res, 400, badPath);
+
+  const r = readRawFile(wt.path, rel);
+  if (r.forbidden) return errJson(res, 403, 'forbidden');
+  if (r.missing) return errJson(res, 404, 'no such file in worktree');
+  if (r.tooLarge) return errJson(res, 413, 'file too large to serve');
+  const text = /^(text\/|application\/(json|xml|javascript)|image\/svg)/.test(r.mime);
+  res.writeHead(200, {
+    'Content-Type': text ? `${r.mime}; charset=utf-8` : r.mime,
+    'Content-Length': r.body.length,
+    'Content-Security-Policy': u.searchParams.get('scripts') === '0' ? 'sandbox' : 'sandbox allow-scripts',
+    'X-Content-Type-Options': 'nosniff',
+    'Cache-Control': 'no-store',
+  });
+  res.end(r.body);
+  return true;
 }
 
 // POST /api/file — save an edited buffer back to disk. Body:

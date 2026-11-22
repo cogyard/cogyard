@@ -170,7 +170,10 @@ time; the next one starts only when the one before has passed its after-merge ch
 1. **Before the merge, check: did the chat do the task properly?** Read the task file and the
    branch's changes, and run the task's own checks. Every ticked box must match what the branch
    actually did.
-2. **The manager merges.** Enter the task's worktree (EnterWorktree with its path) and run
+2. **The manager merges.** First take the task's claim from its chat, from the main checkout:
+   `cogyard env claim <task file> <session-id> --force` (the task's chat reported ready and has
+   stopped). The hooks refuse EnterWorktree into a task's worktree, and edits to its task file,
+   from any chat but the one holding the claim. Then enter the task's worktree (EnterWorktree with its path) and run
    `merge-to-main` from there, the normal way — steps 1–3 on the branch, then ExitWorktree
    (`keep`) and the rest from the main checkout — without step 9 (push main) and step 10 (close),
    which wait for the end of the run. Step 3 runs: every branch is pushed to origin. Its answers:

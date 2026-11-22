@@ -6,7 +6,7 @@
 // and reached only through the routes/files.mjs POST behind the http.mjs seam.
 
 import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync, statSync, realpathSync } from 'node:fs';
-import { join, basename, extname, sep } from 'node:path';
+import { join, basename, extname, sep, posix } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as core from '../core/index.mjs';
@@ -194,6 +194,73 @@ export function readWorkFile(wtPath, rel) {
   if (isBinary(buf)) return { meta: { binary: true, size: buf.length } };
   const served = buf.subarray(0, MAX_TEXT);
   return { meta: { content: served.toString('utf8'), truncated: buf.length > MAX_TEXT, size: buf.length, hash: sha256(served) } };
+}
+
+// --- Raw files (task 262) ------------------------------------------------------------
+// GET /api/raw/<slug>/<worktree>/<path> serves a worktree file's bytes at an
+// address of its own, so an HTML page shown in the Files tab loads the
+// stylesheets, images and scripts beside it from the project's real folder.
+// The route (routes/files.mjs) sends every response with
+// `Content-Security-Policy: sandbox allow-scripts`; that header, not this
+// reader, is what keeps a served page away from the portal.
+
+const RAW_MIME = {
+  '.html': 'text/html', '.htm': 'text/html', '.css': 'text/css',
+  '.js': 'text/javascript', '.mjs': 'text/javascript', '.cjs': 'text/javascript', '.jsx': 'text/javascript',
+  '.json': 'application/json', '.map': 'application/json', '.txt': 'text/plain', '.md': 'text/plain',
+  '.csv': 'text/csv', '.xml': 'application/xml', '.svg': 'image/svg+xml',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+  '.webp': 'image/webp', '.avif': 'image/avif', '.ico': 'image/x-icon',
+  '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf', '.otf': 'font/otf',
+  '.mp4': 'video/mp4', '.webm': 'video/webm', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
+  '.pdf': 'application/pdf', '.wasm': 'application/wasm',
+};
+const MAX_RAW = 50 << 20; // 50 MiB — a page's video or font, not a disk dump
+
+// The contained real path of `rel` inside the worktree, or why not.
+function containedFile(wtPath, rel) {
+  const abs = join(wtPath, rel);
+  if (!existsSync(abs)) return { missing: true };
+  const root = realpathSync(wtPath), real = realpathSync(abs);
+  if (real !== root && !real.startsWith(root + sep)) return { forbidden: true };
+  if (statSync(real).isDirectory()) return { missing: true };
+  return { real };
+}
+
+// Read a worktree file for the raw route. Returns one of:
+//   { forbidden } | { missing } | { tooLarge } | { body: Buffer, mime }
+export function readRawFile(wtPath, rel) {
+  const f = containedFile(wtPath, rel);
+  if (!f.real) return f;
+  if (statSync(f.real).size > MAX_RAW) return { tooLarge: true };
+  const ext = extname(rel).toLowerCase();
+  const mime = RAW_MIME[ext] || 'application/octet-stream';
+  let body = readFileSync(f.real);
+  if (mime === 'text/html') body = Buffer.from(inlineBabelSrc(wtPath, rel, body.toString('utf8')), 'utf8');
+  return { body, mime };
+}
+
+// Babel standalone fetches `<script type="text/babel" src="x.jsx">` with XHR.
+// A sandboxed page has an origin of its own, so that XHR needs CORS, which this
+// server never sends (CLAUDE.md, Invariants) — the design pages built this way
+// would render blank. So the route hands such a page each relative src file
+// inline, read from inside the same worktree. Nothing else in the page changes,
+// and the file on disk is never touched.
+const SCRIPT_TAG = /<script\b([^>]*)>\s*<\/script\s*>/gi;
+const ATTR = (name) => new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, 'i');
+export function inlineBabelSrc(wtPath, htmlRel, html) {
+  return html.replace(SCRIPT_TAG, (tag, attrs) => {
+    if (!/^text\/babel$/i.test(attrs.match(ATTR('type'))?.[2] ?? '')) return tag;
+    const src = attrs.match(ATTR('src'))?.[2];
+    // Relative paths only: no scheme, no protocol-relative //, no absolute /.
+    if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith('/')) return tag;
+    const rel = posix.normalize(posix.join(posix.dirname(htmlRel), src.split(/[?#]/)[0]));
+    if (rel.startsWith('..') || rel.startsWith('/')) return tag;
+    const f = containedFile(wtPath, rel);
+    if (!f.real) return tag;
+    const code = readFileSync(f.real, 'utf8').replace(/<\/script/gi, '<\\/script');
+    return `<script${attrs.replace(ATTR('src'), '')} data-inlined-from="${src.replace(/"/g, '&quot;')}">\n${code}\n</script>`;
+  });
 }
 
 // Format an edited buffer with prettier before it hits disk. Server-side on

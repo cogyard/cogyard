@@ -7,7 +7,7 @@ import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { SelectButton } from 'primeng/selectbutton';
 import { InputText } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
-import { marked } from 'marked';
+import { renderMarkdown } from '../shared/markdown';
 import { ApiService } from '../services/api.service';
 import { TasksResponse, ProjectUsageResponse, TaskUsage, TaskChatsResponse, TaskChat, AxisRow } from '../services/models';
 import { TranscriptModalComponent } from './transcript-modal/transcript-modal.component';
@@ -492,7 +492,7 @@ export class TasksComponent {
   openTranscript(c: TaskChat) { if (c.sessionId) this.openChat.set(c); }
   closeTranscript() { this.openChat.set(null); }
 
-  bodyHtml(t: any): SafeHtml { return this.san.bypassSecurityTrustHtml(marked.parse(t.bodyMd || '*(no body)*') as string); }
+  bodyHtml(t: any): SafeHtml { return renderMarkdown(this.san, t.bodyMd || '*(no body)*'); }
   worktreeName(t: any): string | null { return t.worktreeName || null; }
 
 }

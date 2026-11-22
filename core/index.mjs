@@ -30,10 +30,12 @@ export { versionsFor } from './versions.mjs';
 export { computePlan, planFor } from './plan.mjs';
 export { addTouchesPaths, outsideList, branchChangedFiles, runningClashesFor, dryMerge, branchConflicts } from './touches.mjs';
 export { recentlyDone } from './recently-done.mjs';
-export { PUBLISH_DEFAULTS, publishStatus } from './publish.mjs';
+export { inProgressAll } from './in-progress.mjs';
+export { PUBLISH_DEFAULTS, publishStatus, labelReleaseTags } from './publish.mjs';
 export { STATUS, STATUSES, isValidStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate, BUCKET_KEYS, bucketOf, waitingWhyOf } from './status.mjs';
 export { validateTask, validateTasks, introducedErrors, normalizeTaskId } from './validate.mjs';
 export { closeability, closeableTasks, doneWithLeftovers, markerProblemsByFile, proseSettled, markerText, boxReport, mergeState, claimState, whoAmI, rewriteStatusLine } from './close.mjs';
+export { liveParkNotes, describePark, parkRecordKey, cleanParkReason, writeParkNote, endParkNotes } from './park.mjs';
 export { resolveAxes, axisLookup, registeredLabels, seedSharedAxes, DEFAULT_SHARED_AXES,
   readSharedAxes, readProjectAxes, sanitizeAxes, writeSharedAxes, writeProjectAxes } from './axes.mjs';
 export { resolveSwitches, switchDefaults, readProjectSwitches, switchProblems, validateSwitches, writeProjectSwitches,

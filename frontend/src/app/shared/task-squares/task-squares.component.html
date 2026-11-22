@@ -1,0 +1,9 @@
+<span class="sq" [pTooltip]="done() + ' of ' + total() + ' checkboxes ticked'" tooltipPosition="bottom">
+  @for (b of boxes(); track $index) { <i [class.on]="b.done" [class.main]="b.onMain === true" [class.branch]="b.onMain === false"></i> }
+</span>
+@if (codeText(); as k) {
+  <span class="code mono" [pTooltip]="codeTip()" tooltipPosition="bottom">
+    @if (k.kind === 'main') { <span class="on-main">on main</span> }
+    @else { <span class="up">↑{{ k.ahead }}</span>@if (k.behind) { <span class="down">↓{{ k.behind }}</span> } }
+  </span>
+}

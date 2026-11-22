@@ -26,8 +26,16 @@
 // It is what makes de-registration exact rather than name-matching, and it is
 // why a project's own `api` / `frontend` entries — which carry no path — can
 // never be swept by anything here.
+//
+// WHEN AN ENTRY IS DEAD (task 172). Its worktree is alive only while git lists
+// that path as one of the project's worktrees AND the folder is there. A folder
+// alone is not a worktree: where-is-maya kept four entries for folders that held
+// nothing but a `.env.worktree`, because both sweeps used to ask only whether
+// something existed at the path. `worktreeLiveness` is the one test both sweeps
+// use, so they cannot drift apart again.
 
-import { existsSync, readFileSync, writeFileSync, renameSync, mkdirSync, statSync, unlinkSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, statSync, unlinkSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 function isFile(p) {
@@ -78,19 +86,49 @@ function entryWorktree(projectRoot, entry) {
   return null;
 }
 
-// Drop every entry whose worktree is gone. Returns the names dropped.
+// Is this path one of the project's live worktrees? Returns a test for paths,
+// built from ONE `git worktree list` per sweep. Alive = git lists the path AND
+// it is on disk; both sides are compared as realpaths, so a symlinked spelling
+// (/var vs /private/var, a linked home) still matches.
 //
-// `except` de-registers a worktree that still exists on disk — the cleanup path
-// needs it when it sweeps before the directory is actually gone, and it is the
-// only way to remove a live worktree's entry deliberately.
+// A git failure must not sweep everything: when git cannot answer (not a repo,
+// git missing, a timeout), every path counts as alive and nothing is dropped.
+function worktreeLiveness(projectRoot) {
+  let out;
+  try {
+    out = execFileSync('git', ['-C', projectRoot, 'worktree', 'list', '--porcelain'], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000,
+    });
+  } catch {
+    return () => true;
+  }
+  const live = new Set();
+  for (const line of out.split('\n')) {
+    if (!line.startsWith('worktree ')) continue;
+    // A worktree git still lists but whose folder is gone ("prunable") fails
+    // realpath and stays out of the set: it is dead.
+    try { live.add(realpathSync(line.slice('worktree '.length))); } catch { /* gone from disk */ }
+  }
+  return (path) => {
+    try { return live.has(realpathSync(path)); } catch { return false; }
+  };
+}
+
+// Drop every entry whose worktree is dead (see worktreeLiveness). Returns the
+// names dropped.
+//
+// `except` de-registers a worktree that is still alive — the cleanup path needs
+// it when it sweeps before the directory is actually gone, and it is the only
+// way to remove a live worktree's entry deliberately.
 function sweepLaunchEntries(projectRoot, { except = null } = {}) {
   const doc = readLaunch(projectRoot);
+  const alive = worktreeLiveness(projectRoot);
   const swept = [];
   doc.configurations = doc.configurations.filter((c) => {
     const wt = entryWorktree(projectRoot, c);
     if (!wt) return true;                       // not a worktree entry — never ours to drop
     if (except && wt === except) { swept.push(c.name); return false; }
-    if (existsSync(wt)) return true;
+    if (alive(wt)) return true;
     swept.push(c.name);
     return false;
   });
@@ -102,10 +140,11 @@ function sweepLaunchEntries(projectRoot, { except = null } = {}) {
 // write. Returns the names swept.
 function registerWorktreeLaunch(projectRoot, { worktree, name, devScript, port }) {
   const doc = readLaunch(projectRoot);
+  const alive = worktreeLiveness(projectRoot);
   const swept = [];
   doc.configurations = doc.configurations.filter((c) => {
     const wt = entryWorktree(projectRoot, c);
-    if (!wt || existsSync(wt)) return true;
+    if (!wt || alive(wt)) return true;
     swept.push(c.name);
     return false;
   });

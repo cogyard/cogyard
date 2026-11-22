@@ -5,7 +5,7 @@ The `status` frontmatter field on every `NNN-*.md` task file is one of:
 | status        | meaning                                                                 | counts as backlog? | done_date |
 |---------------|-------------------------------------------------------------------------|--------------------|-----------|
 | `OPEN`        | active backlog — pickable now (or waiting on an unmet dep)              | yes                | null      |
-| `PARKED`      | deliberately shelved; not being worked, not abandoned                   | yes (waiting)      | null      |
+| `PARKED`      | deliberately shelved; not being worked, not abandoned — set only by `cogyard tasks park` | yes (waiting)      | null      |
 | `ENOUGH` | a version of done — see below                                           | **no**             | should be set |
 | `DONE`        | fully complete; nothing left                                            | no                 | set       |
 | `OBSOLETE`    | abandoned / superseded; will not be done                                | no                 | —         |
@@ -21,7 +21,8 @@ so it could (and did) go stale. The two-way rule:
   (`depends_on: [cogyard#166]`); it resolves through the registry the same way,
   and the other project's Plan tab shows it as blocking this one.
 - **Blocked on something external** (a decision, a vendor, a launch window) →
-  `PARKED`. A deliberate hold, whatever the reason; a human un-parks it.
+  `PARKED`. A deliberate hold, whatever the reason; a human un-parks it. Both
+  go through their commands — see "Parking a task" below.
 
 `status: BLOCKED_ON` is now an invalid status like any other unknown value:
 the validator reports it as an error and the Plan tab lists it under problems.
@@ -218,7 +219,9 @@ One command does all three closing steps: `status` + today's `done_date`, the
 claim release (`env release`), and the store commit. It goes ahead only when:
 
 - every box in the file is ticked or settled (see above);
-- `status` is `OPEN`;
+- `status` is `OPEN`, and the text has no live park note (a parked task is
+  un-parked first — this one even `--force` doesn't override; see "Parking a
+  task");
 - the task's `env.branch` is merged into main — or there is no branch to merge
   (none recorded, or it never got a commit of its own);
 - the claim, if any, is yours.
@@ -279,7 +282,10 @@ rewrites the status line, and commits `reopen #N (was X)` — plus the
 `--why "<reason>"` given and, when an agent ran it, that chat's id. It does not
 claim the task. A wrong close is fixed with `reopen` and then the right
 `close` — two commits that say what happened. `close` on a task that is
-already closed refuses and names `reopen`.
+already closed refuses and names `reopen`. `reopen` refuses a closed task
+whose text still has a live park note (one closed before `close` refused
+that): it would come back `OPEN` while saying it is parked. End the wait
+first with `unpark … --on <the day it ended>`.
 
 Agents may run it: it only makes a task less done, and more work
 that belongs to a closed task reopens it — pickup-task does it right after
@@ -291,11 +297,61 @@ when it isn't, and the next merge's `close` would refuse it.
 
 - The Edit/Write hook (`cogyard hook validate-frontmatter`) refuses, in an
   existing task file, a `status:` change into or out of `DONE`/`ENOUGH` and any
-  `done_date:` change. New files, `OPEN`↔`PARKED` and `OBSOLETE` pass.
+  `done_date:` change; a `status:` change into or out of `PARKED`; and any
+  change to a live park note's date or reason. New files and `OBSOLETE` pass.
 - The Bash hook `cogyard hook guard-task-store` refuses git commands that write
   (commit, revert, reset, checkout, stash, …) inside a registered project's task
   store. Reading it with git is always allowed; changes go through `sync push`,
-  `close`, `reopen` and `env claim`/`release`.
+  `close`, `reopen`, `park`, `unpark` and `env claim`/`release`.
+
+## Parking a task — `cogyard tasks park` / `unpark`
+
+A park is recorded twice: `status: PARKED`, and a note at the top of the text
+saying since when and what the task waits for. By hand the two drifted apart —
+one task's status went `OPEN`, then `DONE`, then `OPEN` again while its note
+still said `PARKED`, and what the park waited for was never checked. Two
+commands now own both halves (owner, 2026-11-17: the record stays in the text,
+no new frontmatter field):
+
+```markdown
+> **PARKED 2026-10-20 — waiting for an App Store release with 1.30.0 or later**     ← live: park writes it
+
+> Parked 2026-10-20 – 2026-11-20: waiting for an App Store release with 1.30.0 or later.
+> Un-parked 2026-11-20: the test phone is on 1.31.0; the map held its last position.  ← ended: unpark writes these
+```
+
+| command | from → to | what it writes |
+|---|---|---|
+| `cogyard tasks park <id> "<what it waits for>"` | `OPEN` → `PARKED` | the live note under the title; releases the claim (a claim is valid only on an `OPEN` task) |
+| `cogyard tasks unpark <id> "<what was seen>"` | `PARKED` → `OPEN` | turns the live note into the two ended lines — nothing is deleted |
+
+Both keep the `> **Status: X.**` line true and commit, like `close`. `--on
+<YYYY-MM-DD>` dates a park, or its end, that happened before today. A park is
+the owner's hold: un-park only once what it waits for has happened, and say
+what was seen.
+
+**What counts as a live note:** a quote line that opens with bold `PARKED`
+(`> **PARKED …`) before the task's first `## ` heading, outside code. The
+record is the date and the bold reason; a remark after the bold is
+commentary. A struck-through `> ~~**PARKED …**~~` (how older files marked a
+superseded park) is not live, and neither is a mention further down.
+
+**The two contradictions are errors.** `cogyard tasks validate` reports each,
+naming the command that fixes it; `doctor` counts it; the Tasks tab flags the
+file:
+
+| the file says | fix |
+|---|---|
+| a live note, but status is `OPEN` | still waiting → `park <id>` with no reason (sets `PARKED`, keeps the note); wait over → `unpark <id> "<what was seen>"` |
+| a live note, but the task is closed (`DONE`, `ENOUGH`, `OBSOLETE`) | `unpark <id> "<what was seen>" --on <the day the wait ended>` — ends the note, the status stays |
+| status `PARKED`, but no live note | `park <id> "<what it waits for>" [--on <the day it was parked>]` writes one, or `unpark` if the wait is over |
+
+Those three repair forms are why `park` and `unpark` accept a task beyond
+`OPEN` and `PARKED`; anything else is refused. An old error never blocks an
+unrelated edit (the one regression rule below); only a write that adds one is
+refused. `close` refuses a task whose park is live — status `PARKED` or a live
+note — with `--enough` and `--force` too, so a closed task keeps only an ended
+record.
 
 ## A claim is valid only on an `OPEN` task
 
@@ -308,9 +364,10 @@ ever held.
   written), naming `tasks reopen` for a `DONE` or `ENOUGH` one.
 - `cogyard tasks current` lists only `OPEN` claimed tasks — the same set as the
   plan's "In progress".
-- A claim left on a task that isn't `OPEN` is a validator error, so parking or
-  obsoleting a claimed task by hand is refused at the edit and at the commit.
-  Release the claim (`cogyard env release <file>`), or reopen the task.
+- A claim left on a task that isn't `OPEN` is a validator error, so obsoleting
+  a claimed task by hand is refused at the edit and at the commit. Release the
+  claim (`cogyard env release <file>`), or reopen the task. `park` releases the
+  claim itself.
 - `env claim` and `env release` commit the task file themselves, on every store.
 
 ## Where task files are checked
@@ -327,8 +384,9 @@ It runs in four places:
 | `cogyard tasks validate [<id>]` | on demand; `merge-to-main` runs it on the task before merging | exits 1, listing each error |
 | `cogyard tasks doctor`, the Tasks tab | as reports | error counts per project; a schema flag on each task with an error |
 
-Hand edits of `status:` between `OPEN`, `PARKED` and `OBSOLETE` are allowed (no
-command owns them yet); these checks are what keeps them honest.
+Hand edits of `status:` between `OPEN` and `OBSOLETE` are allowed (no command
+owns them yet); these checks are what keeps them honest. `PARKED` is
+`park`/`unpark`'s.
 
 ## `ENOUGH`
 

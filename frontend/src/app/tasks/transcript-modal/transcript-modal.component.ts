@@ -1,6 +1,6 @@
 import { Component, input, output, inject, effect, computed, HostListener } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { marked } from 'marked';
+import { renderMarkdown } from '../../shared/markdown';
 import { ApiService } from '../../services/api.service';
 import { StoreService } from '../../services/store.service';
 import { TaskChat, TaskTranscriptResponse } from '../../services/models';
@@ -38,9 +38,9 @@ export class TranscriptModalComponent {
     return c?.sessionId ? this.store.sig<TaskTranscriptResponse>(`transcript|${c.sessionId}`)() : null;
   });
   shortId(): string { const s = this.chat()?.sessionId; return s ? s.slice(0, 8) : '????????'; }
-  // Render a turn's text as markdown (inline code, bold, lists) — same mechanism
-  // as the task body. Transcripts are the owner's own local sessions.
-  turnHtml(text: string): SafeHtml { return this.san.bypassSecurityTrustHtml(marked.parse(text || '') as string); }
+  // Render a turn's text as markdown (inline code, bold, lists) — same helper
+  // as the task body. Cleaned (task 263): a turn can hold anything pasted into a chat.
+  turnHtml(text: string): SafeHtml { return renderMarkdown(this.san, text || ''); }
   turnTime(ts: string | null): string {
     if (!ts) return '';
     const d = new Date(ts);

@@ -39,16 +39,6 @@
     <div class="pc-flag"><app-flag tone="neutral" [wrap]="true" [pTooltip]="stepsText()" tooltipPosition="top">later: {{ c.youLater.join(', ') }}</app-flag></div>
   }
   @if (c.total) {
-    <div class="pc-boxes">
-      <span class="sq" [pTooltip]="c.done + ' of ' + c.total + ' checkboxes ticked'" tooltipPosition="bottom">
-        @for (b of c.boxes; track $index) { <i [class.on]="b.done" [class.main]="b.onMain === true" [class.branch]="b.onMain === false"></i> }
-      </span>
-      @if (codeText(); as k) {
-        <span class="code mono" [pTooltip]="codeTip()" tooltipPosition="bottom">
-          @if (k.kind === 'main') { <span class="on-main">on main</span> }
-          @else { <span class="up">↑{{ k.ahead }}</span>@if (k.behind) { <span class="down">↓{{ k.behind }}</span> } }
-        </span>
-      }
-    </div>
+    <app-task-squares class="pc-boxes" [boxes]="c.boxes" [done]="c.done" [total]="c.total" [code]="c.code" />
   }
 </div>

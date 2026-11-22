@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, input, signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
 import { Skeleton } from 'primeng/skeleton';
-import { marked } from 'marked';
+import { renderMarkdown } from '../shared/markdown';
 import { ActivityResponse, Brief, DailyResponse, Heartbeat } from '../services/models';
 import { ConfigService } from '../services/config.service';
 import { StoreService } from '../services/store.service';
@@ -95,7 +95,7 @@ export class DailyComponent {
     const md = (this.drift()?.markdown || '').replace(/^#[^\n]*\n+/, '');
     if (md !== this.lastDriftMd) {
       this.lastDriftMd = md;
-      this.lastDriftHtml = this.san.bypassSecurityTrustHtml(marked.parse(md) as string);
+      this.lastDriftHtml = renderMarkdown(this.san, md);
     }
     return this.lastDriftHtml;
   });

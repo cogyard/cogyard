@@ -1,0 +1,51 @@
+<div class="act-panel">
+  <app-activity-heatmap [byDay]="commitsAllByDay()" [breakdown]="commitsBreakdown()" [weekStart]="weekStart()" noun="commits" (dayClick)="drillDay.set($event)" />
+  <app-activity-day [date]="drillDay()" [colors]="laneColors()" [order]="laneOrder()" (closed)="drillDay.set(null)" />
+</div>
+
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else {
+  <p-table styleClass="ov" [value]="rows()" dataKey="slug" size="small">
+    <ng-template #header>
+      <tr>
+        <th class="col-project" pSortableColumn="label">Project <p-sortIcon field="label" /></th>
+        <th class="col-tasks">Tasks</th>
+        <th class="col-wt">Worktrees</th>
+        <th class="col-dirty">Dirty</th>
+        <th class="col-code num" title="Lines of source code on main — tracked source files only (excludes data files, lockfiles, build output, docs, binaries)">Code</th>
+        <th class="col-date">Last commit</th>
+      </tr>
+      <tr class="totals-row">
+        <td>All · {{ totals().projects }} projects</td>
+        <td>{{ totals().tasks }}</td>
+        <td class="wt">{{ totals().wt }}@if (totals().stale) {<app-flag tone="review">{{ totals().stale }} stale</app-flag>}</td>
+        <td>{{ totals().dirty || '—' }}</td>
+        <td class="num">{{ fmtLoc(totals().loc) }}</td>
+        <td></td>
+      </tr>
+    </ng-template>
+    <ng-template #body let-p>
+      <tr class="ov-row">
+        <td>
+          @if (p.error) { <span class="dim">{{ p.label }} (error)</span> }
+          @else { <button class="btn-link dim" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
+        </td>
+        <td class="tasks">
+          <span class="total">{{ p.tasks?.total || 0 }}</span>
+          @if (p.tasks?.ready) { <span class="ready">{{ p.tasks.ready }} idle</span> }
+          @if (p.tasks?.claimed) { <span class="dim">🔒 {{ p.tasks.claimed }}</span> }
+        </td>
+        <td class="wt">
+          {{ p.worktrees?.count || 0 }}
+          @if (p.worktrees?.stale) { <app-flag tone="review">{{ p.worktrees.stale }} stale</app-flag> }
+        </td>
+        <td>
+          @if (p.dirty) { <span class="dirty">● {{ p.dirty }}</span> } @else { <span class="dim">clean</span> }
+        </td>
+        <td class="num dim">{{ fmtLoc(p.size?.loc) }}</td>
+        <td class="dim" [title]="commitTitle(p.latestCommit)">{{ p.latestCommit?.date || '—' }}@if (p.latestCommit?.relDate) {<span class="hint sm"> · {{ p.latestCommit.relDate }}</span>}</td>
+      </tr>
+    </ng-template>
+  </p-table>
+}

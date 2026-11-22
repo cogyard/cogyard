@@ -17,7 +17,10 @@ const LW = 18, RH = 28, DOT = 4;
 const COLORS = ['#60a5fa', '#4ade80', '#fb923c', '#f472b6', '#c084fc', '#38bdf8', '#fbbf24', '#f87171'];
 const MAIN = '#111827';
 
-interface Chip { kind: RefKind; text: string; }
+// `tip`: the real tag behind a chip that names its release (task 264), shown on hover.
+interface Chip { kind: RefKind; text: string; tip?: string; }
+// A tag ref the server matched to one of the project's named releases (task 264).
+interface ReleaseTag { tag: string; release: string; label: string; version: string; }
 interface Seg { from: number; to: number; half: string; color: number; main: boolean; wt?: boolean; stash?: boolean; }
 interface Row {
   hash: string; shortHash: string; subject: string; author: string; date: string;
@@ -193,11 +196,13 @@ export class GraphComponent {
     if (r.kind === 'pending') return { ...r, chips: [], taskIds: [], cleanSubject: '' };
     // taskIds + cleanSubject are computed server-side (core/git-views parseTaskTags)
     // and served on the row — the SPA consumes them, never re-parses [#NN].
-    return { ...r, chips: this.chips(r.refs || []), taskIds: r.taskIds ?? [], cleanSubject: r.cleanSubject ?? '' };
+    return { ...r, chips: this.chips(r.refs || [], r.releaseTags || []), taskIds: r.taskIds ?? [], cleanSubject: r.cleanSubject ?? '' };
   }
 
   // Collapse local X + origin/X (same commit) into one "origin = X" chip.
-  private chips(refs: string[]): Chip[] {
+  // A tag the server matched to a named release (task 264) reads
+  // "<label> <version>" — "Website 2.6.0" — with the tag itself on hover.
+  private chips(refs: string[], releaseTags: ReleaseTag[]): Chip[] {
     const locals: string[] = [], remotes = new Set<string>(), tags: string[] = [];
     for (const r of refs) {
       if (r.startsWith('tag: ')) tags.push(r.slice(5));
@@ -209,7 +214,10 @@ export class GraphComponent {
     // the trunk wears its own kind whichever side it is on — local, remote or both
     const m = (kind: RefKind, base: string): RefKind => (base === 'main' || base === 'master') ? 'main' : kind;
     // release tags lead — a milestone outranks branch pointers on the same commit
-    for (const T of tags) out.push({ kind: 'tag', text: T });
+    for (const T of tags) {
+      const rel = releaseTags.find((x) => x.tag === T);
+      out.push(rel ? { kind: 'tag', text: `${rel.label} ${rel.version}`, tip: T } : { kind: 'tag', text: T });
+    }
     for (const L of locals) {
       if (remotes.has(L)) { out.push({ kind: m('synced', L), text: 'origin = ' + L }); used.add(L); }
       else out.push({ kind: m('local', L), text: L });

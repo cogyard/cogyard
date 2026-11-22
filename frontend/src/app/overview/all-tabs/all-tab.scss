@@ -1,0 +1,12 @@
+// Shared by every tab page of the All page (task 266) — layout only. A tab page
+// is one column of panels inside the tab box's body (.tab-box-pane in
+// styles.scss), spaced by the same gap that body uses, so a panel sits the same
+// distance from the box's edge as from its neighbour.
+:host { display: flex; flex-direction: column; gap: var(--app-space-5); min-width: 0; }
+
+// The global .act-panel keeps a bottom margin for pages that stack panels with
+// nothing between them; here the column's gap does that job.
+.act-panel { margin-bottom: 0; }
+
+// Loading rows (layout only).
+.skel { display: flex; flex-direction: column; gap: var(--app-space-3); }

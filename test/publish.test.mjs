@@ -12,9 +12,9 @@ import { join } from 'node:path';
 const HOME = realpathSync(mkdtempSync(join(tmpdir(), 'cogyard-publish-home-')));
 process.env.COGYARD_HOME = HOME;
 const {
-  readPublishConfig, publishPlan, publishPreflight, healthMatches, compareVersions,
+  readPublishConfig, publishReleases, pickRelease, publishPlan, publishPreflight, healthMatches, compareVersions,
   tagRelease, takePublishLock, prePushHook, publishInventory, resolvePublishProject,
-  publishStatus, recordPublish,
+  publishStatus, recordPublish, labelReleaseTags,
 } = await import('../core/publish.mjs');
 
 const dirs = [HOME];
@@ -97,6 +97,107 @@ test('an unusable file is declared-with-an-error — including an unknown field'
     assert.equal(r.declared, true, JSON.stringify(body));
     assert.match(r.error, re, JSON.stringify(body));
   }
+});
+
+// --- several releases (task 264) -------------------------------------------------
+
+const TWO = {
+  releases: {
+    website: { label: ' Website ', tag: 'web/v<version>', paths: ['site/', ' wrangler.jsonc '], deploysOnPush: false, command: 'npx wrangler deploy', health: 'https://a.example/version.json' },
+    device: { label: 'Device', tag: 'v<version>', paths: ['firmware/'], deploysOnPush: false, manual: ['Flash it by USB'] },
+  },
+};
+
+test('releases: two named releases read back, each with its label, tag pattern and paths', () => {
+  const d = repo();
+  declare(d, TWO);
+  assert.deepEqual(readPublishConfig(d), {
+    declared: true,
+    releases: [
+      { name: 'website', label: 'Website', tagFormat: 'web/v<version>', paths: ['site/', 'wrangler.jsonc'], deploysOnPush: false, command: 'npx wrangler deploy', manual: [], health: 'https://a.example/version.json', tag: true, requires: [], checks: [] },
+      { name: 'device', label: 'Device', tagFormat: 'v<version>', paths: ['firmware/'], deploysOnPush: false, command: null, manual: ['Flash it by USB'], health: null, tag: true, requires: [], checks: [] },
+    ],
+  });
+});
+
+test('releases: a release with "tag": false has no tag pattern', () => {
+  const d = repo();
+  declare(d, { releases: { app: { label: 'App', tag: false, deploysOnPush: false, manual: ['x'] } } });
+  const [r] = readPublishConfig(d).releases;
+  assert.equal(r.tagFormat, null);
+  assert.equal(r.tag, false);
+  assert.deepEqual(r.paths, []);
+});
+
+test('releases: every way the form can be wrong is an error naming the release', () => {
+  const ok = { label: 'Web', tag: 'web/v<version>', deploysOnPush: false, command: 'x' };
+  const cases = [
+    [{ releases: {} }, /at least one release/],
+    [{ releases: [] }, /at least one release/],
+    [{ releases: { web: ok }, command: 'x' }, /unknown field.*"command".*inside a release/],
+    [{ releases: { Web: ok } }, /release "Web": a release's name is lowercase/],
+    [{ releases: { web: 'x' } }, /release "web" must be a JSON object/],
+    [{ releases: { web: { ...ok, label: '' } } }, /release "web" needs a "label"/],
+    [{ releases: { web: { ...ok, tag: undefined } } }, /release "web" needs a "tag"/],
+    [{ releases: { web: { ...ok, tag: true } } }, /release "web": "tag" must be a pattern/],
+    [{ releases: { web: { ...ok, tag: 'web/v' } } }, /release "web": "tag" must be a pattern/],
+    [{ releases: { web: { ...ok, tag: '<version>' } } }, /must start with a letter/],
+    [{ releases: { web: { ...ok, tag: 'web2<version>' } } }, /not end in a digit/],
+    [{ releases: { web: { ...ok, tag: 'web v<version>' } } }, /must start with a letter, use only/],
+    [{ releases: { web: { ...ok, paths: [] } } }, /release "web": "paths" must be/],
+    [{ releases: { web: { ...ok, paths: ['../other'] } } }, /"paths" must be/],
+    [{ releases: { web: { ...ok, paths: ['/abs'] } } }, /"paths" must be/],
+    [{ releases: { web: { ...ok, comand: 'x' } } }, /release "web": unknown field.*"comand"/],
+    [{ releases: { web: { ...ok, deploysOnPush: 'no' } } }, /release "web": needs "deploysOnPush"/],
+    [{ releases: { web: ok, ios: { ...ok, label: 'iOS', tag: 'web/v<version>' } } }, /"web" and "ios" have overlapping tags/],
+    [{ releases: { web: { ...ok, tag: 'v<version>' }, ios: { ...ok, label: 'iOS', tag: 'v-ios/<version>' } } }, /overlapping tags/],
+  ];
+  for (const [body, re] of cases) {
+    const d = repo();
+    declare(d, body);
+    const r = readPublishConfig(d);
+    assert.equal(r.declared, true, JSON.stringify(body));
+    assert.match(r.error ?? '', re, JSON.stringify(body));
+  }
+});
+
+test('publishReleases: the flat form is one unnamed release, tagged v<version> unless "tag": false', () => {
+  const d = repo();
+  declare(d, { deploysOnPush: false, command: 'x' });
+  assert.deepEqual(publishReleases(readPublishConfig(d)), [
+    { name: null, label: null, tagFormat: 'v<version>', paths: [], deploysOnPush: false, command: 'x', manual: [], health: null, tag: true, requires: [], checks: [] },
+  ]);
+  declare(d, { deploysOnPush: false, command: 'x', tag: false });
+  assert.equal(publishReleases(readPublishConfig(d))[0].tagFormat, null);
+  assert.deepEqual(publishReleases({ declared: false }), []);
+  assert.deepEqual(publishReleases({ declared: true, error: 'bad' }), []);
+});
+
+test('pickRelease: a name or label picks one release; the flat form takes no name', () => {
+  const d = repo();
+  declare(d, TWO);
+  const cfg = readPublishConfig(d);
+  assert.equal(pickRelease(cfg, 'device').release.name, 'device');
+  assert.equal(pickRelease(cfg, 'WEBSITE').release.name, 'website', 'a label, any case');
+  assert.match(pickRelease(cfg, null).reason, /declares 2 releases \(website, device\) — name the one/);
+  assert.match(pickRelease(cfg, 'ios').reason, /no release called "ios" — this project's releases are website, device/);
+  assert.match(publishPlan(cfg).reason, /declares 2 releases/);
+  assert.equal(publishPlan(pickRelease(cfg, 'device').release).ok, true);
+  const flat = repo();
+  declare(flat, { deploysOnPush: false, command: 'x' });
+  const f = readPublishConfig(flat);
+  assert.equal(pickRelease(f, null).release.name, null);
+  assert.match(pickRelease(f, 'website').reason, /declares one release, so it takes no release name/);
+});
+
+test('pickRelease: a releases file with ONE entry needs no name; a name must still be its own', () => {
+  const d = repo();
+  declare(d, { releases: { website: { label: 'Website', tag: 'web/v<version>', deploysOnPush: false, command: 'x' } } });
+  const cfg = readPublishConfig(d);
+  assert.equal(pickRelease(cfg, null).release.name, 'website', 'no name → its one release');
+  assert.equal(pickRelease(cfg, 'Website').release.name, 'website');
+  assert.equal(pickRelease(cfg, 'device').reason, 'no release called "device" — this project\'s release is website');
+  assert.equal(publishPlan(cfg).reason, 'this project declares 1 release — a publish is of one of them');
 });
 
 test('publishPlan: needs a declared, off-push command or manual steps', () => {
@@ -200,6 +301,22 @@ test('preflight refuses a version that is not plain x.y.z, and a last release th
   assert.match(publishPreflight(p.d).reason, /last release tag v1\.0\.0-rc is not plain vX\.Y\.Z/);
 });
 
+test('preflight with a release prefix: only that release\'s tags count (task 264)', () => {
+  const { d, sha } = published('1.0.0');
+  git(d, 'tag', 'v1.0.0', sha);                       // the other release's tag
+  commit(d, '1.1.0');
+  git(d, 'push', '-q', 'origin', 'main');
+  const p = publishPreflight(d, { prefix: 'web/v' });
+  assert.equal(p.ok, true, p.reason);
+  assert.equal(p.tag, 'web/v1.1.0');
+  assert.equal(p.previous, null, 'v1.0.0 is not a website release');
+  assert.equal(publishPreflight(d).previous, 'v1.0.0', 'the flat form still sees its own v tags');
+  git(d, 'tag', 'web/v1.1.0', sha);                   // 1.1.0 already released, on another commit
+  assert.match(publishPreflight(d, { prefix: 'web/v' }).reason, /web\/v1\.1\.0 already marks .* needs a new version/);
+  const off = publishPreflight(repo(), { prefix: 'web/v', tagOff: 'set "tag": false for the "website" release' });
+  assert.equal(off.ok, false);
+});
+
 test('compareVersions', () => {
   assert.equal(compareVersions('1.10.0', '1.9.9'), 1);
   assert.equal(compareVersions('1.2.3', '1.2.3'), 0);
@@ -301,6 +418,84 @@ test('publishStatus: an unreachable health URL and an undeclared project', async
   assert.equal(u.declaration.declared, false);
   assert.equal(u.live, null);
   assert.deepEqual(u.credentials, []);
+});
+
+// A project with two releases (task 264): a website in site/ and a device in
+// firmware/, sharing package.json's version, each with its own tags.
+function twoReleases() {
+  const { d, sha } = published('1.0.0');
+  const touch = (dir) => {
+    mkdirSync(join(d, dir), { recursive: true });
+    writeFileSync(join(d, dir, 'f.txt'), String(++seq));
+    git(d, 'add', dir);
+    git(d, 'commit', '-q', '-m', `change ${dir}`);
+    return git(d, 'rev-parse', 'HEAD');
+  };
+  git(d, 'tag', '-a', 'v1.0.0', '-m', 'device', sha);
+  git(d, 'tag', '-a', 'web/v1.0.0', '-m', 'website', sha);
+  const web1 = touch('site');
+  git(d, 'tag', '-a', 'web/v1.1.0', '-m', 'website', web1);
+  touch('firmware');
+  touch('site');
+  git(d, 'push', '-q', 'origin', 'main');
+  declare(d, {
+    releases: {
+      website: { label: 'Website', tag: 'web/v<version>', paths: ['site/'], deploysOnPush: false, command: 'deploy-it' },
+      device: { label: 'Device', tag: 'v<version>', paths: ['firmware/'], deploysOnPush: false, manual: ['flash it'] },
+    },
+  });
+  return { d, sha, web1 };
+}
+
+test('publishStatus with releases: each its own last tag, counting only its own paths', async () => {
+  const { d, sha, web1 } = twoReleases();
+  const s = await publishStatus({ slug: 'p-two', path: d });
+  assert.deepEqual(s.releases.map((r) => [r.name, r.label]), [['website', 'Website'], ['device', 'Device']]);
+  const [web, dev] = s.releases;
+  assert.equal(web.lastRelease.tag, 'web/v1.1.0');
+  assert.equal(web.lastRelease.short, web1.slice(0, 7));
+  assert.equal(web.lastRelease.unreleased, 1, 'one later commit touched site/');
+  assert.deepEqual(web.lastRelease.paths, ['site/']);
+  assert.equal(dev.lastRelease.tag, 'v1.0.0', 'web/ tags are not the device\'s');
+  assert.equal(dev.lastRelease.short, sha.slice(0, 7));
+  assert.equal(dev.lastRelease.unreleased, 1, 'three commits since, one of them in firmware/');
+  assert.equal(web.live, null);
+  assert.match(web.ready.reason, /web\/v1\.0\.0 already marks/, 'its own tag, its own refusal');
+  assert.equal(dev.declaration.manual[0], 'flash it');
+  assert.equal(s.lastRelease, null, 'no project-wide last release');
+  assert.equal(s.ready, null);
+  assert.deepEqual(s.credentials, []);
+});
+
+test('publishStatus: the flat form lists itself as one release too', async () => {
+  const { d } = published('1.0.0');
+  declare(d, { deploysOnPush: false, command: 'x' });
+  const s = await publishStatus({ slug: 'p-one', path: d });
+  assert.equal(s.releases.length, 1);
+  assert.equal(s.releases[0].name, null);
+  assert.deepEqual(s.releases[0].ready, s.ready);
+});
+
+test('labelReleaseTags: a named release\'s tags get its label and version; the flat form is left alone', () => {
+  const { d } = twoReleases();
+  const rows = [
+    { hash: 'a', refs: ['HEAD -> main', 'tag: web/v1.1.0'] },
+    { hash: 'b', refs: ['tag: v1.0.0', 'tag: web/v1.0.0'] },
+    { hash: 'c', refs: ['tag: vnext', 'tag: other'] },
+    { hash: 'd', refs: [] },
+  ];
+  const out = labelReleaseTags(d, rows);
+  assert.deepEqual(out[0].releaseTags, [{ tag: 'web/v1.1.0', release: 'website', label: 'Website', version: '1.1.0' }]);
+  assert.deepEqual(out[1].releaseTags, [
+    { tag: 'v1.0.0', release: 'device', label: 'Device', version: '1.0.0' },
+    { tag: 'web/v1.0.0', release: 'website', label: 'Website', version: '1.0.0' },
+  ]);
+  assert.equal(out[2].releaseTags, undefined, 'v must be followed by a digit');
+  assert.equal(out[3], rows[3], 'an untagged row is passed through');
+  assert.equal(rows[0].releaseTags, undefined, 'the input rows are not changed');
+  const flat = repo();
+  declare(flat, { deploysOnPush: false, command: 'x' });
+  assert.equal(labelReleaseTags(flat, rows), rows);
 });
 
 // --- the card's "ready" line (task 259) -------------------------------------------------
@@ -407,4 +602,11 @@ test('publishInventory: declaration, hook and last release per project', () => {
   assert.deepEqual(rows[0].manual, ['press Deploy']);
   assert.equal(rows[1].declared, false);
   assert.equal(rows[1].lastRelease, null);
+});
+
+test('publishInventory: a project naming its releases lists each one\'s last release (task 264)', () => {
+  const { d } = twoReleases();
+  const [row] = publishInventory([{ slug: 'two', path: d }]);
+  assert.equal(row.lastRelease, null);
+  assert.deepEqual(row.releases.map((r) => [r.name, r.lastRelease]), [['website', 'web/v1.1.0'], ['device', 'v1.0.0']]);
 });

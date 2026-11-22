@@ -271,9 +271,8 @@ test('reopening by hand (DONE → OPEN) and moving a done_date are refused', () 
   assert.match(r.reason, /done_date: 2026-10-17` → `done_date: 2026-10-18`/);
 });
 
-test('OPEN ↔ PARKED, OBSOLETE, other edits to a closed task, and a brand-new file all pass', () => {
+test('OBSOLETE, other edits to a closed task, and a brand-new file all pass', () => {
   const open = seed('046-open.md', GOOD_TASK.replace('id: 42', 'id: 46'));
-  assert.equal(runEdit(open, 'status: OPEN', 'status: PARKED').decision, 'allow');
   assert.equal(runEdit(open, 'status: OPEN', 'status: OBSOLETE').decision, 'allow');
   const done = seed('047-done.md', withStatus('DONE', '2026-10-17').replace('id: 42', 'id: 47'));
   assert.equal(runEdit(done, 'Body.', 'Body, with a note added later.').decision, 'allow');
@@ -288,14 +287,67 @@ const claimedTask = (id, status = 'OPEN') => GOOD_TASK.replace('id: 42', `id: ${
   .replace('status: OPEN', `status: ${status}`)
   .replace('out_of_scope: []\n', 'out_of_scope: []\nenv:\n  branch: b\n  claimed_at: 2026-11-06T00:00:00.000Z\n  claimed_by: Tester\n');
 
-test('parking or obsoleting a claimed task by hand is refused, naming the claim', () => {
+test('obsoleting a claimed task by hand is refused, naming the claim; a file already carrying the error stays editable', () => {
   const p = seed('049-claimed.md', claimedTask(49));
-  const parked = runEdit(p, 'status: OPEN', 'status: PARKED');
-  assert.equal(parked.decision, 'deny');
-  assert.match(parked.reason, /claimed .* but status is PARKED — a claim is valid only on an OPEN task/);
-  assert.equal(runEdit(p, 'status: OPEN', 'status: OBSOLETE').decision, 'deny');
+  const obsolete = runEdit(p, 'status: OPEN', 'status: OBSOLETE');
+  assert.equal(obsolete.decision, 'deny');
+  assert.match(obsolete.reason, /claimed .* but status is OBSOLETE — a claim is valid only on an OPEN task/);
   const leftover = seed('050-leftover.md', claimedTask(50, 'PARKED'));
   assert.equal(runEdit(leftover, 'Body.', 'Body, noted.').decision, 'allow');
+});
+
+// --- task 244: parking goes through park / unpark ------------------------------
+// The commands set the status and the text's live `> **PARKED <date> — <reason>**`
+// note together. A hand edit of either half is refused, naming them.
+
+const PARK_NOTE = '> **PARKED 2026-10-20 — waiting for an App Store release with 1.30.0 or later, then the check on\n> the phone** (owner: "merge it"). All merged.';
+const parkedTask = (id, status) => GOOD_TASK.replace('id: 42', `id: ${id}`).replace('status: OPEN', `status: ${status}`)
+  .replace('# 42: A task\n', `# ${id}: A task\n\n${PARK_NOTE}\n`);
+
+test('hand-parking (OPEN → PARKED) and hand-un-parking (PARKED → OPEN) are refused, naming park and unpark', () => {
+  const open = seed('060-open.md', GOOD_TASK.replace('id: 42', 'id: 60'));
+  const r = runEdit(open, 'status: OPEN', 'status: PARKED');
+  assert.equal(r.decision, 'deny');
+  assert.match(r.reason, /Park guard: `status: OPEN` → `status: PARKED` in 060-open\.md is a park or an un-park/);
+  assert.match(r.reason, /cogyard tasks park 60 "<what it waits for>"/);
+  assert.match(r.reason, /cogyard tasks unpark 60 "<what was seen>"/);
+  const parked = seed('061-parked.md', parkedTask(61, 'PARKED'));
+  assert.equal(runEdit(parked, 'status: PARKED', 'status: OPEN').decision, 'deny');
+  // A claimed task too — the park guard answers first, naming the command.
+  assert.match(runEdit(seed('062-claimed.md', claimedTask(62)), 'status: OPEN', 'status: PARKED').reason, /Park guard/);
+});
+
+test('a hand edit of the live park note — adding, ending, or changing its date or reason — is refused', () => {
+  const open = seed('063-open.md', GOOD_TASK.replace('id: 42', 'id: 63'));
+  const add = runEdit(open, '# 42: A task\n', '# 42: A task\n\n> **PARKED 2026-11-17 — waiting**\n');
+  assert.equal(add.decision, 'deny');
+  assert.match(add.reason, /Park guard: a change to the live `> \*\*PARKED <date> — <reason>\*\*` note in 063-open\.md/);
+  const parked = seed('064-parked.md', parkedTask(64, 'PARKED'));
+  assert.equal(runEdit(parked, '> **PARKED 2026-10-20 — waiting', '> Parked 2026-10-20 – 2026-11-17: waiting').decision, 'deny', 'ended by hand');
+  assert.equal(runEdit(parked, '1.30.0 or later', '1.31.0 or later').decision, 'deny', 'reason changed');
+  assert.equal(runEdit(parked, 'PARKED 2026-10-20', 'PARKED 2026-10-21').decision, 'deny', 'date changed');
+});
+
+test('edits that leave the park record alone pass: a remark after the bold, the rest of the file, a brand-new parked file', () => {
+  const parked = seed('065-parked.md', parkedTask(65, 'PARKED'));
+  assert.equal(runEdit(parked, 'All merged.', 'All merged; build 812 on TestFlight.').decision, 'allow');
+  assert.equal(runEdit(parked, 'Body.', 'Body, with a note.').decision, 'allow');
+  const placeholder = seed('066-new.md', '');
+  assert.equal(run(placeholder, parkedTask(66, 'PARKED')).decision, 'allow');
+});
+
+test('a brand-new file whose status and park note disagree is refused as a new validator error', () => {
+  const r = run(join(STORE, '067-new.md'), parkedTask(67, 'OPEN'));
+  assert.equal(r.decision, 'deny');
+  assert.match(r.reason, /park: the text says "PARKED 2026-10-20 — waiting for an App Store release/);
+  const bare = run(join(STORE, '068-new.md'), GOOD_TASK.replace('id: 42', 'id: 68').replace('status: OPEN', 'status: PARKED'));
+  assert.equal(bare.decision, 'deny');
+  assert.match(bare.reason, /park: status is PARKED but the text has no live park note/);
+});
+
+test('a file already carrying a park contradiction (158: OPEN with a live note) stays editable', () => {
+  const legacy = seed('069-legacy.md', parkedTask(69, 'OPEN'));
+  assert.equal(runEdit(legacy, 'Body.', 'Body, with a box ticked.').decision, 'allow');
 });
 
 // --- task 247: claim fields change only through env claim / release ------------

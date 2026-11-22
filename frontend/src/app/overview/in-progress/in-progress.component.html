@@ -1,0 +1,94 @@
+@if (loading()) {
+  <section class="ip"><p-skeleton height="96px" /></section>
+} @else if (boxes().length || oldClaims().length || without().length || unreadable().length) {
+  <section class="ip">
+    <div class="ip-head"><span class="widget-title">In progress and recently done</span></div>
+    @if (boxes().length) {
+      <div class="grid">
+        @for (b of boxes(); track b.slug) { <ng-container *ngTemplateOutlet="box; context: { $implicit: b, old: false }" /> }
+      </div>
+    }
+
+    @if (oldClaims().length) {
+      <p class="hint foot">{{ oldSummary() }}
+        <button type="button" class="btn-link fold-toggle" [attr.aria-expanded]="showOld()" (click)="showOld.set(!showOld())">{{ showOld() ? 'hide' : 'show' }}</button>
+      </p>
+      @if (showOld()) {
+        <div class="grid">
+          @for (b of oldClaims(); track b.slug) { <ng-container *ngTemplateOutlet="box; context: { $implicit: b, old: true }" /> }
+        </div>
+      }
+    }
+    @if (without().length) {
+      <p class="hint sm foot">Nothing in progress and nothing closed this week or last: {{ without().join(' · ') }}</p>
+    }
+    @for (p of unreadable(); track p.slug) {
+      <p class="hint sm foot" [pTooltip]="p.error ?? ''" tooltipPosition="top">{{ p.label }} could not be read</p>
+    }
+  </section>
+}
+
+<ng-template #box let-b let-old="old">
+  <article class="box">
+    <div class="name-line">
+      <button type="button" class="btn-link dim name" (click)="selectProject.emit(b.slug)">{{ b.label }}</button>
+      @if (b.strip.length) {
+        <!-- Only whole chips: the line is one row high and wraps, so a chip that
+             doesn't fit drops to the hidden second row instead of being cut. -->
+        <div class="strip" [pTooltip]="stripTip" tooltipPosition="top" [showDelay]="400">
+          <i class="anchor" aria-hidden="true"></i>
+          @for (g of b.strip; track g.label; let first = $first) {
+            <span class="lead">@if (!first) { <i class="sep"></i> }<span class="hint sm">{{ g.label }}</span><app-task-chip [id]="g.first.id" [slug]="b.slug" [note]="g.first.note" (open)="openTask.emit({ slug: b.slug, id: $event })" /></span>
+            @for (t of g.rest; track t.id) { <app-task-chip [id]="t.id" [slug]="b.slug" [note]="t.note" (open)="openTask.emit({ slug: b.slug, id: $event })" /> }
+          }
+        </div>
+        <button type="button" class="btn-pill more" (click)="pop.toggle($event)" [attr.aria-expanded]="openSlug() === b.slug">{{ openSlug() === b.slug ? 'less ▲' : '… more' }}</button>
+        <p-popover #pop (onShow)="openSlug.set(b.slug)" (onHide)="openSlug.set(null)">
+          <div class="done-pop">
+            <div class="widget-title pop-title">{{ b.label }} — recently done</div>
+            @for (g of b.groups; track g.label) {
+              <div class="hint sm when-label">{{ g.label }}</div>
+              @for (t of g.tasks; track t.id) {
+                <div class="task">
+                  <div class="r1">
+                    <app-task-chip [id]="t.id" [slug]="b.slug" [note]="t.note" (open)="pop.hide(); openTask.emit({ slug: b.slug, id: $event })" />
+                    <span class="title" [pTooltip]="t.title" tooltipPosition="top" [showDelay]="400">{{ t.title }}</span>
+                  </div>
+                  <div class="r2">
+                    <span class="hint sm done-on">{{ t.note }}</span>
+                    <app-task-squares [boxes]="t.boxes" [done]="t.done" [total]="t.total" />
+                  </div>
+                </div>
+              }
+            }
+          </div>
+        </p-popover>
+      }
+    </div>
+
+    @if (old && claimedLine(b)) { <div class="hint sm">{{ claimedLine(b) }}</div> }
+
+    @if (b.tasks.length) {
+      <div class="tasks">
+        @for (t of b.tasks; track t.id) {
+          <div class="task">
+            <div class="r1">
+              <app-task-chip [id]="t.id" [slug]="b.slug" (open)="openTask.emit({ slug: b.slug, id: $event })" />
+              @if (t.youNext) { <app-flag tone="warn" [pTooltip]="stepsText(t)" tooltipPosition="top">next: {{ t.youNext.join(', ') }}</app-flag> }
+              @if (t.worktreeMissing) { <app-flag tone="caution" pTooltip="Still claimed, but the worktree the claim names was removed" tooltipPosition="top">worktree missing</app-flag> }
+              <span class="title" [pTooltip]="t.title" tooltipPosition="top" [showDelay]="400">{{ t.title }}</span>
+            </div>
+            <div class="r2">
+              @if (t.agent || t.claimedByOther) {
+                <app-agent-state [live]="t.agent" [claimedBy]="t.claimedBy" [claimedAt]="t.claimedAt" [other]="t.claimedByOther" />
+              }
+              <app-task-squares [boxes]="t.boxes" [done]="t.done" [total]="t.total" [code]="t.code" />
+            </div>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="hint sm">Nothing in progress</div>
+    }
+  </article>
+</ng-template>

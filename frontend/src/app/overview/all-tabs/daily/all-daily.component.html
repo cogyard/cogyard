@@ -1,0 +1,21 @@
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else if (briefs().length) {
+  <section class="daily">
+    <header class="daily-head">
+      <span class="daily-title">Daily Overview</span>
+      <span class="daily-count hint sm">{{ dailySummary() }}</span>
+    </header>
+    <div class="briefs">
+      @for (p of briefs(); track p.slug) {
+        <article class="brief-lead" [class.failed]="p.brief.status === 'failed'">
+          <button class="btn-link bl-name" (click)="selectProject.emit(p.slug)">{{ p.label }}</button>
+          <span class="bl-when hint sm">{{ briefWhen(p.brief) }}</span>
+          <p class="bl-text">{{ p.brief.status === 'failed' ? briefAlarm(p.brief) : p.brief.lead }}</p>
+        </article>
+      }
+    </div>
+  </section>
+} @else {
+  <p class="hint">No project has a nightly brief yet.</p>
+}

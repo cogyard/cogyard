@@ -91,11 +91,15 @@ button.wt-pill.active .wt-when, button.wt-pill.active .main-dot { color: color-m
 
 /* --- content pane -------------------------------------------------------------- */
 .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+/* Wraps onto a second row when narrow (task 262) rather than clipping the view
+   choices or pushing edit / Open in off the edge; a path longer than the bar
+   ellipsizes (min-width: 0). The choices' own no-shrink/no-wrap is inline on
+   the p-selectbutton: this sheet sits at its 8 kB budget (angular.json). */
 .pane-bar {
-  display: flex; align-items: center; gap: var(--app-space-3); padding: 6px 12px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px var(--app-space-3); padding: 6px 12px;
   background: var(--app-surface-2); border-bottom: 1px solid var(--app-border);
 }
-.fpath { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fpath { font-weight: 600; color: var(--app-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .meta { white-space: nowrap; }
 .meta.warn { color: #b45309; font-weight: 600; }
 .spacer { flex: 1; }

@@ -6,9 +6,15 @@
 // lying around, a create-then-destroy test passes while the bug is fully
 // present. So the decisive test here removes the LAST worktree and asserts the
 // entry is gone with nothing left to trigger a sweep.
+//
+// The worktrees here are REAL git worktrees (task 172). A worktree is alive
+// only while git lists it; a folder at the path is not enough, and the bug lived
+// exactly in the gap between "a folder" and "a worktree" — so a fixture made
+// with mkdir would test the wrong thing.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerWorktreeLaunch, writeWorktreeLaunch, removeWorktreeLaunch, sweepLaunchEntries, launchNameFor } from '../core/launch.mjs';
@@ -18,23 +24,43 @@ let ROOT, PROJECT;
 const launchFile = () => join(PROJECT, '.claude', 'launch.json');
 const read = () => JSON.parse(readFileSync(launchFile(), 'utf8'));
 const names = () => read().configurations.map((c) => c.name);
+const wtPath = (name) => join(PROJECT, '.claude', 'worktrees', name);
+
+function git(...args) {
+  return execFileSync('git', ['-C', PROJECT, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
 
 function makeWorktree(name) {
-  const wt = join(PROJECT, '.claude', 'worktrees', name);
-  mkdirSync(wt, { recursive: true });
+  const wt = wtPath(name);
+  git('worktree', 'add', '-q', '--detach', wt);
   return wt;
 }
 
-function register(name, port) {
-  const wt = join(PROJECT, '.claude', 'worktrees', name);
+function removeWorktree(name) {
+  git('worktree', 'remove', '--force', wtPath(name));
+}
+
+function register(name, port, worktree = wtPath(name)) {
   return registerWorktreeLaunch(PROJECT, {
-    worktree: wt, name: launchNameFor(name), devScript: 'npm run dev', port,
+    worktree, name: launchNameFor(name), devScript: 'npm run dev', port,
   });
+}
+
+// An entry exactly like the four where-is-maya kept: written by the hook, owned
+// by a path where only a folder holding `.env.worktree` is left.
+function addEntryFor(path, name, port) {
+  const doc = read();
+  doc.configurations.push({
+    name, runtimeExecutable: 'sh', runtimeArgs: ['-c', `cd '${path}' && npm run dev`], port, cogyardWorktree: path,
+  });
+  writeFileSync(launchFile(), JSON.stringify(doc, null, 2));
 }
 
 before(() => {
   ROOT = realpathSync(mkdtempSync(join(tmpdir(), 'cogyard-launch-')));
   PROJECT = join(ROOT, 'project');
+  execFileSync('git', ['init', '-q', '-b', 'main', PROJECT]);
+  git('-c', 'user.email=a@b.c', '-c', 'user.name=x', 'commit', '-q', '--allow-empty', '-m', 'init');
   mkdirSync(join(PROJECT, '.claude'), { recursive: true });
   // The project's own entries — these must survive everything below.
   writeFileSync(launchFile(), JSON.stringify({
@@ -68,8 +94,7 @@ test('removing a worktree removes its entry — and ONLY its entry', () => {
   register('task-2-beta', 31002);
   assert.deepEqual(names(), ['api', 'frontend', 'wt-task-1-alpha', 'wt-task-2-beta']);
 
-  const alpha = join(PROJECT, '.claude', 'worktrees', 'task-1-alpha');
-  rmSync(alpha, { recursive: true, force: true });
+  removeWorktree('task-1-alpha');
   const swept = sweepLaunchEntries(PROJECT);
 
   assert.deepEqual(swept, ['wt-task-1-alpha']);
@@ -79,23 +104,21 @@ test('removing a worktree removes its entry — and ONLY its entry', () => {
 test('removing the LAST worktree still removes its entry', () => {
   // The case a create-then-destroy round trip hides: with no other worktree
   // left, nothing would ever trigger a later sweep, so removal must do it.
-  const beta = join(PROJECT, '.claude', 'worktrees', 'task-2-beta');
-  rmSync(beta, { recursive: true, force: true });
+  removeWorktree('task-2-beta');
   assert.deepEqual(sweepLaunchEntries(PROJECT), ['wt-task-2-beta']);
   assert.deepEqual(names(), ['api', 'frontend']);
 });
 
-test('a worktree still on disk is de-registered when named explicitly', () => {
+test('a worktree still alive is de-registered when named explicitly', () => {
   // What cleanup uses: git may leave the directory behind, and the entry must
   // go regardless.
-  makeWorktree('task-3-gamma');
+  const wt = makeWorktree('task-3-gamma');
   register('task-3-gamma', 31003);
-  const wt = join(PROJECT, '.claude', 'worktrees', 'task-3-gamma');
   assert.ok(existsSync(wt));
 
   assert.deepEqual(sweepLaunchEntries(PROJECT, { except: wt }), ['wt-task-3-gamma']);
   assert.deepEqual(names(), ['api', 'frontend']);
-  rmSync(wt, { recursive: true, force: true });
+  removeWorktree('task-3-gamma');
 });
 
 test('a legacy hand-written entry is sweepable via its cd', () => {
@@ -118,7 +141,89 @@ test('the project\'s own entries are never swept', () => {
   assert.deepEqual(names(), ['api', 'frontend']);
 });
 
+// Task 172 — alive means a registered worktree, not a folder.
+
+test('a folder that is not a registered worktree is swept, and the folder is left alone', () => {
+  // where-is-maya's leftover, reproduced: a name with a space, a folder holding
+  // only `.env.worktree`, an entry the hook wrote for it. git never made it.
+  const live = makeWorktree('task-7-golf');
+  register('task-7-golf', 31007);
+  const leftover = wtPath('task-053 stop-sharing-keeps-todays-history-');
+  mkdirSync(leftover, { recursive: true });
+  writeFileSync(join(leftover, '.env.worktree'), 'PORT=30071\nFRONTEND_PORT=31071\n');
+  addEntryFor(leftover, 'wt-task-053 stop-sharing-keeps-todays-history-', 31071);
+  assert.deepEqual(names(), ['api', 'frontend', 'wt-task-7-golf', 'wt-task-053 stop-sharing-keeps-todays-history-']);
+
+  assert.deepEqual(sweepLaunchEntries(PROJECT), ['wt-task-053 stop-sharing-keeps-todays-history-']);
+  assert.deepEqual(names(), ['api', 'frontend', 'wt-task-7-golf'], 'the registered worktree is kept');
+  assert.ok(existsSync(join(leftover, '.env.worktree')), 'the sweep drops the entry, never the folder');
+  assert.ok(existsSync(live));
+  rmSync(leftover, { recursive: true, force: true });
+});
+
+test('the hook\'s registration sweeps a bare folder\'s entry in the same write', () => {
+  // The SessionStart path: registerWorktreeLaunch carries its own filter, and it
+  // must use the same liveness as sweepLaunchEntries.
+  const leftover = wtPath('task-056 request-log-is-a-per-user-record-');
+  mkdirSync(leftover, { recursive: true });
+  writeFileSync(join(leftover, '.env.worktree'), 'PORT=30072\n');
+  addEntryFor(leftover, 'wt-task-056 request-log-is-a-per-user-record-', 31072);
+
+  assert.deepEqual(register('task-7-golf', 31007), ['wt-task-056 request-log-is-a-per-user-record-']);
+  assert.deepEqual(names(), ['api', 'frontend', 'wt-task-7-golf']);
+  assert.ok(existsSync(leftover), 'the folder stays');
+  rmSync(leftover, { recursive: true, force: true });
+});
+
+test('a worktree git still lists but whose folder was deleted by hand is swept', () => {
+  // `git worktree list` keeps such a worktree as "prunable"; it is dead.
+  const wt = makeWorktree('task-8-hotel');
+  register('task-8-hotel', 31008);
+  rmSync(wt, { recursive: true, force: true });
+  assert.match(git('worktree', 'list', '--porcelain'), /task-8-hotel/, 'git still lists it');
+
+  assert.deepEqual(sweepLaunchEntries(PROJECT), ['wt-task-8-hotel']);
+  assert.deepEqual(names(), ['api', 'frontend', 'wt-task-7-golf']);
+  git('worktree', 'prune');
+});
+
+test('an entry naming a live worktree through a symlinked path is kept', () => {
+  // Paths are compared as realpaths, so a different spelling of the same
+  // worktree (a linked home, /var vs /private/var) is still the same worktree.
+  const link = join(ROOT, 'project-link');
+  symlinkSync(PROJECT, link);
+  const viaLink = join(link, '.claude', 'worktrees', 'task-7-golf');
+  addEntryFor(viaLink, 'wt-task-7-golf-via-link', 31077);
+
+  assert.deepEqual(sweepLaunchEntries(PROJECT), []);
+  assert.deepEqual(names(), ['api', 'frontend', 'wt-task-7-golf', 'wt-task-7-golf-via-link']);
+  const doc = read();
+  doc.configurations = doc.configurations.filter((c) => c.name !== 'wt-task-7-golf-via-link');
+  writeFileSync(launchFile(), JSON.stringify(doc, null, 2));
+  rmSync(link);
+});
+
+test('when git cannot list the worktrees, every entry is kept', () => {
+  // A git failure must not sweep everything: here the project is not a git
+  // repository at all, and even an entry whose folder is plainly gone stays.
+  const notRepo = join(ROOT, 'not-a-repo');
+  mkdirSync(join(notRepo, '.claude'), { recursive: true });
+  const gone = join(notRepo, '.claude', 'worktrees', 'task-9-india');
+  const doc = {
+    version: '0.0.1',
+    configurations: [
+      { name: 'wt-task-9-india', runtimeExecutable: 'sh', runtimeArgs: ['-c', `cd '${gone}' && npm run dev`], port: 31009, cogyardWorktree: gone },
+    ],
+  };
+  writeFileSync(join(notRepo, '.claude', 'launch.json'), JSON.stringify(doc, null, 2));
+
+  assert.deepEqual(sweepLaunchEntries(notRepo), []);
+  const after = JSON.parse(readFileSync(join(notRepo, '.claude', 'launch.json'), 'utf8'));
+  assert.deepEqual(after.configurations.map((c) => c.name), ['wt-task-9-india']);
+});
+
 test('a corrupt launch.json costs nobody their dev server', () => {
+  removeWorktree('task-7-golf');
   writeFileSync(launchFile(), '{ this is not json');
   makeWorktree('task-4-delta');
   register('task-4-delta', 31004);

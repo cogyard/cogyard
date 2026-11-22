@@ -32,7 +32,9 @@ const git = (cwd, args) => execFileSync('git', ['-C', cwd, ...ID, ...args], { en
 function run(cli, args, cwd) {
   const r = spawnSync('node', [cli, ...args], {
     cwd, encoding: 'utf8',
-    env: { ...process.env, COGYARD_HOME: HOME, COGYARD_PROJECTS_ROOT: PROJECTS, GIT_AUTHOR_NAME: 'x', GIT_AUTHOR_EMAIL: 'a@b.c', GIT_COMMITTER_NAME: 'x', GIT_COMMITTER_EMAIL: 'a@b.c' },
+    // No chat id from the agent running the tests: a claim records the running
+    // chat's own id over the one passed (task 260), and these pass their own.
+    env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', COGYARD_HOME: HOME, COGYARD_PROJECTS_ROOT: PROJECTS, GIT_AUTHOR_NAME: 'x', GIT_AUTHOR_EMAIL: 'a@b.c', GIT_COMMITTER_NAME: 'x', GIT_COMMITTER_EMAIL: 'a@b.c' },
   });
   assert.equal(r.status, 0, `${args.join(' ')} failed:\n${r.stdout}\n${r.stderr}`);
   return r.stdout;

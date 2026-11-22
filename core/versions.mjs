@@ -172,6 +172,43 @@ function recentCode(ctx, proj) {
   return hash(['recent', ctx.store(proj.path), history]);
 }
 
+// GET /api/in-progress (task 265) — every project's plan and recently-done list
+// (core/in-progress.mjs calls exactly those two), so the code is built from
+// planCode and recentCode per project and can't cover less than they do; plus
+// the registry (which projects, their labels, error rows).
+function inProgressCode(ctx, projects) {
+  const parts = ['in-progress', st(REGISTRY_PATH)];
+  for (const p of projects) {
+    if (p.error) { parts.push(p.slug, 'error', p.error); continue; }
+    const plan = planCode(ctx, p, projects);
+    if (plan == null) return null;
+    parts.push(p.slug, plan, recentCode(ctx, p));
+  }
+  return hash(parts);
+}
+
+// One project's box WITHOUT the live agent state (task 265): exactly planCode's
+// and recentCode's inputs minus ctx.live(). core/in-progress.mjs keeps each box
+// on this signal and reads the agent state fresh on every call, so an agent
+// changing state anywhere recomputes no project's plan — the expensive part.
+// One ctx for every project, so each store and repo is signed once. → Map<slug,
+// signal | null> (null = recompute, never cache).
+function inProgressBoxSignals(projects) {
+  const ctx = makeCtx();
+  const out = new Map();
+  for (const proj of projects) {
+    if (proj.error) { out.set(proj.slug, null); continue; }
+    try {
+      const refs = ctx.refs(proj.path);
+      if (refs == null) { out.set(proj.slug, null); continue; }
+      const parts = ['in-progress-box', st(REGISTRY_PATH), ctx.store(proj.path), refs, recentCode(ctx, proj)];
+      for (const p of projects) if (!p.error && p.slug !== proj.slug) parts.push(p.slug, ctx.store(p.path));
+      out.set(proj.slug, hash(parts));
+    } catch { out.set(proj.slug, null); }
+  }
+  return out;
+}
+
 // GET /api/daily — briefs, heartbeats, the drift report (all under
 // $COGYARD_HOME by slug since task 187 — the store is not read), and the
 // registry (the answer carries the project's label; found missing by
@@ -259,6 +296,7 @@ function versionsFor(keys, projects) {
       else if (family === 'usage' && (proj || !slug) && !rest.length) code = usageCode(ctx);
       else if (key === 'activity') code = activityCode(ctx, projects);
       else if (key === 'overview') code = overviewCode(ctx, projects);
+      else if (key === 'in-progress') code = inProgressCode(ctx, projects);
       else if (key === 'projects') code = projectsCode(ctx, projects);
       else if (key === 'config') code = configCode(projects);
     } catch { code = null; } // any surprise → poll, never stale
@@ -267,4 +305,4 @@ function versionsFor(keys, projects) {
   return out;
 }
 
-export { versionsFor, CLOCK_BUCKET_MS };
+export { versionsFor, inProgressBoxSignals, CLOCK_BUCKET_MS };

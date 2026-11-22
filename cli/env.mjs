@@ -324,7 +324,9 @@ function refuseNotOpen(abs, fmText, status, sessionId) {
     attempted_by: sessionId,
     hint: closed
       ? `#${id} is ${status}. A claim is valid only on an OPEN task: reopen it first — cogyard tasks reopen ${id} --why "<what the work is>" — then claim. Nothing was written.`
-      : `#${id} is ${status}. A claim is valid only on an OPEN task: set it back to OPEN first if it is to be worked, then claim. Nothing was written.`,
+      : status === 'PARKED'
+        ? `#${id} is PARKED. A claim is valid only on an OPEN task: once what it waits for has happened, un-park it — cogyard tasks unpark ${id} "<what was seen>" — then claim. A park is the owner's hold; ask before ending it. Nothing was written.`
+        : `#${id} is ${status}. A claim is valid only on an OPEN task: set it back to OPEN first if it is to be worked, then claim. Nothing was written.`,
   }, null, 2) + '\n');
   process.exit(4);
 }
@@ -369,10 +371,27 @@ function refuseWrongWorktree(abs, wrong, sessionId) {
   process.exit(3);
 }
 
-async function claim(taskFile, sessionId, opts = {}) {
-  if (!taskFile || !sessionId) fail('usage: env.mjs claim <task-file> <session-id> [--force] [--any-worktree]');
+async function claim(taskFile, givenSessionId, opts = {}) {
+  if (!taskFile || !givenSessionId) fail('usage: env.mjs claim <task-file> <session-id> [--force] [--any-worktree]');
+  // The chat that holds a claim is the chat that RAN this command, when the
+  // agent can say which one that is (task 260). Hooks now refuse an edit to a
+  // task file claimed by another chat, and EnterWorktree into a task worktree
+  // this chat hasn't claimed, by comparing this record with the chat id Claude
+  // Code hands every hook — so an id the agent typed wrong (claims.json held
+  // `desktop-task-078-…` and `20260824-tm-findings`) would lock the claiming
+  // chat out of its own task. The argument stays for a human's shell and for
+  // agents that can't say.
   // A missing file fails here in one line — wrongWorktree() below reads it (task 209).
   const abs = taskPath(taskFile);
+  let sessionId = givenSessionId;
+  {
+    const { currentSessionId } = await import('../core/drivers.mjs');
+    const actual = await currentSessionId();
+    if (actual && actual !== givenSessionId) {
+      process.stderr.write(`env.mjs: recording this chat's own id ${actual}, not the given ${givenSessionId}\n`);
+      sessionId = actual;
+    }
+  }
 
   // Before anything is pulled or written: the right place, or the owner's say-so.
   const wrong = wrongWorktree(abs, findRepoRoot());
@@ -421,8 +440,17 @@ async function claim(taskFile, sessionId, opts = {}) {
     // repo) and goes in the task file; the worktree folder and the session are
     // this machine's and go in claims.json (task 190).
     const here = findRepoRoot();
-    const worktree = here ? here.split('/').pop() : null;
-    const branch = here ? tryExec('git branch --show-current', { cwd: here }) || null : null;
+    let worktree = here ? here.split('/').pop() : null;
+    let branch = here ? tryExec('git branch --show-current', { cwd: here }) || null : null;
+    // From the main checkout, a task that already has its own worktree keeps it
+    // and its branch (task 260): pickup's continuation now claims BEFORE it
+    // enters the worktree, because entering one this chat hasn't claimed is
+    // refused. Recording the main checkout and `main` here would point the
+    // claim away from where the work is.
+    if (here && !inLinkedWorktree(here)) {
+      const prior = localClaim(abs, topLevelId(readFileSync(abs, 'utf8').slice(4)));
+      if (prior && typeof prior.worktree === 'string' && /^task-/.test(prior.worktree)) { worktree = null; branch = null; }
+    }
     const claimedBy = resolveClaimant(here);
     const fields = { claimed_at: now };
     if (claimedBy) fields.claimed_by = claimedBy;

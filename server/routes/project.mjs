@@ -104,7 +104,10 @@ export async function handle(path, u, proj, res) {
   if (path === '/api/graph') {
     const focus = u.searchParams.get('focus') || null;
     const [g, originUrl] = await Promise.all([core.gitDagWithStashesAndWorktrees(proj, 250, focus), originHttpUrl(proj.path)]);
-    return json(res, 200, { slug: proj.slug, label: proj.label, originUrl, folder: folderOf(proj.path), ...g });
+    // A project naming its releases in publish.json (task 264): each tag ref
+    // that is one of them comes with its release's label and version.
+    const rows = core.labelReleaseTags(proj.path, g.rows);
+    return json(res, 200, { slug: proj.slug, label: proj.label, originUrl, folder: folderOf(proj.path), ...g, rows });
   }
   return false;
 }

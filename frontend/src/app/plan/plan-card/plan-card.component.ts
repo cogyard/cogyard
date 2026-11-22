@@ -5,6 +5,7 @@ import { TaskChipComponent } from '../../shared/task-chip/task-chip.component';
 import { FlagComponent } from '../../shared/flag/flag.component';
 import { AgentStateComponent } from '../../shared/agent-state/agent-state.component';
 import { LabelChipComponent } from '../../shared/label-chip/label-chip.component';
+import { TaskSquaresComponent } from '../../shared/task-squares/task-squares.component';
 import { TYPE_ICONS } from '../../shared/task-buckets';
 import { crossLabel, crossRef, isCross } from '../cross-ref';
 
@@ -43,11 +44,9 @@ const EMPTY: Pick<PlanTask, 'type' | 'labels' | 'status' | 'unmet' | 'waitedOnBy
   claimedBy: null, claimedAt: null, claimedByOther: false, agent: null,
   code: { state: 'none', ahead: 0, behind: 0, branch: null },
 };
-const commits = (n: number) => `${n} commit${n === 1 ? '' : 's'}`;
-
 @Component({
   selector: 'app-plan-card',
-  imports: [TooltipModule, TaskChipComponent, FlagComponent, AgentStateComponent, LabelChipComponent],
+  imports: [TooltipModule, TaskChipComponent, FlagComponent, AgentStateComponent, LabelChipComponent, TaskSquaresComponent],
   templateUrl: './plan-card.component.html',
   styleUrl: './plan-card.component.scss',
 })
@@ -65,23 +64,8 @@ export class PlanCardComponent {
   // The squares are t().boxes as sent — one per checkbox, the task's size and how
   // far along it is at once (owner's pick, 2026-10-06; a bar of work LEFT made a
   // finished task look barely started), in file order so where the open work
-  // sits shows (task 251; they were ticked-first before).
-  // The code text at the end of the squares, and its tooltip (task 251).
-  codeText = computed(() => {
-    const c = this.t().code;
-    if (c.state === 'merged') return { kind: 'main' as const, ahead: 0, behind: 0 };
-    if (c.state === 'ahead') return { kind: 'ahead' as const, ahead: c.ahead, behind: c.behind };
-    return null;
-  });
-  codeTip = computed(() => {
-    const c = this.t().code;
-    if (c.state === 'merged') return c.branch
-      ? `On main: ${c.branch} has nothing main lacks`
-      : 'On main: its branch is gone, and main has its commits';
-    if (c.state !== 'ahead') return '';
-    return `${c.branch}: ${commits(c.ahead)} main doesn't have yet`
-      + (c.behind ? `; ${commits(c.behind)} behind main` : '; not behind main');
-  });
+  // sits shows (task 251; they were ticked-first before). Drawn, with the code
+  // text after them, by the shared app-task-squares (task 265).
   typeIcon = computed(() => TYPE_ICONS[this.t().type ?? ''] ?? null);
   colorOf(label: string): string | null { return this.labelColors()[label] ?? null; }
   stepsText = computed(() => this.t().youSteps.map((s) => s.text.replace(/\*\*|`/g, '')).join('\n'));

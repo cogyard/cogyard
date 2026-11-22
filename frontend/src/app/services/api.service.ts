@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import {
-  Project, TasksResponse, DailyResponse, PlanResponse, RecentlyDoneResponse, WorktreesResponse, GraphResponse, OverviewResponse,
+  Project, TasksResponse, DailyResponse, PlanResponse, RecentlyDoneResponse, WorktreesResponse, GraphResponse, OverviewResponse, InProgressResponse,
   CommitDetail, DiffResponse, StatusResponse, BranchesResponse,
   WtActivityResponse, TreeResponse, FilesBase, FileContent, SaveFileResult, UsageResponse, ProjectUsageResponse, TaskChatsResponse, TaskTranscriptResponse, CollectResult,
   ActivityResponse, ActivityDayResponse,
@@ -46,6 +46,8 @@ export class ApiService {
     return this.http.get<GraphResponse>(`/api/graph?p=${this.p(slug)}&source=store${flagged ? '&flagged=1' : ''}`);
   }
   overview(): Observable<OverviewResponse> { return this.http.get<OverviewResponse>('/api/overview'); }
+  // The All tab's per-project boxes (task 265): core/in-progress.mjs.
+  inProgress(): Observable<InProgressResponse> { return this.http.get<InProgressResponse>('/api/in-progress'); }
   // The cleanup process (task 117). No `du` anywhere in this one — git state
   // and the ledgers only — so it is safe to load on page open.
   cleanup(slug?: string): Observable<CleanupReport> {
@@ -101,6 +103,16 @@ export class ApiService {
   // Direct URL (images are served raw — usable as an <img src>).
   fileUrl(slug: string, wt: string, path: string): string {
     return `/api/file?p=${this.p(slug)}&wt=${encodeURIComponent(wt)}&path=${encodeURIComponent(path)}`;
+  }
+  // The raw route's key (task 262): every /api/raw address starts with it.
+  rawKey(): Observable<{ key: string }> { return this.http.get<{ key: string }>('/api/raw-key'); }
+  // A worktree file at its own address (task 262), so a page served from it
+  // loads the files beside it. Each segment is encoded (a slug may hold "/").
+  // rev = anything that changes when the file does (its hash); the route
+  // ignores the query, the frame reloads on it.
+  rawUrl(key: string, slug: string, wt: string, path: string, rev?: string | null): string {
+    const segs = [key, slug, wt, ...path.split('/')].map(encodeURIComponent).join('/');
+    return `/api/raw/${segs}${rev ? `?v=${encodeURIComponent(rev)}` : ''}`;
   }
   activity(days = 366): Observable<ActivityResponse> { return this.http.get<ActivityResponse>(`/api/activity?days=${days}`); }
   activityDay(date: string): Observable<ActivityDayResponse> { return this.http.get<ActivityDayResponse>(`/api/activity/day/${date}`); }

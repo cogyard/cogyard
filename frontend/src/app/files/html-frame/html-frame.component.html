@@ -1,0 +1,10 @@
+<!-- No sandbox attribute on purpose: the raw route's
+     `Content-Security-Policy: sandbox …` header is the sandbox (see the
+     component). Never give the page allow-same-origin. -->
+<iframe [src]="safeSrc()" [title]="title()" [class.waiting]="!loaded()" (load)="onLoad()"></iframe>
+@if (!loaded()) {
+  <div class="skel">
+    <p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" />
+    <span class="hint sm">loading page…</span>
+  </div>
+}

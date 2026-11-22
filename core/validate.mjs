@@ -9,6 +9,30 @@
 import { basename } from 'node:path';
 import { STATUSES, isValidStatus, isOpen, hasDoneDate, TYPES, isValidType, OWNER_STEP_KINDS, isOwnerStepKind, SETTLED_KINDS, SETTLED_KIND_NAMES, RETIRED_SETTLED_KINDS, isSettledKind, AFTER_MERGE_MARK_RE, AFTER_MERGE_NEAR_RE, blankCodeBlocks } from './status.mjs';
 import { checkboxSteps } from './frontmatter.mjs';
+import { liveParkNotes, describePark } from './park.mjs';
+
+// The park record and the status must agree (task 244). The record is the
+// text's live `> **PARKED <date> — <reason>**` note (core/park.mjs). Both
+// contradictions are ERRORS (owner, 2026-11-17): the Tasks tab shows errors
+// only, and an existing one must show there. Like every error, an old one
+// doesn't block unrelated edits — only a write that adds one is refused.
+// Each message starts `park:` and names the command that fixes it.
+function parkProblems(fm, body) {
+  const status = fm.status;
+  const id = fm.id ?? '<id>';
+  const notes = liveParkNotes(body);
+  if (notes.length && status !== 'PARKED') {
+    const said = describePark(notes[0]);
+    const fix = status === 'OPEN'
+      ? `if it still waits, \`cogyard tasks park ${id}\` sets PARKED and keeps the note; if the wait is over, \`cogyard tasks unpark ${id} "<what was seen>"\` ends it`
+      : `a ${status} task keeps only an ended record — \`cogyard tasks unpark ${id} "<what was seen>" --on <the day the wait ended>\` ends the note (the status stays ${status})`;
+    return [`park: the text says "${said}" (a live park note) but status is ${status}; ${fix}`];
+  }
+  if (!notes.length && status === 'PARKED') {
+    return [`park: status is PARKED but the text has no live park note saying what it waits for; \`cogyard tasks park ${id} "<what it waits for>" [--on <the day it was parked>]\` writes one, or \`cogyard tasks unpark ${id} "<what was seen>"\` if the wait is over`];
+  }
+  return [];
+}
 
 // Boxes the write-task skill forbids (task 255). The skill
 // (drivers/claude/skills/write-task/SKILL.md) has three rules; quoted here so
@@ -201,6 +225,11 @@ export function validateTask(task, ctx = {}) {
       ? `reopen it (\`cogyard tasks reopen ${fm.id ?? '<id>'} --why "…"\`) if work continues, else release the claim (\`cogyard env release <file>\`)`
       : 'release the claim (`cogyard env release <file>`), or set it back to OPEN if it is being worked';
     err(`env.claimed_at: claimed (since ${String(claimedAt).slice(0, 10)}${fm.env?.claimed_by ? ` by ${fm.env.claimed_by}` : ''}) but status is ${fm.status} — a claim is valid only on an OPEN task; ${fix}`);
+  }
+
+  // Park record vs status (task 244) — parkProblems above.
+  if (fm.status != null && isValidStatus(fm.status)) {
+    for (const e of parkProblems(fm, task.body || '')) err(e);
   }
 
   // touches_paths names FILES (task 179): the Plan tab works out which tasks can

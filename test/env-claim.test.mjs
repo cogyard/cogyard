@@ -34,10 +34,11 @@ function fixture(envLines = ['  branch: null', '  claimed_at: null', '  claimed_
   git(repo, ['-c', 'user.email=t@t', '-c', 'user.name=T', 'commit', '-q', '--allow-empty', '-m', 'seed']);
   mkdirSync(join(repo, '.cogyard'));
   symlinkSync(store, join(repo, '.cogyard', 'tasks'));
-  const runIn = (cwd, args, { asAgent = false } = {}) => {
+  const runIn = (cwd, args, { asAgent = false, env: extra = {} } = {}) => {
     const env = { ...process.env, COGYARD_HOME: home, COGYARD_USER: 'Tester' };
     for (const k of AGENT_VARS) delete env[k];
     if (asAgent) env.CLAUDECODE = '1';
+    Object.assign(env, extra);
     return spawnSync('node', [ENV, ...args], { cwd, encoding: 'utf8', env });
   };
   const run = (...args) => runIn(repo, args);
@@ -172,11 +173,43 @@ test('--any-worktree changes nothing where the claim was allowed anyway, even fo
   assert.equal(fx.runIn(fx.repo, ['claim', fx.file, 'sess-1', '--any-worktree'], { asAgent: true }).status, 0);
 });
 
-// A claim is valid only on an OPEN task: a closed task is reopened first, a
-// parked one set back to OPEN. Refused with exit 4, nothing written.
+// Task 260: hooks compare the claim's chat with the chat id Claude Code hands
+// them, so the claim records the chat that ran the command, not the id typed.
 
-test('a task that is not OPEN is refused, naming reopen for a closed one, and nothing is written', () => {
-  for (const [status, hint] of [['DONE', /cogyard tasks reopen 7 --why/], ['ENOUGH', /cogyard tasks reopen 7/], ['PARKED', /set it back to OPEN/], ['OBSOLETE', /set it back to OPEN/]]) {
+test('a claim records the running chat\'s own id over the one it was given', () => {
+  const fx = fixture();
+  const r = fx.runIn(fx.repo, ['claim', fx.file, 'desktop-task-made-up'], { env: { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'real-chat-id' } });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /recording this chat's own id real-chat-id/);
+  assert.equal(Object.values(fx.claims())[0].session, 'real-chat-id');
+  assert.equal(JSON.parse(r.stdout).claimed_by_session, 'real-chat-id');
+});
+
+test('the same chat re-claims under its own id even when it types another', () => {
+  const fx = fixture();
+  const env = { CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: 'real-chat-id' };
+  assert.equal(fx.runIn(fx.repo, ['claim', fx.file, 'one-id'], { env }).status, 0);
+  assert.equal(fx.runIn(fx.repo, ['claim', fx.file, 'another-id'], { env }).status, 0, 'not refused as a second chat');
+});
+
+test('from the main checkout, a task with its own worktree keeps that worktree and its branch', () => {
+  const fx = fixture();
+  const wt = fx.worktree('task-007-x');
+  assert.equal(fx.runIn(wt, ['claim', fx.file, 'sess-1']).status, 0);
+  assert.equal(fx.run('release', fx.file).status, 0);
+  const r = fx.run('claim', fx.file, 'sess-2');
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(fx.text(), /branch: worktree-task-007-x/, 'the file keeps the task branch, not the main checkout\'s');
+  const rec = Object.values(fx.claims())[0];
+  assert.equal(rec.worktree, 'task-007-x');
+  assert.equal(rec.session, 'sess-2');
+});
+
+// A claim is valid only on an OPEN task: a closed task is reopened first, a
+// parked one un-parked (task 244). Refused with exit 4, nothing written.
+
+test('a task that is not OPEN is refused, naming reopen for a closed one and unpark for a parked one, and nothing is written', () => {
+  for (const [status, hint] of [['DONE', /cogyard tasks reopen 7 --why/], ['ENOUGH', /cogyard tasks reopen 7/], ['PARKED', /cogyard tasks unpark 7 "<what was seen>"/], ['OBSOLETE', /set it back to OPEN/]]) {
     const fx = fixture();
     writeFileSync(fx.file, fx.text().replace('status: OPEN', `status: ${status}`));
     const before = fx.text();

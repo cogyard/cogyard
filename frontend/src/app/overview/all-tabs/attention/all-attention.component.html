@@ -1,0 +1,7 @@
+<div class="act-panel">
+  <app-activity-braid metric="attention" [activity]="activity()" [selectedDay]="drillDay()" (dayClick)="drillDay.set($event)" />
+  <app-activity-day [date]="drillDay()" [colors]="laneColors()" [order]="laneOrder()" (closed)="drillDay.set(null)" />
+</div>
+<div class="act-panel">
+  <app-activity-punchcard [matrices]="punchcardAll()" [weekStart]="weekStart()" [dayStart]="dayStart()" />
+</div>

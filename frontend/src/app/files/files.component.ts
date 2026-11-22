@@ -1,4 +1,6 @@
 import { Component, input, output, inject, effect, signal, computed, untracked, viewChild, ElementRef, afterRenderEffect, OnDestroy } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { map } from 'rxjs';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -10,7 +12,7 @@ import { RefChipComponent } from '../shared/ref-chip/ref-chip.component';
 import { TreeModule } from 'primeng/tree';
 import { GitStatusComponent } from '../shared/git-status/git-status.component';
 import { TreeNode } from 'primeng/api';
-import { marked } from 'marked';
+import { renderMarkdown } from '../shared/markdown';
 import hljs from 'highlight.js/lib/core';
 import typescript from 'highlight.js/lib/languages/typescript';
 import javascript from 'highlight.js/lib/languages/javascript';
@@ -32,6 +34,7 @@ import { StoreService } from '../services/store.service';
 import { EditStateService } from '../services/edit-state.service';
 import { DiffViewComponent } from '../shared/diff-view/diff-view.component';
 import { FileActionsComponent } from '../shared/file-actions/file-actions.component';
+import { HtmlFrameComponent } from './html-frame/html-frame.component';
 // Type-only — the editor module itself is dynamic-import'd on first Edit click
 // so CodeMirror stays out of the main bundle.
 import type { EditorHandle } from './editor';
@@ -61,7 +64,12 @@ const LANG_BY_EXT: Record<string, string> = {
   diff: 'diff', patch: 'diff',
 };
 const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico']);
+const HTML_EXT = new Set(['html', 'htm']);
 const ext = (p: string) => (p.split('/').pop() ?? '').split('.').pop()?.toLowerCase() ?? '';
+
+// How the open file is shown. 'rendered' = markdown preview, or an HTML page
+// with its scripts on; 'no-scripts' = an HTML page with its scripts off.
+type FileView = 'rendered' | 'no-scripts' | 'raw' | 'diff';
 
 // Per-node payload carried in TreeNode.data.
 interface Row {
@@ -76,7 +84,7 @@ interface Row {
 
 @Component({
   selector: 'app-files',
-  imports: [DiffViewComponent, FileActionsComponent, FormsModule, ToggleSwitch, Select, SelectButton, RefChipComponent, TreeModule, GitStatusComponent, TooltipModule, Skeleton],
+  imports: [DiffViewComponent, FileActionsComponent, HtmlFrameComponent, FormsModule, ToggleSwitch, Select, SelectButton, RefChipComponent, TreeModule, GitStatusComponent, TooltipModule, Skeleton],
   templateUrl: './files.component.html',
   styleUrl: './files.component.scss',
   host: { '(window:beforeunload)': 'onBeforeUnload($event)' },
@@ -159,7 +167,7 @@ export class FilesComponent implements OnDestroy {
   size = signal(0);
   loadingFile = signal(false);
   missing = signal(false);
-  view = signal<'rendered' | 'raw' | 'diff'>('raw');
+  view = signal<FileView>('raw');
   patch = signal<string | null>(null);
 
   // Edit mode. `content` doubles as the saved baseline: dirty means
@@ -263,18 +271,51 @@ export class FilesComponent implements OnDestroy {
   selected = computed(() => (this.file() ? this.statusByPath().get(this.file()) ?? null : null));
   selectedStatus = computed(() => { const s = this.selected(); return s ? this.statusOf(s) : null; });
 
-  // The file bar's view choices: rendered (markdown), the file itself (raw
-  // text, or the image), and the diff when the file has a change against the
-  // compare base.
+  // The file bar's view choices: rendered (markdown; an HTML page with and
+  // without its scripts), the file itself (raw text, or the image), and the
+  // diff when the file has a change against the compare base.
   viewOptions = computed(() => {
-    const opts: { label: string; value: 'rendered' | 'raw' | 'diff' }[] = [];
+    const opts: { label: string; value: FileView }[] = [];
     if (this.isMd() && !this.binary()) opts.push({ label: 'rendered', value: 'rendered' });
+    if (this.canRenderHtml()) {
+      opts.push({ label: 'rendered', value: 'rendered' });
+      opts.push({ label: 'no scripts', value: 'no-scripts' });
+    }
     opts.push({ label: this.isImage() ? 'image' : this.binary() ? 'file' : 'raw', value: 'raw' });
     if (this.selectedStatus()) opts.push({ label: `diff vs ${this.baseLabel()}`, value: 'diff' });
     return opts;
   });
   isImage = computed(() => !!this.file() && IMAGE_EXT.has(ext(this.file())));
   isMd = computed(() => ext(this.file()) === 'md');
+  isHtml = computed(() => HTML_EXT.has(ext(this.file())));
+  // An HTML page renders from its own address on the raw route, not from the
+  // (1 MB-capped) text loaded here, so a large page renders too.
+  canRenderHtml = computed(() => this.isHtml() && !this.binary());
+  // The page is shown by app-html-frame (sandboxed; why and its limits are
+  // there), never injected into the portal's DOM like markdown. The address
+  // uses the ?wt= value as given ('' = main, which the route resolves) so it
+  // doesn't change — and reload the page — when the worktree list arrives;
+  // savedRev changes only on a save, so the frame reloads then and only then.
+  private savedRev = signal<string | null>(null);
+  // The raw route's key, read once (it changes only when the server restarts).
+  private rawKey = toSignal(this.api.rawKey().pipe(map((r) => r.key)), { initialValue: null });
+  htmlSrc = computed(() => {
+    const k = this.rawKey();
+    return k ? this.api.rawUrl(k, this.slug(), this.wt(), this.file(), this.savedRev()) : null;
+  });
+  htmlFrame = computed(() => this.canRenderHtml() && (this.view() === 'rendered' || this.view() === 'no-scripts'));
+  // The full-size link: the page in a tab of its own, at the same address,
+  // where a page that fits itself to the window gets a whole window. The
+  // route's sandbox header keeps it walled off there too.
+  openFullSize() {
+    const k = this.rawKey();
+    if (k) window.open(this.api.rawUrl(k, this.slug(), this.wt(), this.file()), '_blank', 'noopener');
+  }
+  // The view a file opens on: rendered (for an HTML page, scripts on — most
+  // pages need them to lay themselves out) for markdown and HTML, else the file.
+  private defaultView(): FileView {
+    return this.isMd() || this.isHtml() ? 'rendered' : 'raw';
+  }
   imageUrl = computed(() => this.api.fileUrl(this.slug(), this.selectedWt(), this.file()));
 
   // p-tree node model built from the flat path list. Dirs expanded by default
@@ -363,7 +404,12 @@ export class FilesComponent implements OnDestroy {
     const c = this.content();
     if (c == null) return null;
     if (this.isMd() && this.view() === 'rendered') {
-      return this.san.bypassSecurityTrustHtml(marked.parse(c) as string);
+      // Relative images load from beside the file, on the raw route (task 263).
+      // A file with images waits for the route's key (asked for once, when the
+      // tab opens) rather than ask the portal's own address for them first.
+      const k = this.rawKey(), slug = this.slug(), wt = this.wt();
+      if (!k && /<img\b|!\[/i.test(c)) return null;
+      return renderMarkdown(this.san, c, k ? { file: this.file(), url: (p) => this.api.rawUrl(k, slug, wt, p) } : undefined);
     }
     const lang = LANG_BY_EXT[ext(this.file())];
     if (!lang) return null; // plain <pre> fallback in the template
@@ -378,8 +424,9 @@ export class FilesComponent implements OnDestroy {
     // scroll position out from under you.
     effect(() => {
       const s = this.slug(), w = this.selectedWt(), f = this.file();
-      this.view.set(this.isMd() ? 'rendered' : 'raw');
+      this.view.set(this.defaultView());
       this.patch.set(null);
+      this.savedRev.set(null);
       if (s && f) this.loadFile(s, w, f); else this.resetContent();
     });
     // Remember the last tree that arrived, for the compare dropdown's list.
@@ -396,7 +443,7 @@ export class FilesComponent implements OnDestroy {
         this.patch.set(null);
         if (this.view() !== 'diff') return;
         if (this.selectedStatus()) this.fetchPatch();
-        else this.view.set(this.isMd() ? 'rendered' : 'raw');
+        else this.view.set(this.defaultView());
       });
     });
     // Measure whether the worktree pills overflow two rows (post-render, so the
@@ -520,6 +567,7 @@ export class FilesComponent implements OnDestroy {
         if (r.content != null) this.editor?.setDoc(r.content);
         this.content.set(onDisk); // new baseline — stay in edit mode
         this.baseHash.set(r.hash);
+        this.savedRev.set(r.hash); // a rendered HTML page reloads with the save
         this.size.set(r.size);
         this.dirty.set(false); this.conflict.set(false);
         this.patch.set(null); // stale the cached diff — content changed
@@ -576,7 +624,7 @@ export class FilesComponent implements OnDestroy {
     const cur = this.expandOverride().get(dir) ?? this.treeFiles().length <= 250;
     this.setDirOpen(dir, !cur);
   }
-  setView(v: 'rendered' | 'raw' | 'diff') {
+  setView(v: FileView) {
     this.view.set(v);
     if (v === 'diff' && this.patch() == null) this.fetchPatch();
   }

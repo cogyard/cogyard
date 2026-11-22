@@ -10,7 +10,6 @@
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 8px;
 }
-.braid-toggle { display: inline-flex; gap: var(--app-space-2); }
 
 .braid-scroll { overflow-x: auto; }
 .braid-lanes { display: inline-block; min-width: 100%; }

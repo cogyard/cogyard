@@ -1,10 +1,6 @@
 <div class="braid">
   <div class="braid-head">
-    <span class="widget-title" title="Lane order = total attention (descending), cost as tiebreak — fixed across the metric toggle so the two metrics stay comparable. Colors follow the ranking, so a project keeps its color everywhere.">Where your time went <span class="hint sm">· sorted by total attention</span></span>
-    <span class="braid-toggle">
-      <button class="btn-toggle" [class.on]="metric() === 'attention'" (click)="setMetric('attention')" title="Where your attention went — your own prompts, gap-coalesced into engaged minutes (a floor: reading without prompting leaves no signal)">Attention</button>
-      <button class="btn-toggle" [class.on]="metric() === 'cost'" (click)="setMetric('cost')" title="Machine effort — each session's locked-in cost, spread across days by mined per-hour activity; hatched = estimated (transcript pruned before mining)">Cost</button>
-    </span>
+    <span class="widget-title" [title]="metricTitle()">Where your time went <span class="hint sm">· sorted by total attention</span></span>
   </div>
   <div class="braid-scroll" #scroller>
     <div class="braid-lanes">

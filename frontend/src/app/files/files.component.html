@@ -116,10 +116,18 @@
         <span class="spacer"></span>
         @if (!editing()) {
           <!-- One select button for how the file is shown (task 224). Only when
-               there is a choice: a file with one view needs no control. -->
+               there is a choice: a file with one view needs no control.
+               No fade on its segments (task 262): the desktop app's Browser
+               pane can stop drawing for a second or more after a big redraw
+               (switching to raw), and a 0.2 s fade then sits on its first
+               frame — the code shows, the button still looks unpicked. With no
+               fade the picked segment is drawn in the same frame as the view. -->
           @if (viewOptions().length > 1) {
-            <p-selectbutton size="small" [options]="viewOptions()" optionLabel="label" optionValue="value" [allowEmpty]="false"
+            <p-selectbutton size="small" style="flex: none; white-space: nowrap; --p-togglebutton-transition-duration: 0s" [options]="viewOptions()" optionLabel="label" optionValue="value" [allowEmpty]="false"
                             [ngModel]="view()" (ngModelChange)="setView($event)" />
+          }
+          @if (canRenderHtml()) {
+            <button class="btn-toggle" (click)="openFullSize()" pTooltip="open the page in a tab of its own">full size</button>
           }
           @if (canEdit()) {
             <button class="btn-toggle" (click)="startEdit()" [disabled]="loadingEditor()">{{ loadingEditor() ? 'edit…' : 'edit' }}</button>
@@ -157,6 +165,9 @@
           @else { <app-diff-view [patch]="patch()!" /> }
         } @else if (isImage()) {
           <img [src]="imageUrl()" [alt]="file()" />
+        } @else if (htmlFrame() && htmlSrc()) {
+          <!-- An HTML page from its own address (task 262) — app-html-frame. -->
+          <app-html-frame [src]="htmlSrc()!" [scripts]="view() === 'rendered'" [title]="file()" />
         } @else if (loadingFile()) {
           <div class="skel pad"><p-skeleton height="14px" /><p-skeleton height="14px" /><p-skeleton height="14px" width="60%" /></div>
         } @else if (missing()) {

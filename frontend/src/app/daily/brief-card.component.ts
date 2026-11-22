@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, signal } from '@angular/core';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { marked } from 'marked';
 import { Brief } from '../services/models';
+import { renderMarkdown } from '../shared/markdown';
 
 // ONE nightly brief, rendered as a card (task 120).
 //
@@ -64,7 +64,7 @@ export class BriefCardComponent {
     const md = (this.brief()?.markdown || '').replace(/^#[^\n]*\n+/, '');
     if (md !== this.lastMd) {
       this.lastMd = md;
-      this.lastHtml = this.san.bypassSecurityTrustHtml(marked.parse(md) as string);
+      this.lastHtml = renderMarkdown(this.san, md);
     }
     return this.lastHtml;
   });

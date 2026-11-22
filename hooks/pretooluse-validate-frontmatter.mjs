@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // PreToolUse(Edit|Write|MultiEdit) forcing guard for task stores: what a store
 // may hold (task 190), and task-file frontmatter — including the status and
-// claim fields, which only their commands change (tasks 228, 247). It also
+// claim fields and the text's park note, which only their commands change
+// (tasks 228, 247, 244). It also
 // refuses a hand edit to a linked worktree's launch file, which the
 // session-start hook owns (task 247).
 //
@@ -109,6 +110,78 @@ function linkedWorktree(dir) {
   }
 }
 
+// --- an edit through a link that leaves the project (task 260) ---------------
+// Claude Code asks the owner's permission for any write whose path is inside
+// the working folder but resolves, through a link, to somewhere outside it
+// (code.claude.com/docs/en/permissions, "Writes through a symlink"). Two such
+// links are cogyard's own: the project's task link (`.cogyard/tasks` → the
+// shared store) and a worktree's env files (links to the main checkout's real
+// files). A chat that edits through one stalls on a prompt — unattended, with
+// nobody to answer it. Telling chats to use the real path (task 158) held only
+// while that instruction was loaded; task 247 dropped it from the owner's
+// CLAUDE.md. So this refuses the edit and names the real file, before Claude
+// Code would ask. "The project" is the git top level of the chat's folder.
+// Fail-open: no cwd, no repo, nothing resolvable → this rule says nothing.
+function inside(p, root) { return p === root || p.startsWith(root.endsWith('/') ? root : root + '/'); }
+function realOf(path) {                         // the file may not exist yet
+  const rest = [];
+  for (let d = path; ; d = dirname(d)) {
+    try { return join(realpathSync(d), ...rest); } catch {}
+    if (dirname(d) === d) return null;
+    rest.unshift(basename(d));
+  }
+}
+{
+  const cwd = typeof input?.cwd === 'string' && input.cwd ? input.cwd : null;
+  const top = cwd ? git(cwd, ['rev-parse', '--show-toplevel']) : null;
+  let topReal = null, cwdReal = null;
+  try { topReal = top ? realpathSync(top) : null; cwdReal = cwd ? realpathSync(cwd) : null; } catch { topReal = null; }
+  const abs = cwd ? resolve(cwd, fp) : null;
+  // The requested path with only the project's own location resolved (the
+  // chat's folder may itself be reached through a link, e.g. /var → /private/var),
+  // so a link INSIDE the project is still seen as one.
+  let canon = abs;
+  if (abs && cwdReal && inside(abs, cwd)) canon = join(cwdReal, abs.slice(cwd.length));
+  if (canon && topReal && !inside(canon, topReal) && top && inside(abs, top)) canon = join(topReal, abs.slice(top.length));
+  if (topReal && canon && inside(canon, topReal)) {
+    const real = realOf(canon);
+    if (real && real !== canon && !inside(real, topReal)) {
+      // The path inside the project: the task link is `.cogyard/tasks`, or the
+      // older top-level `_tasks` (task 160).
+      const inProject = canon.slice(topReal.length);
+      const here = linkedWorktree(topReal);
+      if (inProject.startsWith('/.cogyard/tasks/') || inProject.startsWith('/_tasks/')) {
+        const id = (basename(abs).match(/^(\d+(?:\.\d+)?[a-z]?)-/) || [])[1];
+        deny(
+          `Task-link guard: \`${abs}\` goes through this project's link to its task store, and Claude Code asks the owner's `
+          + `permission for any edit through a link that leaves the project. Make the same edit at the real path:\n\n  ${real}\n\n`
+          + (id ? `(That is what \`cogyard tasks find ${id}\` prints. ` : '(')
+          + `Always read and edit task files at the store path, never through \`.cogyard/tasks/\`.)`,
+        );
+      }
+      // A worktree's env files link to the main checkout's file of the same
+      // name — which may itself link on, e.g. into a secrets folder (task 211).
+      // Either way the file is the main checkout's, shared by every worktree.
+      const twin = here ? join(here.mainRoot, inProject) : null;
+      if (here && (inside(real, here.mainRoot) || (twin !== canon && realOf(twin) === real))) {
+        deny(
+          `Worktree-link guard: \`${abs}\` is a link in this worktree to the main checkout's own file`
+          + `${twin && twin !== real ? ` \`${twin}\`` : ''}, which is really:\n\n  ${real}\n\n`
+          + `That file is shared by the main checkout and every worktree, so editing it changes it for all of them — and `
+          + `Claude Code asks the owner's permission for an edit through a link that leaves the worktree. `
+          + `Change it only if the owner asked for exactly this change to the whole project, and then at \`${real}\`; `
+          + `otherwise leave it.`,
+        );
+      }
+      deny(
+        `Link guard: \`${abs}\` resolves through a link to \`${real}\`, outside this project, and Claude Code asks the `
+        + `owner's permission for any edit through such a link. Change \`${real}\` only if the owner asked for exactly `
+        + `that, and then at its real path; otherwise leave it.`,
+      );
+    }
+  }
+}
+
 // Only NNN-prefixed task markdown in a task directory; never the generated
 // index. Matches the link path (project/.cogyard/tasks/NNN-*.md, or the older
 // project/_tasks/NNN-*.md — task 160) and the resolved store path
@@ -117,9 +190,9 @@ const inTaskDir = fp.includes('/_tasks/') || fp.includes('/.cogyard/tasks/');
 if (!inTaskDir) allow();
 
 // --- load the engine from this script's own checkout -----------------------
-let taskFromContent, loadTasks, introducedErrors, classifyStorePath, discoverProjects, canonicalStore;
+let taskFromContent, loadTasks, introducedErrors, classifyStorePath, discoverProjects, canonicalStore, parkRecordKey;
 try {
-  ({ taskFromContent, loadTasks, introducedErrors, classifyStorePath, discoverProjects, canonicalStore } = await import(`${SELF}/../core/index.mjs`));
+  ({ taskFromContent, loadTasks, introducedErrors, classifyStorePath, discoverProjects, canonicalStore, parkRecordKey } = await import(`${SELF}/../core/index.mjs`));
 } catch { allow(); }
 
 // The path inside its store, or null when the file is not provably in one.
@@ -174,6 +247,40 @@ if (!/^\d.*\.md$/.test(basename(fp))) allow();
 
 const current = existsSync(fp) ? readFileSync(fp, 'utf8') : null;
 
+// Another chat's claimed task is that chat's to edit (task 260). The rule was
+// "go through the user, never edit another task's file" (pickup-task); it held
+// only in chats that had loaded the skill. A claim's chat is this machine's
+// record (claims.json, written by `env claim`, which records the chat that ran
+// it); the editing chat is the `session_id` Claude Code hands every hook. Both
+// known and different, on a task whose file says it is claimed → refused.
+// Unknown on either side (a human's shell, a claim from another machine, a
+// claim record older than this rule's id format) → this rule says nothing.
+if (rel != null && current != null) {
+  const me = typeof input?.session_id === 'string' && input.session_id ? input.session_id : null;
+  let holder = null, t = null;
+  try {
+    t = taskFromContent(fp, current);
+    const claimedAt = t?.frontmatter?.env?.claimed_at;
+    if (me && claimedAt) {
+      const { localClaim } = await import(`${SELF}/../core/claims.mjs`);
+      holder = localClaim(fp, t.frontmatter.id)?.session || null;
+    }
+  } catch { holder = null; }
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (holder && UUID.test(holder) && holder !== me) {
+    const id = t.frontmatter.id ?? '<id>';
+    const env = t.frontmatter.env || {};
+    deny(
+      `Claim guard: task ${id} (${basename(fp)}) is claimed by another chat (${holder}`
+      + `${env.claimed_by ? `, ${env.claimed_by}` : ''}, since ${env.claimed_at}). Only the chat holding a claim edits its task file.\n\n`
+      + `  • Tell the owner what should change in task ${id} and why, with a message they can paste into that chat.\n`
+      + `  • If the owner told you to take task ${id} over (or that chat is finished), take the claim first:\n`
+      + `      cogyard env claim ${fp} <this chat's id> --force\n`
+      + `    then make the edit.`,
+    );
+  }
+}
+
 // Reconstruct the would-be content from the tool input.
 function applyEdit(src, oldS, newS, all) {
   if (oldS === '') return null;            // ambiguous insert — let it through
@@ -207,8 +314,8 @@ if (ti.content != null) {                  // Write (full file)
 // that and credited the owner in the commit. So, in an existing task file: a
 // status change into or out of DONE/ENOUGH, or any done_date change, is denied.
 // A brand-new file (no frontmatter yet — `next-id` leaves an empty one) passes:
-// authoring a task is write-task's job, not a status change. OPEN↔PARKED and
-// OBSOLETE pass: no command owns them.
+// authoring a task is write-task's job, not a status change. OBSOLETE passes:
+// no command owns it. PARKED is owned by park / unpark (task 244), below.
 const CLOSED_BY_COMMAND = new Set(['DONE', 'ENOUGH']);
 {
   const was = current != null ? taskFromContent(fp, current) : null;
@@ -218,6 +325,32 @@ const CLOSED_BY_COMMAND = new Set(['DONE', 'ENOUGH']);
     const d0 = was.frontmatter.done_date ?? null, d1 = now.frontmatter.done_date ?? null;
     const statusMove = s0 !== s1 && (CLOSED_BY_COMMAND.has(s0) || CLOSED_BY_COMMAND.has(s1));
     const dateMove = String(d0) !== String(d1);
+    // Parking and un-parking go through their commands (task 244): `cogyard
+    // tasks park` / `unpark` set the status AND write or end the text's live
+    // `> **PARKED <date> — <reason>**` note together, keep the status line true,
+    // release the claim and commit. By hand, the two drifted apart (one task
+    // went OPEN, closed, reopened — its note still saying PARKED). So a status
+    // change into or out of PARKED is denied, and so is any change to a live
+    // park note's record (its date and bold reason — core/park.mjs
+    // parkRecordKey; a remark after the bold stays editable). A close or reopen
+    // is reported by the guard below, whichever it is.
+    if (!statusMove) {
+      const parkMove = s0 !== s1 && (s0 === 'PARKED' || s1 === 'PARKED');
+      const noteMove = parkRecordKey(was.body || '') !== parkRecordKey(now.body || '');
+      if (parkMove || noteMove) {
+        const id = now.frontmatter.id ?? was.frontmatter.id ?? '<id>';
+        const what = parkMove
+          ? `\`status: ${s0}\` → \`status: ${s1}\``
+          : 'a change to the live `> **PARKED <date> — <reason>**` note';
+        deny(
+          `Park guard: ${what} in ${basename(fp)} is a park or an un-park, and those are never hand edits.\n\n`
+          + `  • park it → \`cogyard tasks park ${id} "<what it waits for>"\` (sets PARKED, writes the note, releases the claim, commits)\n`
+          + `  • the wait is over → \`cogyard tasks unpark ${id} "<what was seen>"\` (sets OPEN, turns the note into "Parked <date> – <date>: …" and "Un-parked <date>: …", commits)\n`
+          + `  • status and note disagree already → \`cogyard tasks validate ${id}\` names the command that fixes it\n\n`
+          + `A park is the owner's hold: end one only when what it waits for has happened, and say what was seen.`,
+        );
+      }
+    }
     if (statusMove || dateMove) {
       const id = now.frontmatter.id ?? was.frontmatter.id ?? '<id>';
       const what = statusMove ? `\`status: ${s0}\` → \`status: ${s1}\`` : `\`done_date: ${d0}\` → \`done_date: ${d1}\``;

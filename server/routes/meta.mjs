@@ -1,4 +1,5 @@
-// routes/meta.mjs — cross-project endpoints: health, project list, overview.
+// routes/meta.mjs — cross-project endpoints: health, project list, overview,
+// in-progress.
 
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
@@ -78,5 +79,8 @@ export async function handle(path, u, projects, res) {
     const rows = await Promise.all(projects.map((p) => core.projectOverview(p).catch(() => ({ slug: p.slug, label: p.label, error: true }))));
     return json(res, 200, { projects: rows });
   }
+  // The All tab's per-project boxes (task 265): each project's tasks in progress
+  // and its last 10 closed — the Plan tab's own data (core/in-progress.mjs).
+  if (path === '/api/in-progress') return json(res, 200, { projects: await core.inProgressAll(projects) });
   return false;
 }

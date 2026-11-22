@@ -7,8 +7,13 @@ import { ActivityResponse, ActivityDayCell } from '../../services/models';
 // projects active per day. Clicking a day emits it for the drill-down.
 // Cost cells that are wholly/partly APPROXIMATED (pruned transcripts, even
 // day-spread) render hatched so estimated eras don't masquerade as mined ones.
+//
+// The metric is an input, with no switch (task 266): the All page shows it in
+// attention on its Attention tab and in cost on its Costs tab. It once had an
+// Attention | Cost toggle, back when one braid served both questions.
 
-type Metric = 'attention' | 'cost';
+export type BraidMetric = 'attention' | 'cost';
+type Metric = BraidMetric;
 const MAX_LANES = 10;
 
 interface BraidCell { date: string; level: number; approx: boolean; title: string; }
@@ -20,10 +25,11 @@ function dayKey(d: Date): string {
 }
 
 // Stable, metric-INDEPENDENT project ranking (total attention, cost as
-// tiebreak). Both the lane order and the lane colors derive from it, so
-// toggling attention↔cost keeps every row in place and just re-shades cells —
-// that's what makes the two metrics visually comparable. Shared with the day
-// drill-down so its session order and colors match the braid.
+// tiebreak). Both the lane order and the lane colors derive from it, so the
+// attention braid and the cost braid put every project in the same row with
+// the same colour and only shade the cells differently — that's what makes the
+// two metrics visually comparable. Shared with the day drill-down so its
+// session order and colors match the braid.
 export function projectRank(a: ActivityResponse): string[] {
   return Object.entries(a.projects).map(([slug, p]) => {
     let att = 0, cost = 0;
@@ -46,9 +52,9 @@ export function projectColors(a: ActivityResponse): Record<string, string> {
 export class ActivityBraidComponent {
   activity = input<ActivityResponse | null>(null);
   selectedDay = input<string | null>(null);
+  metric = input<Metric>('attention');
   dayClick = output<string>();
 
-  metric = signal<Metric>('attention');
   // "(N more)" fold, expandable on click.
   expanded = signal(false);
   private scroller = viewChild<ElementRef<HTMLElement>>('scroller');
@@ -98,7 +104,7 @@ export class ActivityBraidComponent {
     if (!a) return [];
     const metric = this.metric();
     const days = this.days();
-    // Metric-independent order: rows stay put when the metric toggles.
+    // Metric-independent order: a project has the same row in either metric.
     const rank = projectRank(a);
     const colors = projectColors(a);
     const top = this.expanded() ? rank : rank.slice(0, MAX_LANES);
@@ -149,7 +155,14 @@ export class ActivityBraidComponent {
     });
   });
 
-  setMetric(m: Metric) { this.metric.set(m); }
+  // The header's tooltip: how the lanes are ordered, then what this braid's
+  // metric measures — the explanation the Attention and Cost switch buttons
+  // carried before the switch went.
+  metricTitle = computed(() => 'Lane order = total attention (descending), cost as tiebreak — the same in the attention and the cost braid, so a project keeps its row and its colour on both. Colors follow the ranking, so a project keeps its color everywhere.\n'
+    + (this.metric() === 'attention'
+      ? 'Attention: your own prompts, gap-coalesced into engaged minutes (a floor: reading without prompting leaves no signal).'
+      : "Cost: machine effort — each session's locked-in cost, spread across days by mined per-hour activity; hatched = estimated (transcript pruned before mining)."));
+
   toggleExpand() { this.expanded.update((v) => !v); }
   isFoldLane(slug: string) { return slug.endsWith(' more)'); }
 }

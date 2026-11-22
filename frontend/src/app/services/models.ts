@@ -100,6 +100,20 @@ export interface RecentlyDoneTask {
 }
 export interface RecentlyDoneResponse { slug: string; tasks: RecentlyDoneTask[]; }
 
+// /api/in-progress (task 265) — the All tab's per-project boxes, one row per
+// registered project in registry order: its Plan `progress` tasks (the Plan
+// card's own fields, core/in-progress.mjs PROGRESS_FIELDS) and its newest 10
+// Recently done tasks. A project that could not be read has `error` instead.
+export type InProgressTask = Pick<PlanTask, 'id' | 'title' | 'type' | 'labels' | 'status' | 'done' | 'total' | 'boxes' | 'code'
+  | 'youNext' | 'youLater' | 'youSteps' | 'worktreeMissing' | 'claimedBy' | 'claimedAt' | 'claimedByOther' | 'agent'>;
+export interface InProgressProject {
+  slug: string; label: string;
+  progress?: InProgressTask[];
+  recent?: RecentlyDoneTask[];
+  error?: string;
+}
+export interface InProgressResponse { projects: InProgressProject[]; }
+
 // /api/daily — everything the nightly jobs left for this project, behind the
 // Daily tab. The brief HISTORY is the point of keeping them: coming back after
 // two weeks, one night's paragraph answers the wrong question.
@@ -685,10 +699,39 @@ export interface PublishDeclaration {
   tag?: boolean;
   requires?: string[];
   checks?: string[];
+  /** Task 264: a project naming its releases has these instead of the fields above. */
+  releases?: ReleaseDeclaration[];
+}
+/** One release (task 264). The flat form is one release with name and label null. */
+export interface ReleaseDeclaration {
+  name: string | null;
+  label: string | null;
+  /** "<prefix><version>", e.g. "web/v<version>"; null when it isn't tagged. */
+  tagFormat: string | null;
+  /** The files whose commits count as this release's changes; [] = every commit. */
+  paths: string[];
+  deploysOnPush: boolean;
+  command: string | null;
+  manual: string[];
+  health: string | null;
+  tag: boolean;
+  requires: string[];
+  checks: string[];
+}
+export interface ReleaseStatus {
+  name: string | null;
+  label: string | null;
+  declaration: ReleaseDeclaration;
+  credentials: { name: string; set: boolean }[];
+  lastRelease: { tag: string; short: string | null; date: string | null; unreleased: number; paths: string[] } | null;
+  live: { url: string; reachable: boolean; commit: string | null; servesTip: boolean } | null;
+  ready: { ok: boolean; reason: string | null };
 }
 export interface PublishHistoryRow {
   at: string;
   project: string;
+  /** Task 264: which release, for a project naming its releases. */
+  release?: string;
   ok: boolean;
   sha?: string;
   tag?: string | null;
@@ -699,6 +742,9 @@ export interface PublishHistoryRow {
 export interface PublishStatus {
   slug: string;
   declaration: PublishDeclaration;
+  /** Task 264: every release, one entry for the flat form (whose fields below
+   *  are that one release's). Empty when undeclared or invalid. */
+  releases: ReleaseStatus[];
   /** Credential NAMES with whether each is set — never a value. */
   credentials: { name: string; set: boolean }[];
   /** origin/<branch> as of the last fetch (or the local branch with no remote). */

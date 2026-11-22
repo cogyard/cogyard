@@ -1,0 +1,33 @@
+// The nightly briefs (task 120) in the white box the old page's "Daily
+// Overview" panel used (task 134), always open here (task 266): a header with
+// the title and the count that says how many projects could not be briefed,
+// then the paragraphs. Layout + semantic colour only.
+.daily {
+  border: 1px solid var(--app-border);
+  border-radius: 10px; background: var(--app-surface);
+  overflow: hidden;
+}
+.daily-head {
+  display: flex; align-items: baseline; gap: var(--app-space-3);
+  padding: 10px var(--app-space-5);
+  border-bottom: 1px solid var(--app-border-soft);
+}
+.daily-title { font-weight: 700; color: var(--app-page-fg-strong); }
+
+// Two columns on a wide screen, because twelve of these stacked full-width is a
+// scroll, not a glance.
+.briefs {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(min(430px, 100%), 1fr));
+  gap: var(--app-space-4);
+  padding: var(--app-space-5);
+}
+.brief-lead {
+  border: 1px solid var(--app-border); border-left: 3px solid var(--app-accent);
+  border-radius: 8px; background: var(--app-surface); padding: 12px 14px;
+}
+.brief-lead.failed { border-color: #f3c6c6; border-left-color: #b91c1c; background: #fef6f6; }
+.bl-name { font-weight: 700; font-size: 13.5px; }
+.brief-lead.failed .bl-name { color: #b91c1c; }
+.bl-when { margin-left: 8px; }
+.bl-text { margin: 6px 0 0; font-size: 13px; line-height: 1.55; color: var(--app-fg); }
+.brief-lead.failed .bl-text { color: #b91c1c; }

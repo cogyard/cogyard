@@ -23,6 +23,7 @@ import {
   inferStatus,
   validateTasks, introducedErrors, taskFromContent, normalizeTaskId,
   closeability, closeableTasks, doneWithLeftovers, markerText, markerProblemsByFile, whoAmI, rewriteStatusLine, isClosed,
+  liveParkNotes, describePark, cleanParkReason, writeParkNote, endParkNotes,
   convertToSharedStore, joinSharedStore,
   auditProcess, describeAudit, auditReservedNames, describeReservedNames,
   resolveAxes, axisLookup, registeredLabels,
@@ -1007,14 +1008,17 @@ function taskForStatusChange(idArg, usage) {
 
 // Write status + done_date (+ the body's status line) atomically. Returns the
 // file's previous contents, so a later step that fails can put it back.
-function writeStatus(abs, status, doneDate) {
+// `doneDate` undefined leaves done_date as written; `editBody` (task 244) is
+// applied to the body before the status line is rewritten — park and unpark
+// write their note through it.
+function writeStatus(abs, status, doneDate, editBody = (b) => b) {
   const before = readFileSync(abs, 'utf8');
   const end = before.indexOf('\n---\n', 4);
   if (!before.startsWith('---\n') || end === -1) fail(`${basename(abs)} frontmatter not terminated`);
   let fm = setTopLevelKey(before.slice(4, end), 'status', status);
-  fm = setTopLevelKey(fm, 'done_date', doneDate);
+  if (doneDate !== undefined) fm = setTopLevelKey(fm, 'done_date', doneDate);
   const tmp = `${abs}.status-${process.pid}.tmp`;
-  writeFileSync(tmp, `---\n${fm}\n---\n${rewriteStatusLine(before.slice(end + 5), status)}`);
+  writeFileSync(tmp, `---\n${fm}\n---\n${rewriteStatusLine(editBody(before.slice(end + 5)), status)}`);
   renameSync(tmp, abs);
   return before;
 }
@@ -1036,6 +1040,13 @@ async function cmdClose(idArg, flags) {
   if (v.alreadyClosed) {
     fail(`#${id} is already ${v.status}.`
       + (['DONE', 'ENOUGH'].includes(v.status) ? ` To undo that close: cogyard tasks reopen ${id} --why "<reason>"` : ''));
+  }
+  // A live park (task 244) refuses every form of close, --force included: a
+  // closed task keeps only an ended park record. Nothing is written.
+  if (v.park.live) {
+    fail(`Not closing #${id}: ${v.park.reason}. `
+      + `A closed task keeps only an ended park record, so --enough and --force don't override this. `
+      + `Never set the status by hand to get past it.`);
   }
   const verdict = flags.enough ? v.enough : v.done;
   if (!verdict.ok && !flags.force) {
@@ -1096,11 +1107,125 @@ async function cmdReopen(idArg, flags = {}) {
   const { abs, id, task } = taskForStatusChange(idArg, 'usage: tasks.mjs reopen <task-id-or-file> [--why "<reason>"]');
   const was = task.frontmatter.status;
   if (!['DONE', 'ENOUGH'].includes(was)) fail(`#${id} is ${was || 'missing a status'} — reopen takes a DONE or ENOUGH task.`);
+  // A closed task still carrying a live park note (closed before task 244)
+  // would come back OPEN while its text says PARKED — the contradiction 244
+  // flags. Whoever ends the wait says what they saw; reopen can't, so it stops.
+  const notes = liveParkNotes(task.body || '');
+  if (notes.length) {
+    fail(`#${id} is ${was} but its text still has a live park note ("${describePark(notes[0])}"). `
+      + `Reopening would leave an OPEN task saying it is parked. End the wait first — `
+      + `\`cogyard tasks unpark ${id} "<what was seen that ended it>" --on <the day it ended>\` — then reopen. Nothing changed.`);
+  }
   const why = typeof flags.why === 'string' && flags.why.trim() ? ` — ${flags.why.replace(/\s+/g, ' ').trim()}` : '';
   const chat = (await agentSession()) ? await currentSessionId() : null;
   writeStatus(abs, 'OPEN', 'null');
   await cmdSync(['push', `reopen #${id} (was ${was})${why}${chat ? ` [chat ${chat}]` : ''}`, '--', abs]);
   process.stdout.write(`#${id} reopened (was ${was}); done_date cleared.\n`);
+}
+
+// --- Park / unpark (task 244) --------------------------------------------------
+// A park is recorded twice — `status: PARKED`, and the text's live
+// `> **PARKED <date> — <reason>**` note (core/park.mjs) — and these two commands
+// are the only writers of either, the way close / reopen own DONE. Each sets
+// the status, writes the note, keeps the `> **Status: X**` line true, and
+// commits; park also releases the claim (a claim is valid only on an OPEN task).
+// The Edit/Write hook refuses a hand edit of either half and names these.
+//
+// Two forms exist to repair what the validator flags, so a contradiction is
+// always fixed with a command, never a hand edit:
+//   park <id>               an OPEN task whose text already has a live note:
+//                           status catches up, the note is kept.
+//   park <id> "<reason>"    on a PARKED task with no note: records what it waits for.
+//   unpark … on a task that isn't PARKED but still has a live note (closed with
+//   one, before close refused that): ends the note; the status stays.
+// `--on <YYYY-MM-DD>` dates the park or its end when it happened earlier than
+// today — a missing record written late, or a wait that ended long ago.
+
+function parkDate(flags, label) {
+  const today = localDate();
+  if (flags.on === undefined) return today;
+  const d = String(flags.on);
+  const ok = /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) && new Date(`${d}T00:00:00Z`).toISOString().slice(0, 10) === d;
+  if (!ok) fail(`--on ${d}: expected a date YYYY-MM-DD (${label}).`);
+  if (d > today) fail(`--on ${d} is in the future — ${label} can't be later than today (${today}).`);
+  return d;
+}
+
+const chatNote = async () => ((await agentSession()) ? ` [chat ${await currentSessionId()}]` : '');
+
+async function cmdPark(idArg, reasonArg, flags = {}) {
+  const usage = 'usage: tasks.mjs park <task-id-or-file> "<what it waits for>" [--on <YYYY-MM-DD>]';
+  const { task, abs, id } = taskForStatusChange(idArg, usage);
+  const status = task.frontmatter.status;
+  const reason = typeof reasonArg === 'string' ? cleanParkReason(reasonArg) : '';
+  const notes = liveParkNotes(task.body || '');
+  let mode;
+  if (status === 'OPEN' && !notes.length) {
+    if (!reason) fail(`${usage}\nSay what #${id} waits for — it goes in the park note and is what un-parking checks against.`);
+    mode = 'park';
+  } else if (status === 'OPEN') {
+    if (reason) {
+      fail(`#${id}'s text already has a live park note ("${describePark(notes[0])}") while its status is OPEN. Either:\n`
+        + `  • it still waits for that → \`cogyard tasks park ${id}\` (no reason: sets PARKED, keeps the note), or\n`
+        + `  • that wait is over → \`cogyard tasks unpark ${id} "<what was seen>"\`, then park it again with the new reason.\nNothing changed.`);
+    }
+    if (flags.on !== undefined) fail(`--on dates a new note; #${id} keeps its note of ${notes[0].date || '(undated)'}. Run it without --on.`);
+    mode = 'adopt';
+  } else if (status === 'PARKED' && !notes.length) {
+    if (!reason) fail(`${usage}\n#${id} is PARKED with no note saying what it waits for — give the reason (and --on <the day it was parked>, if you know it).`);
+    mode = 'record';
+  } else if (status === 'PARKED') {
+    fail(`#${id} is already PARKED ("${describePark(notes[0])}"). When the wait is over: \`cogyard tasks unpark ${id} "<what was seen>"\`.`);
+  } else {
+    fail(`#${id} is ${status || 'missing a status'} — park takes an OPEN task.`
+      + (['DONE', 'ENOUGH'].includes(status) ? ` To park a closed task, reopen it first: \`cogyard tasks reopen ${id} --why "<reason>"\`.` : ''));
+  }
+  const date = mode === 'adopt' ? null : parkDate(flags, 'the day it was parked');
+
+  // 1. status + the note (+ the status line). Kept so a failed release can put
+  //    the file back — a parked task still claimed is a validator error.
+  const before = writeStatus(abs, 'PARKED', undefined, (b) => (mode === 'adopt' ? b : writeParkNote(b, { date, reason })));
+
+  // 2. Release the claim: nothing parked is ever held (task 222). Committed with
+  //    the park in step 3, as one commit.
+  const claimed = task.frontmatter.env?.claimed_at;
+  const released = claimed != null && claimed !== '' && claimed !== 'null';
+  if (released) {
+    try { execFileSync(process.execPath, [join(SCRIPT_DIR, 'env.mjs'), 'release', abs, '--no-commit'], { stdio: ['ignore', 'ignore', 'inherit'] }); }
+    catch { writeFileSync(abs, before); fail(`releasing the claim failed — #${id} left as it was (${status}, still claimed).`); }
+  }
+
+  // 3. Commit.
+  const what = mode === 'adopt' ? `(keeps its note of ${notes[0].date || 'no date'}) — ${notes[0].reason}`
+    : mode === 'record' ? `(records what it waits for, since ${date}) — ${reason}`
+    : `— ${reason}${date !== localDate() ? ` (since ${date})` : ''}`;
+  await cmdSync(['push', `park #${id} ${what}${await chatNote()}`, '--', abs]);
+  const told = mode === 'adopt' ? `status set to PARKED; its note of ${notes[0].date || '(undated)'} kept`
+    : mode === 'record' ? `park note written (since ${date}); status stays PARKED`
+    : `parked (since ${date})`;
+  process.stdout.write(`#${id} ${told}${released ? ', claim released' : ''}.\n`);
+}
+
+async function cmdUnpark(idArg, seenArg, flags = {}) {
+  const usage = 'usage: tasks.mjs unpark <task-id-or-file> "<what was seen that ends the wait>" [--on <YYYY-MM-DD>]';
+  const { abs, id, task } = taskForStatusChange(idArg, usage);
+  const status = task.frontmatter.status;
+  const seen = typeof seenArg === 'string' ? seenArg.replace(/\s+/g, ' ').trim() : '';
+  const notes = liveParkNotes(task.body || '');
+  if (status !== 'PARKED' && !notes.length) {
+    fail(`#${id} is ${status || 'missing a status'} and its text has no live park note — unpark takes a PARKED task.`);
+  }
+  if (!seen) fail(`${usage}\nSay what was seen that ends the wait${notes.length ? ` ("${describePark(notes[0])}")` : ''} — it is recorded as the un-park line.`);
+  const end = parkDate(flags, 'the day the wait ended');
+  const started = notes.map((n) => n.date).filter(Boolean).sort()[0];
+  if (started && end < started) fail(`--on ${end} is before the park began (${started}).`);
+
+  // PARKED → OPEN; any other status (a task closed with a live note) stays.
+  const next = status === 'PARKED' ? 'OPEN' : status;
+  writeStatus(abs, next, undefined, (b) => endParkNotes(b, { end, seen }));
+  const change = status === 'PARKED' ? 'PARKED → OPEN' : `ends the park note; status stays ${status}`;
+  await cmdSync(['push', `unpark #${id} (${change}) — ${seen}${await chatNote()}`, '--', abs]);
+  process.stdout.write(`#${id} un-parked (${change}); recorded "Un-parked ${end}: ${seen}".\n`);
 }
 
 // `touches` (task 239) — keep a task's touches_paths true, because the plan's
@@ -1408,8 +1533,26 @@ Subcommands:
                                       command for the owner.
   reopen <task-id-or-file>            Undo a close: DONE or ENOUGH → OPEN, done_date
                                       cleared, committed. Does not claim the task.
+                                      Refuses while the text has a live park note.
     --why "<reason>"                  Recorded in the commit (an agent's commit also
                                       names its chat)
+  park <task-id-or-file> "<reason>"   Park a task: OPEN → PARKED, writes the live note
+                                      "> **PARKED <date> — <reason>**" at the top of the
+                                      text, keeps the Status line true, releases the
+                                      claim, commits. Refuses a task that isn't OPEN.
+                                      Repairs: with no reason, an OPEN task whose text
+                                      already has a live note becomes PARKED, note kept;
+                                      a PARKED task with no note gets one written.
+  unpark <task-id-or-file> "<seen>"   End a park: PARKED → OPEN, the live note becomes
+                                      "> Parked <date> – <date>: <reason>." plus
+                                      "> Un-parked <date>: <what was seen>.", commits.
+                                      Refuses a task that isn't PARKED. Repair: a task
+                                      closed with a live note keeps its status and the
+                                      note is ended.
+    --on <YYYY-MM-DD>                 (park, unpark) The day it was parked, or the
+                                      wait ended, when that was before today
+                                      (close refuses a parked task or one whose text
+                                      still says PARKED — un-park it first)
   touches <task-id-or-file>           Print the task's touches_paths — the files it edits,
                                       which the plan's parallel check reads.
     --add <path>…                     Add paths to it (committed) BEFORE editing a file it
@@ -1483,6 +1626,8 @@ switch (cmd) {
   case 'drift': cmdDrift(opts.positional[1]); break;
   case 'close': await cmdClose(opts.positional[1], opts.flags); break;
   case 'reopen': await cmdReopen(opts.positional[1], opts.flags); break;
+  case 'park': await cmdPark(opts.positional[1], opts.positional[2], opts.flags); break;
+  case 'unpark': await cmdUnpark(opts.positional[1], opts.positional[2], opts.flags); break;
   case 'touches': await cmdTouches(opts.positional[1], opts.flags, opts.positional.slice(2)); break;
   case 'conflicts': await cmdConflicts(opts.positional[1]); break;
   case 'validate': cmdValidate(opts.flags, opts.positional[1]); break;

@@ -143,7 +143,11 @@
           <div class="dag-hash">{{ r.shortHash }}</div>
           <div class="dag-msg">
             @for (c of r.chips; track $index) {
-              <app-ref-chip [kind]="c.kind">{{ c.text }}</app-ref-chip>
+              @if (c.tip) {
+                <app-ref-chip [kind]="c.kind" [pTooltip]="c.tip" tooltipPosition="top">{{ c.text }}</app-ref-chip>
+              } @else {
+                <app-ref-chip [kind]="c.kind">{{ c.text }}</app-ref-chip>
+              }
             }
             @for (id of r.taskIds; track id) {
               <app-task-chip [id]="id" [slug]="slug()" (open)="jumpTask.emit($event)" />

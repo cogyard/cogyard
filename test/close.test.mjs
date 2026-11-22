@@ -127,7 +127,13 @@ test('claim: mine (any session) or unnamed is fine; someone else\'s refuses', ()
 test('status: only OPEN closes; an already-closed task is flagged as such', () => {
   assert.match(closeability(task(ALL, {}, 'DONE'), { repoRoot: R }).done.reasons[0], /already DONE/);
   assert.equal(closeability(task(ALL, {}, 'DONE'), { repoRoot: R }).alreadyClosed, true);
-  assert.match(closeability(task(ALL, {}, 'PARKED'), { repoRoot: R }).done.reasons[0], /PARKED — close takes an OPEN task/);
+  // A parked task names unpark, not "close takes an OPEN task" (task 244: that
+  // wording led a chat to set status to OPEN by hand), and refuses --enough too.
+  const parked = closeability(task(ALL, {}, 'PARKED'), { repoRoot: R });
+  assert.match(parked.done.reasons[0], /^status is PARKED — a parked task is un-parked before it closes: `cogyard tasks unpark .* "<what was seen that ends the wait>"`, then close it$/);
+  assert.equal(parked.enough.ok, false);
+  assert.equal(parked.park.live, true);
+  assert.equal(closeability(task(ALL, {}, 'OBSOLETE'), { repoRoot: R }).park.live, false);
 });
 
 test('closeableTasks lists only the ready ones, and reading them changes no file', () => {

@@ -117,6 +117,13 @@ The three invariants this protects:
     dir/symlink and the merged branch maps to a task (branch/worktree named
     `task-NNN-*`, or `cogyard tasks current` lists it), close it in two parts.
 
+    **The claim must be this chat's before any edit here.** When this merge
+    runs from a chat that isn't the one holding the task's claim (`cogyard
+    env where <task file>` shows another `session`), take it over first:
+    `cogyard env claim <task file> <session-id> --force` from the main
+    checkout. The edit hook refuses changes to a task file another chat has
+    claimed, so 10a and 10b would be refused.
+
     **10a. First run the checks that waited on the merge — they are your work,
     not a question.** Read the task file (`cogyard tasks find <id>`). Every open
     box marked `(after merge)` is a check you can only run now that the code is

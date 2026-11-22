@@ -32,6 +32,8 @@
 //      worktree's and the main checkout's .claude/launch.json — then notifies
 //      and prints the full briefing.
 //      Without a config it prints a reserved-ports briefing and writes nothing.
+//   Either briefing opens with how many commits the worktree is behind its
+//   local main (else master), or one "up to date" line (task 142).
 //
 // Project discovery is findParentMarker from worktree-ports.mjs — ONE walk-up
 // routine for both allocation identity and config lookup.
@@ -182,6 +184,36 @@ If you meant to wire a worktree, run it from inside one:
   process.exit(0);
 }
 
+// --- how far behind main is this worktree? -------------------------------------
+// A worktree is frozen at spawn time while main keeps moving, so the count goes
+// at the top of both briefings, before the session does any work. Compared with
+// the LOCAL base branch (main, else master): commits on local main that were
+// never pushed are missing from a worktree EnterWorktree cut from origin, and
+// this is where that shows. Any git failure prints nothing; the hook still
+// exits 0 and the rest of the briefing still prints.
+function behindMainNote(wt) {
+  try {
+    const git = (args) => execFileSync('git', ['-C', wt, ...args], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).toString().trim();
+    const base = ['main', 'master'].find((b) => {
+      try { git(['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]); return true; } catch { return false; }
+    });
+    if (!base) return '';
+    const n = Number(git(['rev-list', '--count', `HEAD..refs/heads/${base}`]));
+    if (!Number.isInteger(n) || n < 0) return '';
+    if (n === 0) return `Worktree vs ${base}: up to date.\n\n`;
+    return `=== WORKTREE IS ${n} COMMIT${n === 1 ? '' : 'S'} BEHIND ${base.toUpperCase()} ===
+Never merge ${base} into this worktree.
+- Resuming a task that already owns this worktree: pickup-task rebases
+  it onto ${base} as the project's rebase switch says.
+- Anything else: report this count and stop until the user picks a
+  remedy, usually \`git rebase ${base}\` (or pushing ${base} first, when the
+  missing commits were never pushed).
+
+`;
+  } catch { return ''; }
+}
+const staleNote = behindMainNote(WT);
+
 // --- task-store link automount (.cogyard/tasks) — all worktrees, ports-unrelated -------------
 
 try {
@@ -239,7 +271,7 @@ function maybeFollowTunnel(projRoot, worktree) {
 
 if (!configPath) {
   log(`reserved (no config) ${basename(projectRoot)}/${worktreeName} → backend=:${backend} frontend=:${frontend}`);
-  process.stdout.write(`=== Worktree ports (reserved) ===
+  process.stdout.write(staleNote + `=== Worktree ports (reserved) ===
 
 Project       : ${basename(projectRoot)}
 Worktree      : ${worktreeName}
@@ -423,5 +455,5 @@ Reference: docs/WORKTREE-PORTS.md
   failSoft(`worktree setup failed: ${e.message}`);
 }
 
-process.stdout.write(briefing);
+process.stdout.write(staleNote + briefing);
 process.exit(0);

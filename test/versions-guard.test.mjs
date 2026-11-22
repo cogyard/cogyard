@@ -83,6 +83,7 @@ const ENTRIES = {
   'usage': ['global', '/api/usage'],
   'activity': ['global', '/api/activity'],
   'overview': ['global', '/api/overview'],
+  'in-progress': ['global', '/api/in-progress'],
   'projects': ['global', '/api/projects'],
   'config': ['global', '/api/config'],
 };

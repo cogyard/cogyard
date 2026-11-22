@@ -1,0 +1,29 @@
+// Layout + semantic colour only (docs/UI-CONVENTIONS.md). Moved here from the
+// Plan card (task 265) unchanged, so the card looks exactly as before.
+//
+// The squares are INLINE so the code text after them sits on their last row
+// (it wraps to a row of its own only when that row is full) while the squares
+// and the text each keep their own tooltip. font-size 0 on the row (it holds
+// no text of its own) so the squares and the text are both centred on the SAME
+// baseline: `vertical-align: middle` measures from the parent's baseline plus
+// half ITS x-height, and the text's parent had the card's 14px font while the
+// squares' had none — the text sat 3.7px high. The text's own size is `mono`'s.
+:host { display: block; line-height: 10px; font-size: 0; cursor: help; }
+
+// One square per checkbox (task 251). A ticked square: black = on main, light
+// blue = only on the branch, grey = no code state. No "all ticked → green" any
+// more: it hid where a finished task's code is, and full squares already say
+// every box is done (owner, 2026-11-15).
+i { display: inline-block; vertical-align: middle; width: 8px; height: 8px; margin-right: 2px; border-radius: 2px; background: var(--app-border); }
+i.on { background: var(--app-fg-muted); opacity: 0.6; }
+i.on.main { background: var(--app-ref-main); opacity: 1; }
+i.on.branch { background: var(--app-ref-branch-lane); opacity: 1; }
+
+// `on main` / `↑a ↓b` (task 251), the `mono` count recipe, after the last square.
+.code {
+  display: inline-flex; gap: var(--app-space-1); vertical-align: middle; margin-left: var(--app-space-1);
+  line-height: 1; white-space: nowrap;
+  .on-main { color: var(--app-tone-good-fg); }
+  .up { color: var(--app-tone-warn-fg); }
+  .down { color: var(--app-fg-muted); }
+}

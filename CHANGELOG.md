@@ -11,6 +11,52 @@ mirrors the `v*` release tags, not every intermediate bump.
 
 ## [Unreleased]
 
+## [2.22.0] — 2026-11-22
+
+### Added
+
+- **The All page opens on what's moving in every project** — one box per
+  project with its tasks in progress (the agent's live state and each task's
+  checkbox squares) and its last 10 closed tasks beside its name. Projects whose
+  only tasks are old claims fold into one line under the boxes.
+- **The All page is split into tabs** — Plan, Attention, Costs, Daily and Repos,
+  each with its own address (`/all/<tab>`), in the same tab box as a project's
+  Admin tab. "Where your time went" shows attention on Attention and cost on
+  Costs, instead of a switch between the two.
+- **HTML files open as pages in the Files tab** — with or without their
+  scripts, in a sandboxed frame that can't reach the portal. Stylesheets, images
+  and scripts beside the page load, and "full size" opens it in a tab of its own.
+- **One project can ship several releases** — `.cogyard/publish.json` can name
+  releases (a label, a tag pattern, the paths each one ships), and
+  `cogyard publish <project> <release>` publishes one. The Publishing card shows
+  each release's state, and the Graph labels their tags ("Website 2.6.0").
+- **`cogyard tasks park` and `unpark`** set a task's PARKED status and its park
+  note together. `cogyard tasks validate` flags a status and note that
+  disagree, and `close` / `reopen` refuse while a live park note stands.
+
+### Changed
+
+- **A worktree chat starts by saying how far behind main it is** — the
+  SessionStart briefing opens with how many commits on local main the worktree
+  doesn't have, or one line saying it is up to date.
+
+### Fixed
+
+- **Markdown shown in the portal could run script.** Markdown was turned into
+  HTML and put on the page without cleaning, so raw HTML in a README, a task or
+  a chat transcript (an `onerror` attribute, a `javascript:` link) ran with the
+  portal's full access. All rendered markdown now goes through Angular's
+  sanitizer. A markdown file's relative images now load as well.
+- **Editing a task file through `.cogyard/tasks` raised a Claude Code
+  permission prompt.** The link points outside the project, and nothing stopped
+  a chat from editing through it. The Edit/Write hook now refuses that edit and
+  names the task's real path. The same hooks also refuse editing a task another
+  chat has claimed, or entering a claimed task's worktree from a chat that
+  doesn't hold the claim, and `cogyard env claim` records the chat that ran it.
+- **`.claude/launch.json` kept preview entries for removed worktrees** when a
+  folder was left at the old path. A worktree now counts as alive only while git
+  lists it and its folder exists, both at session start and in Cleanup.
+
 ## [2.11.0] — 2026-11-17
 
 ### Added

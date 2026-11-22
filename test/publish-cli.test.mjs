@@ -250,6 +250,83 @@ test('no --yes and no terminal → nothing runs', async () => {
   assert.notEqual(readFileSync(f.live, 'utf8'), f.sha);
 });
 
+// --- a project naming its releases (task 264) ---------------------------------------
+
+const twoReleases = ({ live, health }) => ({
+  releases: {
+    website: { label: 'Website', tag: 'web/v<version>', deploysOnPush: false, command: `printf %s "$COGYARD_PUBLISH_SHA" > ${JSON.stringify(live)}`, health },
+    device: { label: 'Device', tag: 'v<version>', deploysOnPush: false, manual: ['Flash the meter by USB'] },
+  },
+});
+
+test('releases: one is published by name — its own command, its own tag, recorded with its name', async () => {
+  const f = await fixture({ version: '1.4.0', declaration: ({ live, health }) => {
+    const d = twoReleases({ live, health });
+    // Also note which release the deploy command was told it is publishing.
+    d.releases.website.command += `; printf %s "$COGYARD_PUBLISH_RELEASE" > ${JSON.stringify(live + '.release')}`;
+    return d;
+  } });
+  const r = await run(f, ['proj', 'website', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /release: Website \(website\)/);
+  assert.match(r.stdout, /You are about to publish proj Website as web\/v1\.4\.0\. That is commit [0-9a-f]{7}\./);
+  assert.match(r.stdout, /Published proj Website web\/v1\.4\.0\./);
+  assert.equal(remoteTag(f, 'web/v1.4.0'), f.sha, 'the release\'s own tag, on origin');
+  assert.equal(remoteTag(f, 'v1.4.0'), null, 'the other release\'s tag is untouched');
+  assert.equal(readFileSync(f.live + '.release', 'utf8'), 'website', 'the deploy command is told which release');
+  const [entry] = log(f);
+  assert.equal(entry.release, 'website');
+  assert.equal(entry.tag, 'web/v1.4.0');
+});
+
+test('releases: a label works as the name, any case', async () => {
+  const f = await fixture({ version: '1.6.0', declaration: twoReleases });
+  const r = await run(f, ['proj', 'WEBSITE']);
+  assert.match(r.stdout, /release: Website \(website\)/, 'resolved before anything asks');
+  assert.match(r.stderr, /✗ Confirm: no terminal to ask in/);
+});
+
+test('releases: no name, or a name it doesn\'t have, is refused before anything runs', async () => {
+  const f = await fixture({ declaration: twoReleases });
+  const none = await run(f, ['proj', '--yes']);
+  assert.equal(none.status, 2);
+  assert.match(none.stderr, /✗ Declaration: this project declares 2 releases \(website, device\) — name the one to publish/);
+  const wrong = await run(f, ['proj', 'ios', '--yes']);
+  assert.equal(wrong.status, 2);
+  assert.match(wrong.stderr, /no release called "ios" — this project's releases are website, device/);
+  assert.notEqual(readFileSync(f.live, 'utf8'), f.sha, 'nothing deployed');
+  const extra = await run(f, ['proj', 'website', 'device', '--yes']);
+  assert.equal(extra.status, 2);
+  assert.match(extra.stderr, /at most one release — "device" is left over/);
+});
+
+test('releases: a file with one release publishes with no name, under its own tag', async () => {
+  const f = await fixture({ version: '1.8.0', declaration: ({ live, health }) => ({
+    releases: { website: twoReleases({ live, health }).releases.website },
+  }) });
+  const r = await run(f, ['proj', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /release: Website \(website\)/);
+  assert.match(r.stdout, /Published proj Website web\/v1\.8\.0\./);
+  assert.equal(remoteTag(f, 'web/v1.8.0'), f.sha);
+});
+
+test('the flat form takes no release name', async () => {
+  const f = await fixture();
+  const r = await run(f, ['proj', 'website', '--yes']);
+  assert.equal(r.status, 2);
+  assert.match(r.stderr, /declares one release, so it takes no release name — leave out "website"/);
+});
+
+test('list: a project naming its releases gets a line per release', async () => {
+  const f = await fixture({ declaration: twoReleases });
+  git(f.path, 'tag', 'v0.9.0');
+  const r = await run(f, ['list']);
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /^proj · Website \(website\)\s+no\s+—\s+—\s+run `printf/m);
+  assert.match(r.stdout, /^proj · Device \(device\)\s+no\s+v0\.9\.0\s+—\s+Flash the meter by USB — live check: you confirm/m);
+});
+
 test('list: declaration, last release, how it publishes', async () => {
   const f = await fixture({ version: '2.0.0' });
   await run(f, ['proj', '--yes']);

@@ -1,0 +1,18 @@
+// The repo table's own columns (task 266), as in files/266/repos-tab-mock.html —
+// layout + semantic colour only; what it shares with the cost table is in
+// ../all-table.scss.
+:host ::ng-deep p-table table { min-width: 720px; }
+.col-project { width: 24%; min-width: 150px; }
+.col-tasks { width: 150px; }
+.col-wt { width: 150px; }
+.col-dirty { width: 90px; }
+.col-code { width: 100px; }
+
+// no display:flex on td — consecutive non-table-cell tds merge into one
+// anonymous cell and shift every column after them
+:is(.tasks, .wt) > * + * { margin-left: 8px; }
+.totals-row .wt app-flag { margin-left: 8px; }
+
+.tasks .total { color: var(--app-fg); font-weight: 600; }
+.tasks .ready { color: #047857; font-weight: 600; }
+.dirty { color: #b45309; font-weight: 600; }

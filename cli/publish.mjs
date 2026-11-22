@@ -4,7 +4,10 @@
 //   cogyard publish [list] [--json]    every registered project: does a push to
 //                                      main deploy it, its last release, how it
 //                                      publishes
-//   cogyard publish <project> [--yes]  publish it
+//   cogyard publish <project> [<release>] [--yes]
+//                                      publish it — a project that names its
+//                                      releases in publish.json (task 264)
+//                                      publishes one of them, by name or label
 //
 // A publish is one fixed sequence. Each step either proves what it claims or
 // stops the publish with the reason — nothing is tagged unless everything
@@ -45,7 +48,7 @@ import { loadSecrets } from '../core/secrets.mjs';
 import {
   PUBLISH_CONFIG, PUBLISH_LOG, PUBLISH_DEFAULTS, readPublishConfig, publishPlan, publishPreflight,
   healthMatches, healthCommit, tagRelease, takePublishLock, recordPublish, publishInventory,
-  resolvePublishProject, checkoutStill,
+  resolvePublishProject, checkoutStill, pickRelease, tagPrefix,
 } from '../core/publish.mjs';
 
 // A DigitalOcean build takes minutes. Running out is a safe failure: nothing is
@@ -83,6 +86,9 @@ function help() {
                                      release, and how each publishes
   cogyard publish <project> [--yes]  deploy <project>'s main, prove it is live, tag
                                      v<version> on it (owner only; docs/PUBLISH.md)
+  cogyard publish <project> <release> [--yes]
+                                     the same for one release of a project that
+                                     names its releases (its name or label)
 
 A project declares itself in ${PUBLISH_CONFIG}.`);
 }
@@ -106,7 +112,10 @@ function list(json) {
   const rows = publishInventory(discoverProjects().filter((p) => !p.error));
   if (json) return out(JSON.stringify(rows, null, 2));
   const head = ['PROJECT', 'PUSH DEPLOYS', 'LAST RELEASE', 'PRE-PUSH HOOK', 'HOW IT PUBLISHES'];
-  const table = rows.map((r) => [r.label, pushCell(r), r.lastRelease ?? '—', r.prePushHook ? 'yes' : '—', howCell(r)]);
+  // A project naming its releases (task 264) gets one line per release.
+  const table = rows.flatMap((r) => (r.releases
+    ? r.releases.map((rel) => [`${r.label} · ${rel.label} (${rel.name})`, pushCell({ declared: true, ...rel }), rel.lastRelease ?? '—', r.prePushHook ? 'yes' : '—', howCell({ declared: true, ...rel })])
+    : [[r.label, pushCell(r), r.lastRelease ?? '—', r.prePushHook ? 'yes' : '—', howCell(r)]]));
   const n = head.length - 1;
   const widths = head.slice(0, n).map((h, i) => Math.max(h.length, ...table.map((t) => t[i].length)));
   const line = (cells) => cells.map((c, i) => (i < n ? c.padEnd(widths[i]) : c)).join('  ');
@@ -169,7 +178,7 @@ async function waitForHealth(url, sha) {
   }
 }
 
-async function publish(slug, yes) {
+async function publish(slug, releaseName, yes) {
   const record = { project: slug, ok: false };
   let lock = null;
   const stop = (step, reason, code = 1) => {
@@ -195,7 +204,16 @@ async function publish(slug, yes) {
   const { project } = found;
   record.project = project.slug;
   ok(`project: ${project.label} ${dim(`(${project.path})`)}`);
-  const cfg = readPublishConfig(project.path);
+  const decl = readPublishConfig(project.path);
+  if (!decl.declared || decl.error) stop('Declaration', publishPlan(decl).reason, 2);
+  // Which release (task 264): the flat form is the one release and takes no
+  // name; a project naming its releases publishes exactly one, named.
+  const picked = pickRelease(decl, releaseName);
+  if (!picked.ok) stop('Declaration', picked.reason, 2);
+  const cfg = picked.release;
+  // What is being published, in every sentence below: "Deadlift Website".
+  const what = cfg.label ? `${project.label} ${cfg.label}` : project.label;
+  if (cfg.name) { record.release = cfg.name; ok(`release: ${cfg.label} ${dim(`(${cfg.name})`)}`); }
   const plan = publishPlan(cfg);
   if (!plan.ok) stop('Declaration', plan.reason, 2);
   // Everything that will need the owner's answer is checked BEFORE anything
@@ -209,7 +227,10 @@ async function publish(slug, yes) {
   ok(`no other publish of ${project.label} is running`);
 
   step(3, 'Code');
-  const pre = publishPreflight(project.path, { tag: cfg.tag });
+  const pre = publishPreflight(project.path, {
+    tag: cfg.tag, prefix: tagPrefix(cfg.tagFormat) ?? 'v',
+    tagOff: cfg.name ? `set "tag": false for the "${cfg.name}" release in ${PUBLISH_CONFIG}` : undefined,
+  });
   if (!pre.ok) stop('Code', pre.reason, 2);
   Object.assign(record, { sha: pre.sha, tag: pre.tag, previous: pre.previous });
   ok(`${pre.branch} @ ${cyan(pre.short)}, clean${pre.remote ? `, identical to ${pre.remote}/${pre.branch}` : ' (no remote)'}`);
@@ -254,7 +275,7 @@ async function publish(slug, yes) {
   // step says "don't do it yet" — a wording that only listed the steps made
   // the owner press Deploy at this question instead of at step 7.
   const release = pre.tag ? `as ${pre.tag}` : 'without a release tag';
-  out(`   You are about to publish ${project.label} ${pre.tag ? `as ${cyan(pre.tag)}` : release}. That is commit ${cyan(pre.short)}.`);
+  out(`   You are about to publish ${what} ${pre.tag ? `as ${cyan(pre.tag)}` : release}. That is commit ${cyan(pre.short)}.`);
   out('');
   const next = [];
   if (alreadyLive) {
@@ -277,7 +298,7 @@ async function publish(slug, yes) {
   if (yes) ok('you passed --yes, so the publish starts');
   else {
     if (!process.stdin.isTTY) stop('Confirm', 'no terminal to ask in — pass --yes to confirm', 2);
-    if (!(await yesNo(`   Start publishing ${project.label} ${release}?`))) stop('Confirm', 'you said no', 1);
+    if (!(await yesNo(`   Start publishing ${what} ${release}?`))) stop('Confirm', 'you said no', 1);
     ok('started');
   }
 
@@ -290,7 +311,7 @@ async function publish(slug, yes) {
       out(`   → ${cfg.command}`);
       const r = spawnSync(cfg.command, {
         cwd: project.path, shell: true, stdio: 'inherit',
-        env: { ...process.env, COGYARD_PUBLISH_SHA: pre.sha, COGYARD_PUBLISH_TAG: pre.tag ?? '' },
+        env: { ...process.env, COGYARD_PUBLISH_SHA: pre.sha, COGYARD_PUBLISH_TAG: pre.tag ?? '', COGYARD_PUBLISH_RELEASE: cfg.name ?? '' },
       });
       if (r.error) stop('Deploy', `could not start the command: ${r.error.message}`);
       if (r.status !== 0) stop('Deploy', `the command exited ${r.status ?? r.signal}`, r.status || 1);
@@ -320,7 +341,7 @@ async function publish(slug, yes) {
 
   step(9, 'Tag');
   if (pre.tag) {
-    const t = tagRelease(project.path, { tag: pre.tag, sha: pre.sha, remote: pre.remote, label: project.label });
+    const t = tagRelease(project.path, { tag: pre.tag, sha: pre.sha, remote: pre.remote, label: what });
     if (!t.ok) stop('Tag', `deployed and live, but ${t.error}`);
     ok(`${cyan(pre.tag)} → ${cyan(pre.short)}${t.pushed ? `, and ${pre.remote} has it` : ' (no remote)'}`);
   } else ok('skipped ("tag": false)');
@@ -331,16 +352,20 @@ async function publish(slug, yes) {
   ok(dim(PUBLISH_LOG));
   lock.release();
   rl?.close();
-  out(`\n${green(`Published ${project.label} ${pre.tag ?? pre.short}.`)}`);
+  out(`\n${green(`Published ${what} ${pre.tag ?? pre.short}.`)}`);
 }
 
 async function main() {
   const args = process.argv.slice(2);
   const flags = new Set(args.filter((a) => a.startsWith('-')));
-  const [first] = args.filter((a) => !a.startsWith('-'));
+  const [first, second, ...more] = args.filter((a) => !a.startsWith('-'));
   if (flags.has('--help') || flags.has('-h') || first === 'help') return help();
   if (!first || first === 'list') return list(flags.has('--json'));
-  return publish(first, flags.has('--yes') || flags.has('-y'));
+  if (more.length) {
+    process.stderr.write(`cogyard publish takes a project and at most one release — "${more.join(' ')}" is left over\n`);
+    process.exit(2);
+  }
+  return publish(first, second ?? null, flags.has('--yes') || flags.has('-y'));
 }
 
 main();

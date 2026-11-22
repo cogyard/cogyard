@@ -12,7 +12,7 @@
 //            SETTLED_KINDS). An `(optional)` box is a leftover:
 //            the task can close as ENOUGH, not DONE — DONE means nothing is left
 //            to see (owner, task 238). An unmarked open box blocks both but ENOUGH.
-//   status — OPEN.
+//   status — OPEN, and no live park note in the text (task 244).
 //   merge  — env.branch is contained in the default branch, OR there is no
 //            branch to merge (none recorded, or it never got a commit of its own:
 //            a task finished by an outside event, like a CI run going green).
@@ -28,6 +28,7 @@ import { checkboxSteps, boxCounts, loadTasks } from './frontmatter.mjs';
 import { readRegistry } from './registry.mjs';
 import { tasksDirOf } from './tasks-dir.mjs';
 import { SETTLED_KINDS, isClosed } from './status.mjs';
+import { liveParkNotes, describePark } from './park.mjs';
 import { defaultBranchSync } from './exec.mjs';
 
 function git(args, cwd) {
@@ -118,8 +119,21 @@ export function closeability(task, { repoRoot = null, me = null, markerProblems 
   const merge = mergeState(fm.env?.branch || null, repoRoot);
   const claim = claimState(fm.env, me);
 
+  // A live park (task 244): status PARKED, or the text's `> **PARKED …**` note.
+  // A closed task keeps only an ended record, so this refuses even `--force`
+  // (cmdClose checks `parkLive` before the overrides); `unpark` is the way out.
+  // It used to read "close takes an OPEN task", and a chat set the status to
+  // OPEN by hand to get past it, leaving the note live (task 244's story).
+  const parkNotes = liveParkNotes(task.body || '');
+  const parkLive = !isClosed(status) && (status === 'PARKED' || parkNotes.length > 0);
+  const id = fm.id ?? '<id>';
+  const parkReason = !parkLive ? null
+    : `${status === 'PARKED' ? 'status is PARKED' : 'its text still has a live park note'}${parkNotes.length ? ` ("${describePark(parkNotes[0])}")` : ''} — `
+      + `a parked task is un-parked before it closes: \`cogyard tasks unpark ${id} "<what was seen that ends the wait>"\`, then close it`;
+
   const shared = [];
   if (isClosed(status)) shared.push(`already ${status}`);
+  else if (parkReason) shared.push(parkReason);
   else if (status !== 'OPEN') shared.push(`status is ${status || 'missing'} — close takes an OPEN task`);
   if (merge.state === 'unmerged') shared.push(`branch ${merge.branch} is not merged into ${merge.base}`);
   if (merge.state === 'unknown') shared.push(`can't tell whether ${merge.branch} merged (${merge.detail})`);
@@ -139,6 +153,7 @@ export function closeability(task, { repoRoot = null, me = null, markerProblems 
     done: { ok: done.length === 0, reasons: done, onlyAfterMerge },
     enough: { ok: shared.length === 0, reasons: shared },
     alreadyClosed: isClosed(status),
+    park: { live: parkLive, notes: parkNotes, reason: parkReason },
     suggest: done.length === 0 && boxes.total > 0,
   };
 }

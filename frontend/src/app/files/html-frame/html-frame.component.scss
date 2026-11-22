@@ -1,0 +1,9 @@
+/* Fills the Files tab's viewing area; the page scrolls inside the frame. */
+:host { display: block; position: relative; height: 100%; }
+
+/* White behind the page, as a browser shows a page with no background of its
+   own. Hidden (not removed) while loading, so it keeps its size and loads. */
+iframe { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+iframe.waiting { visibility: hidden; }
+
+.skel { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; }

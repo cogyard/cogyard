@@ -28,7 +28,8 @@
         </div>
       </div>
     } @else {
-      <!-- What is true now. -->
+      <!-- What is true now. One release (the flat form): one "Right now" list. -->
+      @if (!multi()) {
       <div class="pub-group">
         <div class="card-subtitle">Right now</div>
         <div class="pub-rows">
@@ -123,38 +124,152 @@
           }
         </div>
       </div>
+      } @else {
+        <!-- Task 264: a project naming its releases — one group per release
+             (what is live, its own last release and what changed since in its
+             own files, the command), then main and pushing once. -->
+        @for (rel of s.releases; track $index) {
+          <div class="pub-group" [class.pub-section]="!$first">
+            <div class="card-subtitle">{{ rel.label }}@if (rel.live) { · {{ hostOnly(rel.live.url) }}}</div>
+            <div class="pub-rows">
+              @if (rel.live; as l) {
+                <div class="pub-row">
+                  <span class="eyebrow">Live</span>
+                  <span class="pub-val">
+                    @if (!l.reachable) {
+                      <app-flag plain tone="bad">no answer</app-flag>
+                    } @else if (!l.commit) {
+                      <app-flag plain tone="warn">no commit in response</app-flag>
+                    } @else {
+                      <code class="ro-value plain">{{ l.commit }}</code>
+                      @if (l.servesTip) {
+                        <app-flag plain tone="good">same as main</app-flag>
+                      } @else {
+                        <app-flag plain tone="warn">older than main</app-flag>
+                      }
+                    }
+                    <span class="dim">{{ l.url }}</span>
+                  </span>
+                </div>
+              }
+
+              <div class="pub-row">
+                <span class="eyebrow">Last release</span>
+                <span class="pub-val">
+                  @if (rel.lastRelease; as lr) {
+                    <code class="ro-value plain">{{ lr.tag }}</code>
+                    @if (lr.date) { <span class="dim">{{ when(lr.date) }}</span> }
+                    @if (lr.unreleased) {
+                      <app-flag plain tone="info" face="text">{{ sinceText(rel) }}</app-flag>
+                    } @else {
+                      <span class="dim">{{ nothingSinceText(rel) }}</span>
+                    }
+                  } @else {
+                    <span class="dim">never released</span>
+                  }
+                </span>
+              </div>
+
+              <div class="pub-row">
+                <span class="eyebrow">To publish</span>
+                <span class="pub-val">
+                  <code class="ro-value plain">{{ cmdOf(rel) }}</code>
+                  <button type="button" class="btn-link cp" (click)="copy(cmdOf(rel))">
+                    {{ copied() === cmdOf(rel) ? 'copied' : 'copy' }}
+                  </button>
+                </span>
+              </div>
+
+              @if (rel.credentials.length) {
+                <div class="pub-row">
+                  <span class="eyebrow">Credentials</span>
+                  <span class="pub-val">
+                    @for (c of rel.credentials; track c.name) {
+                      <span class="pub-cred">
+                        <code class="ro-value plain">{{ c.name }}</code>
+                        <app-flag plain [tone]="c.set ? 'good' : 'bad'">{{ c.set ? 'set' : 'missing' }}</app-flag>
+                      </span>
+                    }
+                  </span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <div class="pub-group pub-section">
+          <div class="pub-rows">
+            <div class="pub-row">
+              <span class="eyebrow">On main</span>
+              <span class="pub-val">
+                @if (s.tip; as t) {
+                  <code class="ro-value plain">{{ t.short }}</code>
+                  @if (t.version) { <span>v{{ t.version }}</span> }
+                } @else {
+                  <span class="dim">no main branch</span>
+                }
+              </span>
+            </div>
+
+            <div class="pub-row">
+              <span class="eyebrow">Pushing</span>
+              <span class="pub-val">
+                @if (onPush().length) {
+                  <app-flag plain tone="bad">puts it live</app-flag>
+                  <span class="dim">every push to main puts {{ onPush().join(' and ') }} live</span>
+                } @else {
+                  <app-flag plain tone="good">safe</app-flag>
+                  <span class="dim">a push to main doesn't put anything live</span>
+                }
+              </span>
+            </div>
+
+            @if (s.prePushHook) {
+              <div class="pub-row">
+                <span class="eyebrow">Pre-push hook</span>
+                <span class="pub-val">
+                  <code class="ro-value plain">{{ s.prePushHook }}</code>
+                  <span class="dim">git runs this on every push</span>
+                </span>
+              </div>
+            }
+          </div>
+        </div>
+      }
 
       <!-- How to publish, in the order a publish runs (docs/PUBLISH.md). The
-           numbers come from core/publish.mjs PUBLISH_DEFAULTS via s.defaults. -->
+           numbers come from core/publish.mjs PUBLISH_DEFAULTS via s.defaults.
+           One part per release (task 264); the flat form has one. -->
+      @for (rel of s.releases; track $index) {
       <div class="pub-section">
-        <div class="card-subtitle">{{ heading() }}</div>
-        @if (s.declaration.deploysOnPush) {
+        <div class="card-subtitle">{{ headingOf(rel) }}</div>
+        @if (rel.declaration.deploysOnPush) {
           <p class="pub-note">
-            Nothing to do separately: every push to main already puts this project live@if (s.declaration.command) { (via <code class="ro-value plain">{{ s.declaration.command }}</code>)}.
+            Nothing to do separately: every push to main already puts this project live@if (rel.declaration.command) { (via <code class="ro-value plain">{{ rel.declaration.command }}</code>)}.
           </p>
           <p class="hint pub-p">To publish on purpose instead, turn off deploy-on-push on the platform, then set <code>"deploysOnPush": false</code> in <code>.cogyard/publish.json</code>.</p>
-        } @else if (!steps().length) {
+        } @else if (!stepsOf(rel).length) {
           <p class="pub-note">Nothing to publish: <code>.cogyard/publish.json</code> lists no deploy step, so nothing puts this project live.</p>
           <p class="hint pub-p">If it never goes live anywhere, that's expected. If it does, add the step that puts it live as <code>"command"</code> or <code>"manual"</code>.</p>
         } @else {
-          @if (s.ready; as r) {
+          @if (rel.ready; as r) {
             <div class="pub-ready">
               <app-flag [tone]="r.ok ? 'good' : 'warn'">{{ r.ok ? 'ready' : 'not ready' }}</app-flag>
-              <span>{{ r.ok ? readyText() : r.reason }}</span>
+              <span>{{ r.ok ? readyTextOf(rel) : r.reason }}</span>
             </div>
           }
           <ol class="pub-steps">
             <li>
-              In your own terminal: <code class="ro-value plain">{{ publishCmd() }}</code>
-              <button type="button" class="btn-link cp" (click)="copy(publishCmd())">
-                {{ copied() === publishCmd() ? 'copied' : 'copy' }}
+              In your own terminal: <code class="ro-value plain">{{ cmdOf(rel) }}</code>
+              <button type="button" class="btn-link cp" (click)="copy(cmdOf(rel))">
+                {{ copied() === cmdOf(rel) ? 'copied' : 'copy' }}
               </button>
             </li>
             <li>It checks {{ s.defaults.branch ?? 'main' }} is exactly what's on {{ s.defaults.remote }}, with nothing uncommitted.</li>
             <li>
-              @if (s.declaration.checks?.length) {
+              @if (rel.declaration.checks.length) {
                 Runs the checks:
-                @for (c of s.declaration.checks; track $index; let last = $last) {
+                @for (c of rel.declaration.checks; track $index; let last = $last) {
                   <code class="ro-value plain">{{ c }}</code>{{ last ? '.' : ',' }}
                 }
               } @else {
@@ -162,7 +277,7 @@
               }
             </li>
             <li>Shows you the plan and asks to go ahead.</li>
-            @for (st of steps(); track $index) {
+            @for (st of stepsOf(rel); track $index) {
               @if (st.kind === 'command') {
                 <li>Deploys: runs <code class="ro-value plain">{{ st.text }}</code>.</li>
               } @else {
@@ -172,17 +287,17 @@
                 </li>
               }
             }
-            @if (s.declaration.health) {
+            @if (rel.declaration.health) {
               <li>
-                Watches {{ host(s.declaration.health) }} until it shows
-                @if (isReady()) { <code class="ro-value plain">{{ s.tip?.short }}</code> } @else { the new commit }
+                Watches {{ host(rel.declaration.health) }} until it shows
+                @if (isReadyOf(rel)) { <code class="ro-value plain">{{ s.tip?.short }}</code> } @else { the new commit }
                 (up to {{ s.defaults.verifyTimeoutMinutes }} min).
               </li>
             } @else {
               <li>Asks you to confirm the new version is live (no health URL to check).</li>
             }
-            @if (tagName(); as tag) {
-              @if (isReady()) {
+            @if (tagNameOf(rel); as tag) {
+              @if (isReadyOf(rel)) {
                 <li>
                   Tags <code class="ro-value plain">{{ tag }}</code> on
                   <code class="ro-value plain">{{ s.tip?.short }}</code>
@@ -198,6 +313,7 @@
           </span>
         }
       </div>
+      }
     }
 
     <div class="pub-section">
@@ -209,7 +325,7 @@
           @for (h of s.history; track h.at) {
             <div class="pub-hrow">
               <span class="dim">{{ when(h.at) }}</span>
-              <span>{{ h.tag ?? (h.sha ? h.sha.slice(0, 7) : '—') }}</span>
+              <span>{{ h.release ? releaseLabel(h.release) + ' ' : '' }}{{ h.tag ?? (h.sha ? h.sha.slice(0, 7) : '—') }}</span>
               @if (h.ok) {
                 <app-flag tone="good">published</app-flag>
               } @else {

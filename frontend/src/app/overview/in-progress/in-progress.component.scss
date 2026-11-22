@@ -1,0 +1,75 @@
+// Layout + semantic colour only (docs/UI-CONVENTIONS.md): text from the shared
+// recipes (.widget-title, .hint), chips from app-task-chip / app-flag, the agent
+// line from app-agent-state, the squares from app-task-squares, buttons from
+// .btn-link / .btn-pill.
+
+:host { display: block; }
+// No margin of its own: it is the whole of the All page's Plan tab (task 266),
+// and the tab box's padding spaces it.
+.ip { margin: 0; }
+.ip-head { display: flex; align-items: baseline; gap: var(--app-space-3); margin-bottom: var(--app-space-3); }
+
+// At most two boxes across, one per row when the column is narrower than two
+// 380px boxes; the boxes in a row are the same height (the grid's default
+// stretch). Owner, 2026-11-22: three across with top-aligned boxes left ragged
+// rows and cut every title at ~45 characters. auto-fit, so a lone box takes the
+// whole row rather than half of it.
+.grid {
+  display: grid; gap: var(--app-space-4);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(380px, calc((100% - var(--app-space-4)) / 2))), 1fr));
+}
+.grid + .foot, .foot + .grid { margin-top: var(--app-space-3); }
+.box {
+  display: flex; flex-direction: column; gap: var(--app-space-2); min-width: 0;
+  padding: var(--app-space-3) var(--app-space-4) var(--app-space-4);
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px;
+}
+
+// The name line: name · the last 10 closed · "… more".
+.name-line { display: flex; align-items: center; gap: var(--app-space-3); min-width: 0; }
+// The Daily Overview's project-name size (overview.component.scss .bl-name).
+.name { flex: none; font-size: 13.5px; font-weight: 700; }
+// Only whole chips: one row high and wrapping, so whatever doesn't fit drops to
+// a second row that is never shown — nothing is cut or faded (owner, 2026-11-22).
+.strip {
+  flex: 1 1 auto; min-width: 0; height: 20px; overflow: hidden;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--app-space-2);
+  > * { flex: none; height: 20px; display: inline-flex; align-items: center; }
+}
+// An empty first item: flexbox never wraps a line's first item, so without it a
+// first label-and-chip wider than the space stayed on the line and was cut.
+.strip > .anchor { width: 0; margin-right: calc(-1 * var(--app-space-2)); }
+// A group's label travels with its first chip, so a label never ends the line alone.
+.lead { gap: var(--app-space-2); }
+// The bar between groups (recently-done.component.scss .sep).
+.sep { width: 1px; height: 16px; margin: 0 var(--app-space-2) 0 var(--app-space-1); background: var(--app-border); }
+// The Recently done strip's expander (recently-done.component.scss .more).
+.more { flex: none; font-size: 11px; color: var(--app-fg-muted); padding-block: 2px; min-width: 6em; justify-content: center; }
+
+// One task, two lines. Tasks are told apart by a full line in --app-divider
+// with room either side (owner's pick, 2026-11-22: option 2, shade "2c").
+.task {
+  display: flex; flex-direction: column; gap: var(--app-space-1); min-width: 0;
+  padding: 9px 0 var(--app-space-3); border-top: 1px solid var(--app-divider);
+}
+.tasks .task:first-child, .when-label + .task { border-top: 0; padding-top: var(--app-space-1); }
+.r1 { display: flex; align-items: center; gap: var(--app-space-3); min-width: 0; font-size: 12.5px; }
+.title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.r2 { display: flex; align-items: flex-start; gap: var(--app-space-2) var(--app-space-3); min-width: 0; }
+// The squares take the rest of the line and wrap under themselves; 3px down
+// centres their first row on the agent's dot (measured in the browser: 5px left
+// them 1.75px low).
+.r2 app-task-squares { flex: 1 1 0; min-width: 0; padding-top: 3px; }
+.done-on { flex: none; }
+
+// "… more": the closed tasks in a panel over the page (PrimeNG popover), so
+// opening it never changes the grid.
+.done-pop { width: min(460px, 80vw); max-height: 60vh; overflow-y: auto; }
+.pop-title { margin-bottom: var(--app-space-2); }
+.done-pop .title { color: var(--app-fg-dim); }
+.when-label { margin-top: var(--app-space-3); }
+.pop-title + .when-label { margin-top: 0; }
+
+.foot { margin: var(--app-space-3) 0 0; }
+// The Overview's "Outside any project … show" toggle (overview.component.scss .fold-toggle).
+.fold-toggle { margin-left: var(--app-space-3); font-weight: 400; }

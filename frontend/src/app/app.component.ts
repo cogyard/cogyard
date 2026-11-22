@@ -20,7 +20,7 @@ import { PlanComponent } from './plan/plan.component';
 import { BranchesComponent } from './branches/branches.component';
 import { GraphComponent } from './graph/graph.component';
 import { WorktreesComponent } from './worktrees/worktrees.component';
-import { OverviewComponent } from './overview/overview.component';
+import { OverviewComponent, AllSection, ALL_SECTIONS } from './overview/overview.component';
 import { CommitPanelComponent } from './shared/commit-panel/commit-panel.component';
 import { FilesComponent } from './files/files.component';
 import { NewProjectComponent } from './shared/new-project/new-project.component';
@@ -39,6 +39,9 @@ const ADMIN_TAB = 'admin';
 type Tab = PortalTabId | typeof ADMIN_TAB;
 const TAB_SET = new Set<string>([...PORTAL_TABS.map((t) => t.id), ADMIN_TAB]);
 const ADMIN_SECTION_SET = new Set<string>(ADMIN_SECTIONS.map((s) => s.id));
+// The All page's inner tabs (task 266) are its address's second part,
+// /all/<section>, the way Admin's are /p/<slug>/admin/<section>.
+const ALL_SECTION_SET = new Set<string>(ALL_SECTIONS.map((s) => s.id));
 
 // The page a URL names — its path without the query (/p/<slug>/<tab>, /all, /settings).
 const pathOf = (t: UrlTree) => t.root.children['primary']?.segments.map((s) => s.path).join('/') ?? '';
@@ -175,6 +178,8 @@ export class AppComponent implements OnInit {
   // NavigationEnd (a different query param changing) doesn't re-open the row.
   private lastUrlTask = '';
   viewAll = signal<boolean>(false);
+  // The All page's inner tab (task 266) — Plan when absent or unknown.
+  allSection = signal<AllSection>('plan');
   settingsRoute = signal<boolean>(false); // URL is /settings
   panelHash = signal<string | null>(null);
   wtParam = signal<string>('');
@@ -230,6 +235,7 @@ export class AppComponent implements OnInit {
       this.viewAll.set(false);
     } else if (segs[0] === 'all') {
       this.viewAll.set(true);
+      this.allSection.set(ALL_SECTION_SET.has(segs[1]) ? (segs[1] as AllSection) : 'plan');
     } else if (segs[0] === 'p' && segs[1]) {
       this.viewAll.set(false);
       this.slug.set(segs[1]);
@@ -314,6 +320,8 @@ export class AppComponent implements OnInit {
   openNewProject() { this.newProject()?.start('init'); }
   setTab(t: Tab) { this.guardedNav(['/p', this.slug(), t]); }
   setAdminSection(s: AdminSection) { this.guardedNav(['/p', this.slug(), ADMIN_TAB, s]); }
+  // The sidebar's All button still goes to bare /all (Plan); a tab click names its tab.
+  setAllSection(s: AllSection) { this.guardedNav(['/all', s]); }
   // The address of the page on screen — Admin's carries its inner tab, so a
   // query-only change (opening or closing the commit panel) keeps it.
   private here(): string[] {
@@ -332,6 +340,12 @@ export class AppComponent implements OnInit {
     this.guardedNav(['/p', this.slug(), 'worktrees'], { queryParams: { wt: name || null } });
   }
   selectProject(slug: string) { this.guardedNav(['/p', slug, this.landingTab()]); }
+  // A task chip on the All tab (task 265) names its project too: open that
+  // project's Tasks tab on it, as jumpToTask does inside a project.
+  jumpToProjectTask(e: { slug: string; id: string }) {
+    if (!this.guardedNav(['/p', e.slug, 'tasks'], { queryParams: { task: e.id } })) return;
+    this.focusTask(e.id);
+  }
   openCommit(hash: string) {
     this.router.navigate(this.here(), { queryParams: { commit: hash }, queryParamsHandling: 'merge' });
   }

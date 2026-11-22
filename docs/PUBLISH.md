@@ -59,6 +59,67 @@ change what a publish does. A project with no file is reported as
 **undeclared**; cogyard never infers a deploy from hooks, docs or platform
 settings.
 
+### A project that ships more than one thing — `releases`
+
+Some projects ship two things from one repo, each on its own schedule: a
+device's firmware and its website, an iOS app and its website. Both take their
+version from the same `package.json`, but they go out from different commits,
+so one `v<version>` tag cannot mark both. Such a project names each release:
+
+```json
+{
+  "releases": {
+    "website": {
+      "label": "Website",
+      "tag": "web/v<version>",
+      "paths": ["site/", "wrangler.jsonc"],
+      "deploysOnPush": false,
+      "command": "npx wrangler deploy",
+      "health": "https://example.com/version.json"
+    },
+    "device": {
+      "label": "Device",
+      "tag": "v<version>",
+      "paths": ["firmware/", "platformio.ini"],
+      "deploysOnPush": false,
+      "manual": ["Plug the meter in by USB, then run npm run upload"]
+    }
+  }
+}
+```
+
+The key is the release's name (lowercase letters, digits and `-`). Each release
+takes every field in the table above, and three more:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `label` | yes | What the Graph and the settings card call it: a tag of this release shows on the Graph as `<label> <version>` (`Website 2.6.0`), the tag itself on hover. |
+| `tag` | yes | A pattern ending in `<version>` — `"v<version>"`, `"web/v<version>"`, `"ios/v<version>"` — or `false` for no tag. The part before `<version>` must start with a letter and not end in a digit. Two releases whose prefixes overlap (`v` and `v-ios/`) are refused: one's tags would read as the other's. Which release keeps a bare `v` is the project's choice. |
+| `paths` | no | The files and folders whose commits count as this release's changes. The settings card's "changes since" counts only those; without `paths` it counts every commit. |
+
+Nothing may sit beside `releases` at the top: every field goes inside a
+release. The flat form above stays valid and means one release, tagged
+`v<version>`. Each release's last release is its newest tag of its own
+pattern, so another release's tags never count — and a publish's "already
+released" and "newer than the last release" checks look only at those.
+
+#### Moving a project that already has tags
+
+cogyard never renames, moves or adds an old tag; moving a project to
+`releases` changes only how its tags are read.
+
+- **Tags that already match a release's pattern become that release's, as they
+  are.** Give the release whose history is already tagged the bare
+  `v<version>` pattern, and its history carries over with nothing to change.
+- **A release whose past releases were never tagged starts with none.** The
+  settings card reads *never released* for it until its first publish. To keep
+  its history, tag each past release by hand, once, on the commit that went
+  out: `git tag -a web/v2.6.0 <commit> -m "…"`, then
+  `git push origin web/v2.6.0`. Only the project knows which commit shipped
+  when, so cogyard doesn't guess.
+- **From then on it is automatic:** every `cogyard publish <project> <release>`
+  tags that release with its own pattern.
+
 ## The commands
 
 ```bash
@@ -67,13 +128,25 @@ cogyard publish
 
 Every registered project: whether a push deploys it, its last release tag,
 whether git will run a pre-push hook there, and how it publishes. `--json` for
-the rows.
+the rows. A project naming its releases gets a line per release.
 
 ```bash
 cogyard publish <project>
 ```
 
 Runs the sequence above. `--yes` answers step 5 only.
+
+```bash
+cogyard publish <project> <release>
+```
+
+The same sequence for one release of a project that names its releases — by
+its name or its label, any case. A project with two or more releases refuses a
+publish that names none. A `releases` file with a single entry needs no name
+(`cogyard publish <project>` publishes it, as the flat form does), and the flat
+form refuses one. The deploy command also gets
+`COGYARD_PUBLISH_RELEASE` (the release's name), and the publish is recorded
+with it.
 
 ## Converting a project — the order is the safety argument
 

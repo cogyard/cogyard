@@ -1,0 +1,36 @@
+// The two tables the All page's project table split into (task 266): the cost
+// table on Costs and the repo table on Repos. One copy of what they share;
+// table chrome itself (box, th, row density) is the shared recipe in
+// styles.scss, and each table sets only its own column widths and floor width.
+
+// The shared chrome makes tables `width:100%; table-layout:fixed`, so on a
+// narrow viewport columns compress until headers overlap and project names
+// truncate to one glyph (task 082). Each table gives itself a legible floor
+// width (`min-width` on its own table) and the container scrolls sideways
+// below that (overflow-x is in the shared chrome).
+
+// height/padding/font-size come from the shared table chrome in styles.scss
+.ov-row > td {
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden; white-space: nowrap;
+}
+
+// numeric cells — right-aligned. tabular-nums keeps digits column-aligned
+// WITHOUT a monospace font (whose full-width comma glyph renders "$5,314" as
+// "$5 , 314").
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.num.strong { font-weight: 600; }
+
+// totals strip: a second header row, pinned above the data, sorting-immune.
+// This row is <td>s inside <thead>, so it matches NEITHER the shared tbody rule
+// NOR the theme's th rule — it has to state the shared density itself. Keep
+// these two values in step with `p-table .p-datatable-tbody > tr > td` in
+// styles.scss.
+.totals-row > td {
+  padding: 5px 10px; font-size: 12.5px;
+  background: var(--app-accent-tint1);
+  border-bottom: 2px solid var(--app-border); font-weight: 600;
+  color: var(--app-fg); white-space: nowrap;
+}
+
+.dim { color: var(--app-fg-muted); }

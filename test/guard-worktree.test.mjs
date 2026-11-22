@@ -12,7 +12,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, mkdirSync, realpathSync } from 'node:fs';
+import { mkdtempSync, rmSync, mkdirSync, realpathSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -137,6 +137,56 @@ test('the deny says which shape is allowed and why this is not it', () => {
   const { reason } = bash('git worktree add -b task-12-x .claude/worktrees/task-12-x main', MAIN);
   assert.match(reason, /worktree-task-<id>-<slug>/);
   assert.match(reason, /not that shape/);
+});
+
+// --- task 260: a task's worktree is entered only by the chat holding its claim --
+// cogyard's claims.json records each claim's worktree and chat, keyed by the
+// store the main checkout's `.cogyard/tasks` links to.
+
+const ME = '11111111-1111-4111-8111-111111111111';
+const OTHER = '22222222-2222-4222-8222-222222222222';
+let STORE, HOME;
+function enterAs(session_id, path) {
+  const r = spawnSync(process.execPath, [HOOK], {
+    input: JSON.stringify({ tool_name: 'EnterWorktree', tool_input: { path }, cwd: MAIN, session_id }),
+    encoding: 'utf8', env: { ...process.env, COGYARD_HOME: HOME },
+  });
+  const out = (r.stdout || '').trim();
+  if (!out) return { decision: 'allow', reason: null };
+  const j = JSON.parse(out).hookSpecificOutput;
+  return { decision: j.permissionDecision, reason: j.permissionDecisionReason };
+}
+function claims(session) {
+  writeFileSync(join(HOME, 'claims.json'), JSON.stringify({ [`${STORE}#7`]: { worktree: 'task-7-app', session, at: '2026-11-17T00:00:00.000Z' } }));
+}
+
+test('entering a task\'s worktree is refused unless this chat holds its claim', () => {
+  STORE = join(ROOT, '_tasks', 'demo'); mkdirSync(STORE, { recursive: true });
+  HOME = join(ROOT, 'home'); mkdirSync(HOME, { recursive: true });
+  mkdirSync(join(MAIN, '.cogyard'), { recursive: true });
+  symlinkSync(STORE, join(MAIN, '.cogyard', 'tasks'));
+
+  claims(OTHER);
+  const other = enterAs(ME, APP_WT);
+  assert.equal(other.decision, 'deny', 'another chat holds the claim');
+  assert.match(other.reason, /task 7's worktree/);
+  assert.ok(other.reason.includes(OTHER), other.reason);
+  assert.match(other.reason, /cogyard env claim .* --force/);
+
+  claims(null);
+  const released = enterAs(ME, APP_WT);
+  assert.equal(released.decision, 'deny', 'released: pick it up first');
+  assert.match(released.reason, /it is released/);
+  assert.match(released.reason, /cogyard tasks reopen 7/);
+
+  claims(ME);
+  assert.equal(enterAs(ME, APP_WT).decision, 'allow', 'this chat holds the claim');
+
+  claims(OTHER);
+  assert.equal(enterAs(undefined, APP_WT).decision, 'allow', 'no chat id in the hook input: fail open');
+  assert.equal(enterAs(ME, LINKED).decision, 'ask', 'not a task\'s recorded worktree: the old rule');
+  rmSync(join(HOME, 'claims.json'));
+  assert.equal(enterAs(ME, APP_WT).decision, 'allow', 'no claims.json: fail open');
 });
 
 test('EnterWorktree name= and other tools pass untouched', () => {

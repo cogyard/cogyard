@@ -16,6 +16,9 @@ export function fetchFor(api: ApiService, key: string): Observable<unknown> | nu
     case 'projects': return api.projects();
     case 'config': return api.config();
     case 'overview': return api.overview();
+    // The All tab's per-project boxes (task 265): every project's tasks in
+    // progress and its last 10 closed.
+    case 'in-progress': return api.inProgress();
     case 'activity': return api.activity();
     case 'usage': return slug ? api.projectUsage(slug) : api.usage();
     case 'tasks': return slug ? api.tasks(slug) : null;

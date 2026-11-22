@@ -1,0 +1,84 @@
+<div class="act-panel">
+  <app-activity-heatmap [byDay]="costAllByDay()" [breakdown]="costBreakdown()" [weekStart]="weekStart()"
+    noun="cost" [valueLabel]="fmtHeatCell" [titleFmt]="fmtHeatFull" (dayClick)="openDay($event, 'heat')" />
+  <app-activity-day [date]="dayFor('heat')" [colors]="laneColors()" [order]="laneOrder()" (closed)="drill.set(null)" />
+</div>
+<div class="act-panel">
+  <app-activity-braid metric="cost" [activity]="activity()" [selectedDay]="drill()?.day ?? null" (dayClick)="openDay($event, 'braid')" />
+  <app-activity-day [date]="dayFor('braid')" [colors]="laneColors()" [order]="laneOrder()" (closed)="drill.set(null)" />
+</div>
+
+@if (loading()) {
+  <div class="skel"><p-skeleton height="28px" /><p-skeleton height="28px" /><p-skeleton height="28px" /></div>
+} @else {
+  <div class="cost-table">
+    <div class="toolbar">
+      <span class="hint sm">Cost columns = API-equivalent spend by model family, locked in when each task ran. Per-token-type detail on a project's Tasks tab.</span>
+      <app-refresh-button [busy]="collecting()" (pressed)="collectNow()" />
+    </div>
+    <p-table styleClass="ov" [value]="rows()" dataKey="slug" size="small">
+      <ng-template #header>
+        <tr>
+          <th class="col-project" pSortableColumn="label">Project <p-sortIcon field="label" /></th>
+          <th class="col-num">Cost</th>
+          @for (f of agg().families; track f) { <th class="col-num">{{ f }}</th> }
+        </tr>
+        <tr class="totals-row">
+          <td>All · {{ agg().totals.projects }} projects@if (agg().jobs.length || agg().outside) {<span class="dim"> + rows below</span>}</td>
+          <td class="num strong">{{ fmtCost(agg().totals.total) }}</td>
+          @for (f of agg().families; track f) { <td class="num">{{ fmtCost(agg().totals.fam[f]) }}</td> }
+        </tr>
+      </ng-template>
+      <ng-template #body let-p>
+        <tr class="ov-row">
+          <td>
+            @if (p.error) { <span class="dim">{{ p.label }} (error)</span> }
+            @else { <button class="btn-link dim" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
+          </td>
+          <td class="num strong">{{ fmtCost(totalCost(p.slug)) }}</td>
+          @for (f of agg().families; track f) {
+            <td class="num">{{ fmtCost(famCost(p.slug, f)) }}</td>
+          }
+        </tr>
+      </ng-template>
+      <!-- Task 130: usage that has no project row to sit in, below the projects
+           and counted in the totals row above. Nothing renders when there is none. -->
+      <ng-template #footer>
+        @if (agg().jobs.length) {
+          <tr class="ov-foot group-head">
+            <td title="The agent calls cogyard's own scheduled tasks made — not any one project's">Scheduled tasks</td>
+            <td class="num strong">{{ fmtCost(agg().jobsTotal.total) }}</td>
+            @for (f of agg().families; track f) { <td class="num">{{ fmtCost(agg().jobsTotal.fam[f]) }}</td> }
+          </tr>
+          @for (j of agg().jobs; track j.id) {
+            <tr class="ov-foot member">
+              <td class="dim">{{ j.id }}</td>
+              <td class="num strong">{{ fmtCost(j.total) }}</td>
+              @for (f of agg().families; track f) { <td class="num">{{ fmtCost(j.fam[f]) }}</td> }
+            </tr>
+          }
+        }
+        @if (agg().outside; as o) {
+          <tr class="ov-foot group-head">
+            <td>
+              Outside any project
+              <span class="hint sm">{{ o.slugs.length }} folder{{ o.slugs.length === 1 ? '' : 's' }}</span>
+              <button type="button" class="btn-link fold-toggle" [attr.aria-expanded]="outsideOpen()" (click)="toggleOutside()">{{ outsideOpen() ? 'hide' : 'show' }}</button>
+            </td>
+            <td class="num strong">{{ fmtCost(o.total) }}</td>
+            @for (f of agg().families; track f) { <td class="num">{{ fmtCost(o.fam[f]) }}</td> }
+          </tr>
+          @if (outsideOpen()) {
+            @for (s of o.slugs; track s.slug) {
+              <tr class="ov-foot member">
+                <td class="dim">{{ s.slug }}</td>
+                <td class="num strong">{{ fmtCost(s.total) }}</td>
+                @for (f of agg().families; track f) { <td class="num">{{ fmtCost(s.fam[f]) }}</td> }
+              </tr>
+            }
+          }
+        }
+      </ng-template>
+    </p-table>
+  </div>
+}

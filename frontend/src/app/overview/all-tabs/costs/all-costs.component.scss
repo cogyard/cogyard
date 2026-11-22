@@ -1,0 +1,26 @@
+// The cost table's own columns and rows (task 266) — layout + semantic colour
+// only; what it shares with the repo table is in ../all-table.scss.
+
+// Project, Cost, then one column per model family (up to four).
+:host ::ng-deep p-table table { min-width: 560px; }
+.col-project { min-width: 150px; }
+.col-num { width: 96px; text-align: right; }
+
+.toolbar { display: flex; justify-content: space-between; align-items: center; gap: var(--app-space-4); margin-bottom: var(--app-space-3); }
+
+// Scheduled tasks + outside any project (task 130): <tfoot> rows, so they stay
+// below the projects whatever the sort. The theme styles tfoot cells as a bold
+// tinted footer; these are data rows, so they restate the body row's look.
+.ov-foot > td {
+  height: 30px; font-size: 12.5px; font-weight: 400;
+  padding: 5px 10px; background: var(--app-surface); color: var(--app-fg);
+  border-bottom: 1px solid var(--app-border);
+  overflow: hidden; white-space: nowrap;
+}
+.ov-foot.group-head > td { font-weight: 600; border-top: 2px solid var(--app-border); }
+.ov-foot.group-head + .ov-foot.member > td,
+.ov-foot.member + .ov-foot.member > td { border-top: 0; }
+.ov-foot.member > td:first-child { padding-left: 26px; }
+.ov-foot td.num.strong { font-weight: 600; }
+.ov-foot .hint { margin-left: 8px; font-weight: 400; }
+.fold-toggle { margin-left: 8px; font-weight: 400; }

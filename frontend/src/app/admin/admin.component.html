@@ -1,4 +1,4 @@
-<p-tabs [value]="section()" (valueChange)="sectionChange.emit($any($event))" class="admin-tabs">
+<p-tabs [value]="section()" (valueChange)="sectionChange.emit($any($event))" class="tab-box">
   <p-tablist>
     @for (s of sections; track s.id) {
       <p-tab [value]="s.id">{{ s.label }}</p-tab>
@@ -6,7 +6,7 @@
   </p-tablist>
 </p-tabs>
 
-<div class="admin-pane">
+<div class="tab-box-pane">
   @switch (section()) {
     @case ('settings') {
       <app-project-switches [slug]="slug()" />

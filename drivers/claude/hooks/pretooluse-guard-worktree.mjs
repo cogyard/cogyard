@@ -24,9 +24,11 @@
 //     allowed. Re-attaching an existing branch (`git worktree add <path>
 //     <branch>`, no -b) is always fine.
 //   ExitWorktree `action: "remove"` — ask: it deletes the worktree and branch.
-//   EnterWorktree `path=` — ask when the worktree's branch is not
-//     `worktree-*` (the app's own naming), so entering one that was made by hand
-//     is a decision someone approves.
+//   EnterWorktree `path=` — refused when the worktree is a task's recorded
+//     worktree (cogyard's claims.json) and this chat does not hold that task's
+//     claim (task 260): pickup-task claims first, then enters. Otherwise ask
+//     when the worktree's branch is not `worktree-*` (the app's own naming), so
+//     entering one that was made by hand is a decision someone approves.
 //
 // PLUGIN-LOCAL on purpose: every rule here is about Claude Code's own tools and
 // its `.claude/worktrees/` layout, which the engine may not name. It imports
@@ -38,7 +40,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname, basename } from 'node:path';
-import { realpathSync } from 'node:fs';
+import { realpathSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 
 function allow() { process.exit(0); }
@@ -82,6 +84,31 @@ function mainWorktreeRoot(dir) {
   return real(top);
 }
 
+// The claim record for the task whose worktree `wt` is, or null (task 260).
+// cogyard's `env claim` writes this machine's half of every claim to
+// <cogyard home>/claims.json, keyed `<store real path>#<task id>`, with the
+// worktree's folder name and the claiming chat. The store is the one the
+// worktree's main checkout links to as `.cogyard/tasks`. Read directly, not
+// through cogyard's engine: this hook imports nothing outside the plugin.
+// Anything unreadable → null, and the guard falls back to its other rules.
+function taskClaimFor(wt) {
+  const common = git(wt, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+  if (!common) return null;
+  let store;
+  try { store = realpathSync(resolve(dirname(common), '.cogyard', 'tasks')); } catch { return null; }
+  const home = process.env.COGYARD_HOME || resolve(homedir(), '.cogyard');
+  let all;
+  try { all = JSON.parse(readFileSync(resolve(home, 'claims.json'), 'utf8')); } catch { return null; }
+  if (!all || typeof all !== 'object') return null;
+  const name = basename(wt);
+  const me = typeof input?.session_id === 'string' ? input.session_id : null;
+  const hits = Object.entries(all)
+    .filter(([k, v]) => k.startsWith(store + '#') && v && v.worktree === name)
+    .map(([k, v]) => ({ id: k.slice(store.length + 1), session: v.session || null }));
+  if (!hits.length) return null;
+  return hits.find((h) => me && h.session === me) || hits[0];
+}
+
 // --- ExitWorktree ----------------------------------------------------------
 if (tool === 'ExitWorktree') {
   if (input?.tool_input?.action !== 'remove') allow();
@@ -99,6 +126,25 @@ if (tool === 'EnterWorktree') {
   const wt = resolve(startCwd, p);
   const branch = git(wt, ['branch', '--show-current']);
   if (branch === null) allow();                           // not a checkout — the tool refuses it itself
+  // A task's recorded worktree is entered only by the chat holding that task's
+  // claim (task 260). Entering one ad hoc skips pickup-task's staleness check,
+  // rebase and claim, and puts two chats in one folder. The rule used to be one
+  // line in the owner's CLAUDE.md, which task 247 dropped; it is enforced here.
+  const rec = taskClaimFor(wt);
+  if (rec) {
+    const me = typeof input?.session_id === 'string' && input.session_id ? input.session_id : null;
+    if (me && rec.session !== me) {
+      decide('deny',
+        `Worktree guard: ${wt} is task ${rec.id}'s worktree, and this chat does not hold that task's claim `
+        + `(${rec.session ? `held by chat ${rec.session}` : 'it is released'}). A task's worktree is entered only by the chat that `
+        + `claimed it, through pickup-task:\n\n`
+        + `  1. From the main checkout, claim it: cogyard env claim "$(cogyard tasks find ${rec.id})" <this chat's id>`
+        + `${rec.session ? ' --force (only if the owner said to take it over, or that chat is finished)' : ''}\n`
+        + `     (a DONE task is reopened first: cogyard tasks reopen ${rec.id} --why "<the owner's words>")\n`
+        + `  2. Then EnterWorktree path=${wt}\n\n`
+        + `If you only need to read its files, read them by path; entering is not needed.`);
+    }
+  }
   if (branch.startsWith('worktree-')) allow();
   decide('ask',
     `Worktree guard: EnterWorktree path=${wt} is on branch \`${branch || '(detached)'}\`, which the app did not create `

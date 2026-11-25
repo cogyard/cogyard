@@ -77,7 +77,13 @@ export interface LiveState {
   since: number | null; at: number | null;
   /** The record is the task's own autopilot worker's, not the chat's. */
   autopilot: boolean;
+  /** The chat that claimed the task (env.claimed_by_session), or null. */
+  session: string | null;
+  /** A click on the logo can bring this chat up in the agent app (the driver's sessions.open). */
+  canOpen: boolean;
 }
+/** POST /api/drivers/<driver>/open — `reason` says, in a few words, why the app was not asked. */
+export interface OpenChatResult { ok: boolean; reason?: string; }
 /** A waiting box: the tasks in it all list `after` in their depends_on. */
 export interface PlanBox { after: string[]; tasks: string[]; }
 export interface PlanProblem { id: string; kind: string; text: string; }
@@ -185,19 +191,25 @@ export interface SaveAxesRequest { scope: 'shared' | 'project'; slug?: string; a
 export type RebaseSwitch = 'always' | 'ask';
 export type VersionCommand = { command: string; file: string };
 export type VersionSwitch = 'off' | 'minor' | 'patch' | VersionCommand;
-export interface ProjectSwitchesStored { rebase?: RebaseSwitch; version?: VersionSwitch; }
+// decisions_log (task 276): the repo-relative path of the project's decisions
+// log; null / absent = the merge check is off.
+export interface ProjectSwitchesStored { rebase?: RebaseSwitch; version?: VersionSwitch; decisions_log?: string; }
 export interface SwitchesResponse {
   slug: string;
   switches: {
     rebase: { value: RebaseSwitch; set: boolean };
     version: { value: VersionSwitch; set: boolean; file: string | null };
+    decisions_log: { value: string | null; set: boolean };
   };
   stored: ProjectSwitchesStored;
-  defaults: { rebase: RebaseSwitch; version: VersionSwitch };
+  defaults: { rebase: RebaseSwitch; version: VersionSwitch; decisions_log: string | null };
   problems: string[];
   ok?: boolean;
 }
-export interface SaveSwitchesRequest { slug: string; switches: { rebase: RebaseSwitch | null; version: VersionSwitch | null }; }
+export interface SaveSwitchesRequest {
+  slug: string;
+  switches: { rebase: RebaseSwitch | null; version: VersionSwitch | null; decisions_log: string | null };
+}
 
 // /api/worktrees
 export interface WorktreesResponse { slug: string; label: string; worktrees: any[]; }
@@ -284,7 +296,13 @@ export interface TreeFile {
   path: string; status: string | null; oldPath?: string;
   commitStatus: string | null; commitOldPath?: string;
   onDisk: boolean; tracked: boolean;
+  link?: FileLink;
 }
+// A link on disk (a symlink, task 269) — the same `link` the server puts on a
+// tree entry and on an /api/file answer. target = the link's own text;
+// display = target to print (`~/…` under the home folder); kind = what is at
+// the target; inside = the target resolves inside the worktree.
+export interface FileLink { target: string; display: string; kind: 'dir' | 'file' | 'broken'; inside: boolean; }
 // Which comparison the Files tab shows: 'main' (default), 'head' = the last
 // commit, or an older commit's sha (picked from the branch's recent commits).
 export type FilesBase = string;
@@ -295,10 +313,12 @@ export interface TreeResponse {
   mainCommit: RecentCommit | null; // main's tip commit (what `status` compares against)
   commits: RecentCommit[];      // the branch's newest 10, newest first
   files: TreeFile[];
+  filesHash: string;            // short hash of `files` alone — the tree redraws only when it moves (task 270)
 }
 
 // /api/file
-export interface FileContent { content?: string; truncated?: boolean; size: number; binary?: boolean; hash?: string; }
+// A link the page can't show as a file comes back as { size: 0, link } (task 269).
+export interface FileContent { content?: string; truncated?: boolean; size: number; binary?: boolean; hash?: string; link?: FileLink; }
 // content is present only when the server-side prettier pass changed the buffer —
 // the editor re-baselines to it so the doc matches what's actually on disk.
 export interface SaveFileResult { hash: string; size: number; content?: string; }
@@ -696,6 +716,8 @@ export interface PublishDeclaration {
   command?: string | null;
   manual?: string[];
   health?: string | null;
+  /** Task 267: a command that proves the release is live (instead of `health`). Shown, never run, by the portal. */
+  liveCheck?: string | null;
   tag?: boolean;
   requires?: string[];
   checks?: string[];
@@ -714,6 +736,8 @@ export interface ReleaseDeclaration {
   command: string | null;
   manual: string[];
   health: string | null;
+  /** Task 267: a command that proves the release is live (instead of `health`). Shown, never run, by the portal. */
+  liveCheck: string | null;
   tag: boolean;
   requires: string[];
   checks: string[];

@@ -60,10 +60,17 @@ when this checkout is behind the repo's default branch (it resolves main/master
 itself — never hardcode the branch name — and fetches + compares against
 `origin/<base>`, so a push from another worktree counts even before you pull;
 falls back to the local branch only when there's no remote or it's offline). If
-it exits non-zero, STOP and report:
-"Worktree is N commits behind <base>. Fresh worktree from <base> (default), or
-proceed stale?" Don't claim, audit, or edit anything until answered. The Step 7
-drift check is invalid while this is unresolved.
+it exits non-zero, report the gap in one line, then:
+- **First-time pickup from the main checkout:** carry on. The worktree Step 5
+  makes starts from `origin/<base>`, so it has these commits; read the task's
+  code in that worktree, not here.
+- **Work that stays on main** (the owner said "on main" / "no worktree"): STOP
+  and ask "Main is N commits behind origin/<base>. Update it first
+  (`git pull --ff-only`), or proceed stale?" Don't claim, audit, or edit code
+  until answered. The Step 7 drift check is invalid while this is unresolved.
+- **Continuation:** the exception below.
+Never offer "a fresh worktree from <base>": EnterWorktree cannot make a
+worktree from a base you choose.
 
 **What this gate cannot see.** It compares with **origin**, so it passes when local
 main is AHEAD of origin (commits on main that were never pushed). A worktree made by
@@ -218,7 +225,7 @@ This mounts the `.cogyard/tasks` link to the task store, reserves the worktree's
 git log --oneline HEAD..<base>
 ```
 
-   If it prints anything: report the count and the subjects, say why (EnterWorktree branched from origin; those commits are on local `<base>` only), and **STOP** — no drift check, no claim, no edits. The remedy is the user's to choose: for example, rebase this still-empty branch onto local `<base>` (`git rebase <base>`), or push `<base>` first. Never offer "a fresh worktree from local main": EnterWorktree cannot make one. Never replace the worktree — no ExitWorktree `remove` followed by a hand-made `git worktree add -b` and EnterWorktree `path=` (see Anti-patterns). If it prints nothing, carry on.
+   If it prints anything, the branch was just made and should hold no commits of its own; check that `git log --oneline <base>..HEAD` prints nothing. Then rebase it onto local `<base>` as the project's `rebase` switch says, the same way step 4 of "To continue on the existing worktree" does: read `cogyard tasks switches --json`; `always` → `git rebase <base>` without asking, and say so in one line ("New worktree started from origin, N commits behind local <base> (never pushed); rebased onto it."); `ask` → ask with that step's AskUserQuestion. The owner's own words in the pickup request win over the switch either way. After a rebase, `git log --oneline HEAD..<base>` must print nothing. If `<base>..HEAD` is not empty, or the rebase fails (a dirty working tree, a conflict), STOP — no drift check, no claim, no edits — and show the user what git printed: neither can happen on a branch just made, so something else is in this worktree. Never offer "a fresh worktree from local main": EnterWorktree cannot make one. Never replace the worktree — no ExitWorktree `remove` followed by a hand-made `git worktree add -b` and EnterWorktree `path=` (see Anti-patterns). If it prints nothing, carry on.
 
 5. Re-run `cogyard env detect` to confirm the new worktree and ports are picked up before claiming.
 
@@ -386,6 +393,12 @@ The task file's `## What this is` section (immediately after Status) is the proj
 
 Ticking boxes ≠ keeping the description current. Boxes record what was done; "What this is" records what exists now. Both must move forward together. If at the end of the task a cold reader can't tell what was built from "What this is" alone, the section is stale — fix it before declaring done.
 
+### Decisions — under a "Decision" heading, and in the project's log
+
+A decision made while working the task (the owner's answer to a `(you: decision)` box, an approach chosen mid-task) goes into the task file under a heading that starts with "Decision" — `## Decision (owner, <date>)` — or as the ticked `(you: decision)` box itself, with the answer in its text. Not in a bold lead-in or a table cell.
+
+If the project keeps a decisions log (`cogyard tasks switches` shows `decisions_log` set), a task that records a decision that way can't merge until the log has an entry citing it: `cogyard tasks validate <id>`, which `merge-to-main` runs first, refuses it. So when the decision settles how the project works, add the entry on this branch, before the merge, at the top of the log — a heading that dates it and names the task (`## <date> — <the decision, in a few words> (task <id>)`), then the decision, why, what was rejected, and where it is recorded. Commit it with the change it records. A decision that isn't one for the log (a colour, a layout) gets a line of its own in the task instead: `(not for the log: <why>)`. Reference: `docs/TASK-STATUS-VOCABULARY.md`, "Decisions and the decisions log".
+
 ### Commit policy — the loop is the rule
 
 The loop at the top of this skill is the rule: commit each logical change on the branch as soon as it works, before starting the next; `git status --short` before each new change. The frontmatter's `commit_policy` only adds a minimum on top of it:
@@ -425,7 +438,7 @@ Always offer; do not silently leave it ambiguous. Then apply Step 11's claim lif
 - **Quoting words the user didn't type.** `--asked` is the user's exact words from this chat, never a paraphrase, a summary, or text you wrote yourself — the CLI refuses those, and trying is exactly the agent-decides-for-the-owner failure the owner-only check exists to stop.
 - **Settling a box in prose.** "→ MOVED to the follow-up task", "OBSOLETE (owner decision)", "Deferred (owner's call)" on an unticked box reads as unfinished work to `cogyard tasks close`. Use the marker word: `(moved: 050)`, `(dropped: owner decision)`, `(optional)`.
 - **Claim state that lies about ownership.** Two failure modes: releasing a finished-but-UNMERGED task (it looks available while it's actually in review — the gap this rule closes), and leaving an ABANDONED task claimed (blocks the next session for nothing). The invariant: merged → closed+released by `merge-to-main`; awaiting merge → claimed; back in the pool → released.
-- **Replacing a worktree that came out behind main.** A real failure (2026-10-11): a first-time pickup's new worktree was behind local main, which held unpushed commits. Step 0 had passed (it compares with origin), and the chat claimed before checking. It then offered "a fresh worktree from local main" — something EnterWorktree cannot make — and on a yes removed the app's worktree with ExitWorktree `remove`, made a replacement by hand with `git worktree add -b`, and entered it with EnterWorktree `path=`. The chat moved to a different heading in the desktop sidebar, and undoing it took a dozen hand steps across the worktree, the branch, the claim, the task store, the port allocation and the launch file. A worktree that is behind main is reported and stopped on before the claim (Step 5, "To create the worktree", step 4); the remedy is the user's. The plugin's worktree guard refuses `git worktree add -b` (except one shape, from the main checkout only: a task worktree cut from another task's unmerged branch, `git worktree add .claude/worktrees/task-<id>-<slug> -b worktree-task-<id>-<slug> <other task's branch>`) and asks before ExitWorktree `remove`.
+- **Replacing a worktree that came out behind main.** A real failure (2026-10-11): a first-time pickup's new worktree was behind local main, which held unpushed commits. Step 0 had passed (it compares with origin), and the chat claimed before checking. It then offered "a fresh worktree from local main" — something EnterWorktree cannot make — and on a yes removed the app's worktree with ExitWorktree `remove`, made a replacement by hand with `git worktree add -b`, and entered it with EnterWorktree `path=`. The chat moved to a different heading in the desktop sidebar, and undoing it took a dozen hand steps across the worktree, the branch, the claim, the task store, the port allocation and the launch file. A new worktree that is behind main is rebased onto local main as the project's `rebase` switch says, before the claim (Step 5, "To create the worktree", step 4), and never replaced; it is stopped on only when it turns out to hold commits of its own or the rebase fails. The plugin's worktree guard refuses `git worktree add -b` (except one shape, from the main checkout only: a task worktree cut from another task's unmerged branch, `git worktree add .claude/worktrees/task-<id>-<slug> -b worktree-task-<id>-<slug> <other task's branch>`) and asks before ExitWorktree `remove`.
 - **Bare EnterWorktree into a task's recorded worktree.** "Get back in the worktree" is a continuation trigger for this skill, not a navigation command — entering ad-hoc skips the staleness gate, the rebase step, and the claim. If the target worktree matches any task's recorded worktree (`cogyard env where`), run the Step 5 continuation flow instead. The plugin's worktree guard refuses the bare call unless this chat holds the claim.
 - **Continuing a task in a worktree it wasn't picked up in.** A real failure: a chat invented a worktree name before the task existed, filed the task from inside it, and the later pickup reused and claimed that worktree instead of making `task-<id>-<slug>`; the owner had to have the commits moved by hand. Only `task-<id>-…` is the task's worktree — Step 5, "A worktree made outside the process".
 - **Treating a merged/DONE task's follow-up as ad-hoc work.** Fixes to something a task shipped go through the same continuation ritual in that task's worktree — never directly on the base branch, never in an unclaimed checkout.

@@ -314,25 +314,30 @@ function claimedByOther(fm, user) {
 // (task 226) — whatever it last reported; when it happened is not known, so
 // `since` is null. A chat heard from in the last few minutes is never called
 // deleted: the app may not have listed it yet. `chatStatus` is passed in tests.
-//   → { driver, state: working|needs|stopped|error|archived|deleted|unknown, error?, since, at, autopilot }
+// `session` is the chat that claimed the task (env.claimed_by_session) and
+// `canOpen` whether a click on the logo can ask the driver to bring that chat
+// up in the agent app (adapter.sessions.open) — never for a chat the owner
+// archived or deleted, which the app has nothing to show for.
+//   → { driver, state: working|needs|stopped|error|archived|deleted|unknown, error?, since, at, autopilot, session, canOpen }
 function liveForTask(fm, { user = null, dir = LIVE_DIR, chatStatus: statusOf = chatStatus } = {}) {
   const env = fm?.env && typeof fm.env === 'object' ? fm.env : {};
   if (!env.claimed_at || adapter.name === 'none' || claimedByOther(fm, user)) return null;
-  if (!adapter.liveState?.supported) return { driver: adapter.name, state: 'unknown', since: null, at: null, autopilot: false };
+  const session = env.claimed_by_session ? String(env.claimed_by_session) : null;
+  const canOpen = (state) => !!session && typeof adapter.sessions?.open === 'function' && state !== 'archived' && state !== 'deleted';
+  const out = (o) => ({ ...o, session, canOpen: canOpen(o.state) });
+  if (!adapter.liveState?.supported) return out({ driver: adapter.name, state: 'unknown', since: null, at: null, autopilot: false });
 
   const s = snapshot(dir);
-  const claimed = env.claimed_by_session ? String(env.claimed_by_session) : null;
-  const session = claimed;
   const agent = session ? s.workers.get(session)?.get(normId(fm.id)) : null;
   const rec = session ? s.records.get(agent ? `${session}~${agent}` : session) : null;
   const gone = session ? statusOf(session) : 'unknown';
   const chat = session ? s.records.get(session) : null;
   if (gone === 'archived' || (gone === 'deleted' && !(chat && Date.now() - chat.at < NEWBORN_MS))) {
-    return { driver: rec?.driver || adapter.name, state: gone, since: null, at: rec?.at ?? null, autopilot: !!agent };
+    return out({ driver: rec?.driver || adapter.name, state: gone, since: null, at: rec?.at ?? null, autopilot: !!agent });
   }
-  if (!rec) return { driver: adapter.name, state: 'unknown', since: null, at: null, autopilot: !!agent };
-  return { driver: rec.driver || adapter.name, state: rec.state, ...(rec.state === 'error' ? { error: rec.error || 'unknown' } : {}),
-    since: rec.since ?? null, at: rec.at ?? null, autopilot: !!agent };
+  if (!rec) return out({ driver: adapter.name, state: 'unknown', since: null, at: null, autopilot: !!agent });
+  return out({ driver: rec.driver || adapter.name, state: rec.state, ...(rec.state === 'error' ? { error: rec.error || 'unknown' } : {}),
+    since: rec.since ?? null, at: rec.at ?? null, autopilot: !!agent });
 }
 
 export { LIVE_DIR, recordEvent, snapshot, pruneGone, liveForTask, liveSignature, claimedByOther, cachedUser };

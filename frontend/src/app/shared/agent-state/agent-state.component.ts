@@ -1,6 +1,8 @@
-import { Component, computed, input, signal } from '@angular/core';
+import { Component, DestroyRef, computed, inject, input, signal } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
 import { TooltipModule } from 'primeng/tooltip';
 import { LiveState } from '../../services/models';
+import { ApiService } from '../../services/api.service';
 
 // ONE rendering of "who is on this claimed task, and what is its agent doing
 // right now" (task 202) — the Plan card's status line and the Tasks tab's
@@ -22,6 +24,13 @@ import { LiveState } from '../../services/models';
 //
 // The times count up in the browser from `since`, so a ticking "4m" needs no
 // refetch (core/live-state.mjs liveSignature).
+//
+// When the driver can bring the chat up in its app (`canOpen`), the logo, dot,
+// state word and time are one button (the logo alone until the owner asked for
+// the word too, 2026-11-23): a click asks the server to have the driver do it.
+// The notes after them stay plain text, and nothing on the line looks different. If the app could not be asked, the driver's reason shows
+// beside the state for a few seconds; the click never reaches the card or
+// row it sits on.
 
 // 'background' reads idle — the turn is over and the chat waits on you — with
 // a note that a job it started (a dev server, a worker) is still running
@@ -63,7 +72,7 @@ function ago(ms: number): string {
 
 @Component({
   selector: 'app-agent-state',
-  imports: [TooltipModule],
+  imports: [TooltipModule, NgTemplateOutlet],
   templateUrl: './agent-state.component.html',
   styleUrl: './agent-state.component.scss',
 })
@@ -75,7 +84,11 @@ export class AgentStateComponent {
   other = input(false);
   layout = input<'card' | 'row'>('row');
 
-  constructor() { startClock(); }
+  private api = inject(ApiService);
+  constructor() {
+    startClock();
+    inject(DestroyRef).onDestroy(() => { if (this.noteTimer) clearTimeout(this.noteTimer); });
+  }
 
   word = computed(() => WORD[this.live()?.state ?? 'unknown']);
   elapsed = computed(() => {
@@ -105,8 +118,28 @@ export class AgentStateComponent {
     const gone = l.state === 'archived' || l.state === 'deleted';
     const who = l.autopilot && !gone ? `${this.agentName()}'s autopilot worker` : this.agentName();
     const why = l.state === 'error' && l.error ? `: ${l.error.replace(/_/g, ' ')}` : '';
-    return `${who} ${MEANS[l.state]}${why}${this.elapsed() ? ` (${this.elapsed()})` : ''}`;
+    const open = l.canOpen ? `. Click to open this chat in ${this.agentName()}.` : '';
+    return `${who} ${MEANS[l.state]}${why}${this.elapsed() ? ` (${this.elapsed()})` : ''}${open}`;
   });
 
   logoFailed = signal(false);
+
+  /** Why the last click could not open the chat, shown for a few seconds. */
+  openNote = signal<string | null>(null);
+  private noteTimer: ReturnType<typeof setTimeout> | null = null;
+  openChat(ev: Event, l: LiveState) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    if (!l.session) return;
+    this.api.openChat(l.driver, l.session).subscribe({
+      next: (r) => this.note(r.ok ? null : `couldn't open: ${r.reason || 'no reason given'}`),
+      error: (e) => this.note(`couldn't open: ${e?.error?.error || 'the portal did not answer'}`),
+    });
+  }
+  private note(text: string | null) {
+    if (this.noteTimer) clearTimeout(this.noteTimer);
+    this.noteTimer = null;
+    this.openNote.set(text);
+    if (text) this.noteTimer = setTimeout(() => this.openNote.set(null), 6000);
+  }
 }

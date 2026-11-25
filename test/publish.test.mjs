@@ -68,7 +68,7 @@ test('a full declaration reads back trimmed, tag on by default', () => {
   declare(d, { deploysOnPush: false, command: ' x ', manual: [' press Deploy '], health: 'https://a.example/health' });
   assert.deepEqual(readPublishConfig(d), {
     declared: true, deploysOnPush: false, command: 'x', manual: ['press Deploy'],
-    health: 'https://a.example/health', tag: true, requires: [], checks: [],
+    health: 'https://a.example/health', liveCheck: null, tag: true, requires: [], checks: [],
   });
 });
 
@@ -89,6 +89,12 @@ test('an unusable file is declared-with-an-error — including an unknown field'
     [{ deploysOnPush: false, checks: [] }, /"checks" must be/],
     [{ deploysOnPush: false, checks: ['npm test', ''] }, /"checks" must be/],
     [{ deploysOnPush: false, requires: ['DO TOKEN'] }, /"requires" must be/],
+    // Task 267: a live check is a non-empty command, and one way of proving
+    // the release is live, not a second one beside the health URL.
+    [{ deploysOnPush: false, command: 'x', liveCheck: '' }, /"liveCheck" must be a non-empty string/],
+    [{ deploysOnPush: false, command: 'x', liveCheck: '  ' }, /"liveCheck" must be a non-empty string/],
+    [{ deploysOnPush: false, command: 'x', liveCheck: ['npm view x'] }, /"liveCheck" must be a non-empty string/],
+    [{ deploysOnPush: false, command: 'x', liveCheck: 'true', health: 'https://a.example/health' }, /"health" and "liveCheck" both prove the release is live — declare one of them, not both/],
   ];
   for (const [body, re] of cases) {
     const d = repo();
@@ -97,6 +103,15 @@ test('an unusable file is declared-with-an-error — including an unknown field'
     assert.equal(r.declared, true, JSON.stringify(body));
     assert.match(r.error, re, JSON.stringify(body));
   }
+});
+
+test('liveCheck: a command proving the release is live reads back trimmed (task 267)', () => {
+  const d = repo();
+  declare(d, { deploysOnPush: false, manual: ['Run the release script'], liveCheck: ' test "$(npm view x@$COGYARD_PUBLISH_VERSION version)" = "$COGYARD_PUBLISH_VERSION" ' });
+  const r = readPublishConfig(d);
+  assert.equal(r.error, undefined);
+  assert.equal(r.liveCheck, 'test "$(npm view x@$COGYARD_PUBLISH_VERSION version)" = "$COGYARD_PUBLISH_VERSION"');
+  assert.equal(r.health, null);
 });
 
 // --- several releases (task 264) -------------------------------------------------
@@ -114,10 +129,27 @@ test('releases: two named releases read back, each with its label, tag pattern a
   assert.deepEqual(readPublishConfig(d), {
     declared: true,
     releases: [
-      { name: 'website', label: 'Website', tagFormat: 'web/v<version>', paths: ['site/', 'wrangler.jsonc'], deploysOnPush: false, command: 'npx wrangler deploy', manual: [], health: 'https://a.example/version.json', tag: true, requires: [], checks: [] },
-      { name: 'device', label: 'Device', tagFormat: 'v<version>', paths: ['firmware/'], deploysOnPush: false, command: null, manual: ['Flash it by USB'], health: null, tag: true, requires: [], checks: [] },
+      { name: 'website', label: 'Website', tagFormat: 'web/v<version>', paths: ['site/', 'wrangler.jsonc'], deploysOnPush: false, command: 'npx wrangler deploy', manual: [], health: 'https://a.example/version.json', liveCheck: null, tag: true, requires: [], checks: [] },
+      { name: 'device', label: 'Device', tagFormat: 'v<version>', paths: ['firmware/'], deploysOnPush: false, command: null, manual: ['Flash it by USB'], health: null, liveCheck: null, tag: true, requires: [], checks: [] },
     ],
   });
+});
+
+test('releases: a release can declare its own liveCheck, and not together with health (task 267)', () => {
+  const d = repo();
+  declare(d, { releases: {
+    npm: { label: 'npm', tag: 'v<version>', deploysOnPush: false, manual: ['Run the release script'], liveCheck: 'npm view x version' },
+    website: { label: 'Website', tag: 'web/v<version>', deploysOnPush: false, command: 'x', health: 'https://a.example/version.json' },
+  } });
+  const [npm, website] = readPublishConfig(d).releases;
+  assert.equal(npm.liveCheck, 'npm view x version');
+  assert.equal(npm.health, null);
+  assert.equal(website.liveCheck, null);
+
+  declare(d, { releases: { npm: { label: 'npm', tag: 'v<version>', deploysOnPush: false, manual: ['x'], liveCheck: 'true', health: 'https://a.example/h' } } });
+  assert.match(readPublishConfig(d).error, /release "npm": "health" and "liveCheck" both prove the release is live/);
+  declare(d, { releases: { npm: { label: 'npm', tag: 'v<version>', deploysOnPush: false, manual: ['x'], liveCheck: '' } } });
+  assert.match(readPublishConfig(d).error, /release "npm": "liveCheck" must be a non-empty string/);
 });
 
 test('releases: a release with "tag": false has no tag pattern', () => {
@@ -165,7 +197,7 @@ test('publishReleases: the flat form is one unnamed release, tagged v<version> u
   const d = repo();
   declare(d, { deploysOnPush: false, command: 'x' });
   assert.deepEqual(publishReleases(readPublishConfig(d)), [
-    { name: null, label: null, tagFormat: 'v<version>', paths: [], deploysOnPush: false, command: 'x', manual: [], health: null, tag: true, requires: [], checks: [] },
+    { name: null, label: null, tagFormat: 'v<version>', paths: [], deploysOnPush: false, command: 'x', manual: [], health: null, liveCheck: null, tag: true, requires: [], checks: [] },
   ]);
   declare(d, { deploysOnPush: false, command: 'x', tag: false });
   assert.equal(publishReleases(readPublishConfig(d))[0].tagFormat, null);

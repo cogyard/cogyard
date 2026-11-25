@@ -1,0 +1,9 @@
+/* No box of its own: when nothing is overdue the note renders nothing, and the
+   version stamp takes its place in the foot row with no gap left before it. */
+:host { display: contents; }
+
+/* Same muted-on-indigo as the version stamp beside it; typography is `.mono`. */
+.stale {
+  color: color-mix(in srgb, var(--app-topbar-fg) 60%, transparent);
+  white-space: nowrap; cursor: default; font-variant-numeric: tabular-nums;
+}

@@ -85,9 +85,10 @@ export class SettingsComponent {
 
   // Kinds come from the scaffold registry via /api/config —
   // a drop-in scaffold appears here with no UI change. Empty until config loads
-  // (the whole form is behind @if(config()) anyway).
+  // (the whole form is behind @if(config()) anyway). Each option carries its
+  // description, shown under the name in the open list.
   readonly kindOptions = computed(() =>
-    (this.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind })));
+    (this.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind, description: k.description })));
   // The one description line under the picker — reads the selected kind's row.
   readonly kindDescription = computed(() =>
     this.config()?.kinds.find((k) => k.kind === this.kind())?.description ?? '');

@@ -18,17 +18,18 @@ the tag held.
 | 1 | **Owner** | Started from a terminal, not by an agent. An agent gets exit 3 before anything is read. |
 | 2 | **Lock** | No other publish of this project is running. A lock left by a process that died is taken over. |
 | 3 | **Code** | `main` is checked out, has no uncommitted changes, and is **identical to `origin/main`** (the platform builds what is pushed). The release tag `v<version>` (root `package.json`) is new and newer than the last release — or already on this exact commit (a re-run). |
-| 4 | **Live now** | Reads the health URL. If it already serves this commit, checks and deploy are skipped — so re-running a publish that was interrupted is always safe. |
+| 4 | **Live now** | Reads the health URL, or runs the `liveCheck` command once. If it already serves this commit, or the check passes, checks and deploy are skipped — so re-running a publish that was interrupted is always safe. |
 | 5 | **Checks** | Runs each `checks` command in the main checkout, in order; any failure stops it before anything is deployed. Afterwards the checkout must still be exactly this commit with no tracked file changed — otherwise what was checked is not what would ship. |
 | 6 | **Confirm** | Says what you are about to publish, then what happens if you answer yes, in order, in plain sentences. A step you do by hand is marked "Don't do it yet": step 7 tells you when. You answer `y` (or pass `--yes`). |
 | 7 | **Deploy** | Runs the project's `command`, then shows each `manual` step, says "Do this by hand now", and waits for you to answer "Have you done it?". Manual steps can't be skipped with `--yes`. |
-| 8 | **Verify** | Polls the health URL (every 15 s, up to 10 min) until it serves **exactly this commit**. With no health URL declared, you must confirm you have seen it live. |
+| 8 | **Verify** | Polls the health URL (every 15 s, up to 10 min) until it serves **exactly this commit** — or runs the `liveCheck` command on the same schedule until it exits 0, printing a line whenever what it prints changes; no question either way. Running out of time stops the publish here, untagged, with the last answer. With neither declared, it asks you whether this release is live, by name: "Is myapp v1.4.0 (commit 3f2a9c1) live, after you did the hand step "Press Deploy on …"?" |
 | 9 | **Tag** | Sets `v<version>` on the commit (annotated), pushes it, and reads it back from `origin` to prove it landed. This is the flag in the code tree: the newest `v*` tag is what is live; work after it is unreleased. |
 | 10 | **Record** | Appends one line to `~/.cogyard/publishes.jsonl` — every publish, including the ones that stopped, with the step and the reason. |
 
 Before step 1 runs anything: the declaration must be valid, every `requires`
 credential must be set, and anything the sequence will need to ask you must
-have a terminal to ask in (manual steps, or a missing health URL). Each is a
+have a terminal to ask in (manual steps, or neither a health URL nor a live
+check). Each is a
 refusal up front, never a surprise halfway through a deploy. Ctrl-C or Ctrl-D at
 any point stops it cleanly — lock released, the stop recorded, no tag.
 
@@ -47,9 +48,10 @@ Committed in the project's repo:
 | Field | Required | Meaning |
 |---|---|---|
 | `deploysOnPush` | yes | `true` while a push to main still deploys. A publish refuses such a project. |
-| `command` | one of these two | A shell command that deploys. Runs in the project's main checkout with the owner's `~/.cogyard/secrets.env` credentials in its environment, plus `COGYARD_PUBLISH_SHA` and `COGYARD_PUBLISH_TAG`. Non-zero exit stops the publish. |
+| `command` | one of these two | A shell command that deploys. Runs in the project's main checkout with the owner's `~/.cogyard/secrets.env` credentials in its environment, plus `COGYARD_PUBLISH_SHA` (the commit), `COGYARD_PUBLISH_TAG` (the tag, e.g. `v2.22.0`), `COGYARD_PUBLISH_VERSION` (the version without the tag's prefix, `2.22.0`; empty with `"tag": false`) and `COGYARD_PUBLISH_RELEASE` (the release's name, below; empty for the flat form). Non-zero exit stops the publish. |
 | `manual` | one of these two | Steps you do by hand, in order, each confirmed when step 7 asks "Have you done it?". Write each as an instruction to you ("Press Deploy on …"). |
 | `health` | no (strongly advised) | An http(s) URL returning JSON with the deployed commit in `commit`, `commitShort` or `sha`. |
+| `liveCheck` | no — instead of `health` | A shell command that exits 0 once the release is live, for a project with no commit-stamped health URL (a package on npm, an app in a store). cogyard's own: npm serves `cogyard@<version>`. It runs in the main checkout with the same environment as `command`, including `COGYARD_PUBLISH_VERSION`. Step 4 runs it once and step 8 runs it until it passes. Declare `health` or `liveCheck`, not both; with neither, step 8 asks you. |
 | `tag` | no | Default `true`. `false` for a project with no `package.json` version. |
 | `checks` | no (strongly advised) | Commands that must pass on the commit before it is deployed — tests, a build. They run in the main checkout, so include the install (`npm ci && npm test`) if its dependencies may be stale, and must not change tracked files. |
 | `requires` | no | Credential names the deploy needs (e.g. `DIGITALOCEAN_TOKEN`). Each must be set in `~/.cogyard/secrets.env` or the environment, or the publish refuses before step 1 does anything. Names only; values are never printed. |

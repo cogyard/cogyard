@@ -13,11 +13,16 @@
 //     "command": "scripts/deploy.sh",          // automated deploy step
 //     "manual": ["Press Deploy on …"],         // steps the owner does by hand
 //     "health": "https://example.com/health",  // proves the commit is live
+//     "liveCheck": "test …",                   // OR: a command that proves the
+//                                              //   release is live (exit 0)
 //     "tag": true,                             // default true
 //     "requires": ["DIGITALOCEAN_TOKEN"],      // credentials the deploy needs
 //     "checks": ["npm test"] }                 // must pass on the commit first
 //
-// At least one of `command` / `manual`. Every field is one the publish ACTS
+// At least one of `command` / `manual`. At most one of `health` / `liveCheck`
+// (task 267): both answer "is it live?", for a project with a commit-stamped
+// /health (`health`) or without one (`liveCheck` — e.g. "npm serves this
+// version"); with neither, step 8 asks the owner. Every field is one the publish ACTS
 // on; there is no free-text field, because prose here restates the other
 // fields or describes cogyard's behaviour, and both go stale. A publish (`cogyard publish
 // <project>`, cli/publish.mjs, docs/PUBLISH.md) is cogyard's own release shape
@@ -43,7 +48,7 @@ const PUBLISH_LOG = join(COGYARD_HOME, 'publishes.jsonl');
 // with these and the project settings card shows these, so what the owner
 // reads is what happens.
 const PUBLISH_DEFAULTS = Object.freeze({
-  verifyTimeoutMinutes: 10,   // how long Verify waits for /health to show the commit
+  verifyTimeoutMinutes: 10,   // how long Verify waits for /health to show the commit, or the live check to pass
   verifyPollSeconds: 15,      // how often it asks
   remote: 'origin',           // the remote main must equal, and the tag is pushed to
   tagFormat: 'v<version>',    // the release tag; <version> from the root package.json
@@ -80,17 +85,20 @@ function git(args, cwd) {
 //
 // { declared: false }                         — no file
 // { declared: true, error }                   — present but unusable
-// { declared: true, deploysOnPush, command, manual, health, tag, requires, checks }   — flat
+// { declared: true, deploysOnPush, command, manual, health, liveCheck, tag, requires, checks }   — flat
 // { declared: true, releases: [{ name, label, tagFormat, tag, paths, deploysOnPush, … }] }
-const RELEASE_FIELDS = ['deploysOnPush', 'command', 'manual', 'health', 'tag', 'requires', 'checks'];
+const RELEASE_FIELDS = ['deploysOnPush', 'command', 'manual', 'health', 'liveCheck', 'tag', 'requires', 'checks'];
 const RELEASE_NAME_RE = /^[a-z][a-z0-9-]*$/;
 
 // One release's fields, checked: { fields } | { error } (error without the
 // file name, so the caller can say which release it is).
 function readReleaseFields(raw, { pattern }) {
   if (typeof raw.deploysOnPush !== 'boolean') return { error: 'needs "deploysOnPush": true or false' };
-  for (const k of ['command', 'health']) {
+  for (const k of ['command', 'health', 'liveCheck']) {
     if (raw[k] != null && (typeof raw[k] !== 'string' || !raw[k].trim())) return { error: `"${k}" must be a non-empty string when present` };
+  }
+  if (raw.health != null && raw.liveCheck != null) {
+    return { error: '"health" and "liveCheck" both prove the release is live — declare one of them, not both' };
   }
   for (const k of ['manual', 'checks']) {
     if (raw[k] != null && (!Array.isArray(raw[k]) || !raw[k].length || raw[k].some((s) => typeof s !== 'string' || !s.trim()))) {
@@ -121,6 +129,7 @@ function readReleaseFields(raw, { pattern }) {
       command: raw.command?.trim() || null,
       manual: raw.manual ? raw.manual.map((s) => s.trim()) : [],
       health: raw.health?.trim() || null,
+      liveCheck: raw.liveCheck?.trim() || null,
       tag: tagFormat !== null,
       requires: raw.requires ?? [],
       checks: raw.checks ? raw.checks.map((s) => s.trim()) : [],

@@ -49,7 +49,7 @@ Code provides no built-in way to assign per-worktree ports.
 |---|---|
 | `<worktree>/.env.development` | A link to the file `env_files` names in the project root — never a copy. |
 | `<worktree>/.env.production` | Same. |
-| `<worktree>/.claude/launch.json` | **The file `preview_start` reads while the chat is inside this worktree.** The preview tool reads `<chat's current folder>/.claude/launch.json` and nothing else (tested 2026-10-17 to 2026-10-19, Claude desktop 2.42304.0, Claude Code 2.1.296). The hook writes exactly one entry here, `wt-<worktree-name>`, the name the briefing gives you, replacing whatever was there: the desktop app drops a copy of the main checkout's file into a worktree it creates, and that copy's entries would run the main checkout's servers. A config with no dev command gets no file. Never hand-edit it; the hook rewrites it on every run. Earlier versions of the hook deleted this file, having concluded from an August test that the tool read the main checkout's file from a worktree; what that test most likely saw was the app's copy. |
+| `<worktree>/.claude/launch.json` | **The file `preview_start` reads while the chat is inside this worktree.** The preview tool reads `<chat's current folder>/.claude/launch.json` and nothing else (tested 2026-10-17 to 2026-10-19, Claude desktop 2.42304.0, Claude Code 2.1.296). The hook writes exactly this worktree's entries here — `wt-<worktree-name>`, plus `wt-<worktree-name>-<launch_name>` for each `extra_dev_scripts` command — the names the briefing gives you, replacing whatever was there: the desktop app drops a copy of the main checkout's file into a worktree it creates, and that copy's entries would run the main checkout's servers. A config with no dev command gets no file. Never hand-edit it; the hook rewrites it on every run. Earlier versions of the hook deleted this file, having concluded from an August test that the tool read the main checkout's file from a worktree; what that test most likely saw was the app's copy. |
 | `<main checkout>/.claude/launch.json` | The same `wt-<worktree-name>` entry for every worktree, so a chat in the main checkout can start any worktree's server. Entries the hook wrote carry `cogyardWorktree` (absolute worktree path) and are swept on the next hook run once that worktree is gone, and removed as cleanup removes the worktree. **Gone** means the path is no longer a live worktree of the project: `git worktree list --porcelain` does not list it, or lists it but the folder is missing (compared as real paths, so a symlinked spelling still counts). A folder that is still there but that git does not list — a leftover holding only an env file, say — is gone, and its entry is swept; the sweep never deletes the folder itself. If `git worktree list` fails, nothing is swept. Entries with no owner path (a project's own `api` / `frontend`) are never touched. |
 
 ## Per-project config schema
@@ -64,6 +64,9 @@ Code provides no built-in way to assign per-worktree ports.
     "FRONTEND_PORT": "frontend"
   },
   "preview_port_var": "FRONTEND_PORT",   // which var holds the port the preview pane iframes
+  "extra_dev_scripts": [             // optional: more commands that bind a port
+    { "dev_script": "npm run site", "launch_name": "site", "preview_port_var": "PORT" }
+  ],
   "env_files": [
     { "source": ".env.development", "target": ".env.development" },
     { "source": ".env.production",  "target": ".env.production" }
@@ -78,6 +81,21 @@ registers no preview entry (dropping any old one for that worktree), briefs
 "No dev server", and the Stop-hook server check leaves it alone. A missing
 `dev_script` used to mean `npm run dev` silently — a command such a project
 does not have. A kind declares this with `devScript: null` (see
+[`PROJECT-INIT.md`](PROJECT-INIT.md#kinds)).
+
+**More than one command that binds a port.** `dev_script` is the first; a
+project with another — a website served beside a firmware preview, a second
+server — lists it in `extra_dev_scripts`, each with a `launch_name` (letters,
+digits, dots, dashes, underscores; unique, and not the first command's) and a
+`preview_port_var` (default `FRONTEND_PORT`; it must be declared in
+`port_vars`). Each gets its own launch entry in both files,
+`wt-<worktree-name>-<launch_name>`, opening on its own port; the first keeps
+`wt-<worktree-name>`. The briefing lists them, and says to run one at a time
+when two open on the same port — a worktree has two ports, so at most two such
+commands run at once. A malformed entry is refused and nothing is wired (the
+reason is in the hook log). Every command must ask `cogyard env ports` for its
+port, as `dev_script` does; one that hardcodes a port is the bug this exists to
+make visible. A kind names these with `extraDevScripts` (see
 [`PROJECT-INIT.md`](PROJECT-INIT.md#kinds)).
 
 A `kind` key may still sit in older configs (`"kind": "single"`). The hook no

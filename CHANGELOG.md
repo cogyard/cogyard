@@ -11,6 +11,90 @@ mirrors the `v*` release tags, not every intermediate bump.
 
 ## [Unreleased]
 
+## [2.37.0] — 2026-11-25
+
+### Added
+
+- **Three more project kinds** — `apple` for Xcode apps on macOS and iOS
+  (`npm run build` builds the project's one scheme; the version and commit reach
+  the app through a `Version.xcconfig` after a one-time hookup in Xcode),
+  `firmware` for PlatformIO (a host-side preview with its own port, and a
+  generated `version.h` carrying the version and commit), and `research` for
+  projects that are notes, sources and findings, with no `package.json`, no dev
+  server and no ports. `cogyard init` and onboard offer all three.
+- **More a kind can say** — no `package.json` at all, extra `.gitignore` lines,
+  the `package.json` scripts it needs (onboard names each missing one), and more
+  than one command that binds a port, each with its own launch entry. The
+  Worktrees tab shows `—` for the ports of a worktree with no dev server.
+- **A merge check for the decisions log** — a project's `decisions_log` switch
+  names its log. `cogyard tasks validate <id>`, which merge-to-main runs first,
+  then refuses a task that records a decision until a log entry cites it, unless
+  the task says `(not for the log: <why>)`. The switch has a row on the
+  project's Settings card.
+- **Where each cogyard file lives** — `docs/CONFIGURATION.md` now says which of
+  the three places (the repo's `.cogyard/`, the task store, `~/.cogyard/`) each
+  file belongs in, and why.
+- **Click an agent's state to open its chat** — beside a task claimed on this
+  machine, the driver's logo, dot, state word and time are one button on the
+  Plan and Tasks tabs and the All page. A click brings the Claude desktop app to
+  the front on that task's chat. A driver without `sessions.open` keeps the logo
+  a plain picture.
+- **The Files tab shows links as links** — a symlink's row shows the icon of
+  what it points at with an arrow on it, and its target after the name; a broken
+  one is red. Clicking a link to a folder, one leading outside the repo or a
+  broken one shows where it points and whether anything is there, instead of
+  "Not on disk". The task link `.cogyard/tasks` always shows, with its task
+  count and a button to the Tasks tab.
+- **Project icons and the quick look on the All page** — every project name on
+  the All page carries its sidebar icon, and clicking a task in progress in a
+  Plan box opens the Plan tab's quick look on it. Old claims and projects with
+  nothing going on get sections of their own instead of faint hint lines.
+- **A release can prove it is live with a command** — `.cogyard/publish.json`
+  takes a `liveCheck` command in place of a `health` URL. `cogyard publish` runs
+  it at step 4 (an already-live release skips its checks and deploy) and polls
+  it at step 8 instead of asking whether you have seen it live; the Publishing
+  card shows it. With neither declared, step 8's question names the version,
+  tag and commit to look for. The deploy and the check get
+  `COGYARD_PUBLISH_VERSION`.
+
+### Changed
+
+- **A new worktree that starts behind local main is rebased onto it** — the
+  Claude driver's pickup used to stop and ask when a new task worktree came out
+  behind local main (the worktree tool branches from origin, so commits never
+  pushed are missing). A branch with no commits of its own can't lose anything,
+  so it is now rebased as the project's `rebase` switch says. The SessionStart
+  note prints the line for the case it sees, and the pickup no longer offers
+  "a fresh worktree from main", which the worktree tool can't make.
+- **The New Project drawer is wider and easier to read** — each Kind option
+  shows its name in bold over its description, the Kind list no longer covers
+  its own field, and the projects-folder prefix keeps its whole width.
+- **The freshness circle is gone** — the small filling circle beside the
+  version stamp is removed (see Fixed). The age still appears there, as plain
+  text, when the portal hasn't reached the server for longer than one check.
+
+### Fixed
+
+- **The portal used about half a CPU core whenever it was on screen.** The
+  freshness circle animated a CSS custom property feeding a `conic-gradient`,
+  which the browser can't run off the main thread, so every frame was restyled,
+  repainted and rasterised for as long as the window was visible. Measured in
+  the desktop app: page process 42–47% before, under 1% after, with the GPU
+  process and WindowServer down with it.
+- **Clicks in the Files tree sometimes did nothing.** Every 10-second
+  live-update check rebuilt the whole tree from the re-downloaded file list,
+  even when no file had changed, so a click could land on a row that had just
+  been thrown away. `/api/tree` now carries `filesHash`, and the tree is
+  redrawn only when it moves. With "show gitignored" on, the gitignored listing
+  (5 MB for cogyard itself) was also re-downloaded every check; it is now
+  fetched once, when the switch is turned on.
+- **Chat readers dropped messages you typed.** In a chat that has started
+  other chats, the Claude desktop app puts a note in front of every message you
+  type. `cogyard sessions show`, `sessions search`, the portal's chat viewer and
+  the chat label dropped any message whose text started with `<`, so the note
+  took your words with it. Injected blocks are now left out one at a time, and
+  the typed words are kept.
+
 ## [2.22.0] — 2026-11-22
 
 ### Added

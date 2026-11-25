@@ -92,9 +92,12 @@ const server = createServer(async (req, res) => {
     // POST /api/switches (a project's switches — task 246), and
     // POST /api/file (the Files-tab save), and POST /api/cleanup/worktree
     // (task 117 — removes one worktree, behind a typed-name gate the SERVER
-    // enforces; a client-only confirmation would be decoration).
+    // enforces; a client-only confirmation would be decoration), and
+    // POST /api/drivers/:name/open (a click on the driver logo — the agent
+    // app comes to the front on that chat; writes nothing).
     // Everything else non-GET is rejected outright.
     if (req.method === 'POST') {
+      if (await meta.handlePost(path, req, res) !== false) return;
       if (await usage.handlePost(path, req, res) !== false) return;
       if (await actions.handlePost(path, req, res, core.discoverProjects()) !== false) return;
       if (await projectActions.handlePost(path, req, res) !== false) return;

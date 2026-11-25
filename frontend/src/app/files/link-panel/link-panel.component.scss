@@ -1,0 +1,22 @@
+/* Values as on the options sheet the owner picked (task 269). */
+.lp { padding: var(--app-space-5) 18px; font-size: 13px; color: var(--app-fg); }
+.lp.broken { background: #fffafa; }
+.lp-h {
+  display: flex; align-items: center; gap: var(--app-space-3);
+  font-weight: 600; font-size: 13.5px; margin-bottom: 10px;
+}
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0 0 14px; }
+dt { color: var(--app-fg-muted); font-size: 12px; }
+dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.dot { font-size: 9px; margin-right: var(--app-space-2); vertical-align: 1px; }
+.ok { color: var(--app-tone-good-fg); }
+/* the red of the Files tab's save-error banner, as the link mark uses */
+.bad { color: #b91c1c; }
+.lp-actions { display: flex; gap: var(--app-space-3); flex-wrap: wrap; }
+
+/* The Files tab's dark viewing area (its ☾ switch). */
+:host-context(.dark) .lp { color: #c9d1d9; }
+:host-context(.dark) .lp.broken { background: transparent; }
+:host-context(.dark) dt { color: #8b949e; }
+:host-context(.dark) .ok { color: #3fb950; }
+:host-context(.dark) .bad { color: #f85149; }

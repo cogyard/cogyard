@@ -18,16 +18,17 @@
 //   3. Code         main checked out, clean, identical to origin/main;
 //                   v<version> new (or already on this commit) and newer than
 //                   the last release
-//   4. Live now     what /health serves before anything happens; when it is
-//                   already this commit, checks and deploy are skipped (a safe
-//                   re-run)
+//   4. Live now     what /health serves before anything happens, or whether the
+//                   declared live check passes (task 267); when it is already
+//                   live, checks and deploy are skipped (a safe re-run)
 //   5. Checks       each declared check passes on the commit, in the main
 //                   checkout, and leaves it exactly as it was
 //   6. Confirm      the owner says yes (or --yes)
 //   7. Deploy       the declared command, then each manual step, each one
 //                   confirmed by the owner — manual steps can't be --yes'd
-//   8. Verify       /health reports exactly this commit (or, with no health URL
-//                   declared, the owner confirms it is live)
+//   8. Verify       /health reports exactly this commit, or the live check passes
+//                   (both polled); with neither declared, the owner is asked,
+//                   by version, tag, commit and the deploy step just done
 //   9. Tag          v<version> on the commit, pushed, read back from origin
 //  10. Record       one line in ~/.cogyard/publishes.jsonl, success or not
 //
@@ -35,8 +36,9 @@
 // credential is set, and anything that will need the owner's answer has a
 // terminal to ask in. Checks and the deploy command run in the project's main
 // checkout with the owner's cogyard credentials (~/.cogyard/secrets.env) in
-// their environment; the deploy command also gets COGYARD_PUBLISH_SHA and
-// COGYARD_PUBLISH_TAG.
+// their environment; the deploy command and the live check also get
+// COGYARD_PUBLISH_SHA, COGYARD_PUBLISH_TAG, COGYARD_PUBLISH_RELEASE and
+// COGYARD_PUBLISH_VERSION (the version without the tag's prefix).
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline/promises';
@@ -52,10 +54,13 @@ import {
 } from '../core/publish.mjs';
 
 // A DigitalOcean build takes minutes. Running out is a safe failure: nothing is
-// tagged, and a re-run sees the commit already live and tags it. The env
-// overrides exist for tests.
-const HEALTH_TIMEOUT_MS = Number(process.env.COGYARD_PUBLISH_TIMEOUT_MS) || PUBLISH_DEFAULTS.verifyTimeoutMinutes * 60 * 1000;
-const HEALTH_POLL_MS = Number(process.env.COGYARD_PUBLISH_POLL_MS) || PUBLISH_DEFAULTS.verifyPollSeconds * 1000;
+// tagged, and a re-run sees the commit already live and tags it. The same
+// limits apply to the live check (task 267). The env overrides exist for tests.
+const VERIFY_TIMEOUT_MS = Number(process.env.COGYARD_PUBLISH_TIMEOUT_MS) || PUBLISH_DEFAULTS.verifyTimeoutMinutes * 60 * 1000;
+const VERIFY_POLL_MS = Number(process.env.COGYARD_PUBLISH_POLL_MS) || PUBLISH_DEFAULTS.verifyPollSeconds * 1000;
+// One run of the live check: a command that hangs counts as not live, rather
+// than holding the publish past its own limit.
+const LIVE_CHECK_RUN_MS = 60 * 1000;
 
 const out = (s = '') => process.stdout.write(s + '\n');
 
@@ -105,7 +110,7 @@ function howCell(r) {
   if (r.error) return r.error;
   const steps = [r.command && `run \`${r.command}\``, ...(r.manual ?? [])].filter(Boolean);
   if (!steps.length) return 'nothing to publish';
-  return `${steps.join(' → ')} — live check: ${r.health ?? 'you confirm'}`;
+  return `${steps.join(' → ')} — live check: ${r.health ?? (r.liveCheck ? `runs \`${r.liveCheck}\`` : 'you confirm')}`;
 }
 
 function list(json) {
@@ -166,7 +171,7 @@ async function readHealth(url) {
 }
 
 async function waitForHealth(url, sha) {
-  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+  const deadline = Date.now() + VERIFY_TIMEOUT_MS;
   let last = null;
   for (;;) {
     const body = await readHealth(url);
@@ -174,7 +179,40 @@ async function waitForHealth(url, sha) {
     const now = healthCommit(body) ?? (body ? 'no commit in the response' : 'no answer');
     if (now !== last) { out(dim(`     ${new Date().toTimeString().slice(0, 8)}  serving ${now}`)); last = now; }
     if (Date.now() >= deadline) return { ok: false, last };
-    await sleep(HEALTH_POLL_MS);
+    await sleep(VERIFY_POLL_MS);
+  }
+}
+
+// One run of the declared live check (task 267): its exit status and the last
+// line it printed (stdout and stderr together) — what the owner reads to see
+// what the check is waiting for. Never throws.
+function runLiveCheck(cmd, cwd, env, timeoutMs = LIVE_CHECK_RUN_MS) {
+  return new Promise((resolve) => {
+    const child = spawn(cmd, { cwd, env, shell: true, stdio: ['ignore', 'pipe', 'pipe'], timeout: timeoutMs });
+    let text = '';
+    child.stdout.on('data', (d) => { text += d; });
+    child.stderr.on('data', (d) => { text += d; });
+    const lastLine = () => text.split('\n').map((l) => l.trim()).filter(Boolean).pop() ?? null;
+    child.on('error', (error) => resolve({ ok: false, status: null, last: `could not start it: ${error.message}` }));
+    child.on('close', (status, signal) => resolve({
+      ok: status === 0,
+      status,
+      last: lastLine() ?? (status === 0 ? 'passed, printing nothing' : signal ? `stopped after ${Math.round(timeoutMs / 1000)} s (${signal})` : `exit ${status}, printing nothing`),
+    }));
+  });
+}
+
+// Step 8 with a live check: run it every poll until it passes or time runs out,
+// showing a line whenever what it prints changes.
+async function waitForLiveCheck(cmd, cwd, env) {
+  const deadline = Date.now() + VERIFY_TIMEOUT_MS;
+  let last = null;
+  for (;;) {
+    const r = await runLiveCheck(cmd, cwd, env, Math.max(1000, Math.min(LIVE_CHECK_RUN_MS, deadline - Date.now())));
+    if (r.last !== last) { out(dim(`     ${new Date().toTimeString().slice(0, 8)}  ${r.last}`)); last = r.last; }
+    if (r.ok) return { ok: true, last };
+    if (Date.now() >= deadline) return { ok: false, last };
+    await sleep(VERIFY_POLL_MS);
   }
 }
 
@@ -219,7 +257,7 @@ async function publish(slug, releaseName, yes) {
   // Everything that will need the owner's answer is checked BEFORE anything
   // runs — never discover halfway through a deploy that nobody can be asked.
   if (cfg.manual.length && !process.stdin.isTTY) stop('Declaration', 'this publish has manual steps for you to confirm, and there is no terminal to ask in', 2);
-  if (!cfg.health && !process.stdin.isTTY) stop('Declaration', 'no health URL is declared, so you must confirm it is live — and there is no terminal to ask in', 2);
+  if (!cfg.health && !cfg.liveCheck && !process.stdin.isTTY) stop('Declaration', 'no health URL or live check is declared, so you must confirm it is live — and there is no terminal to ask in', 2);
 
   step(2, 'Lock');
   lock = takePublishLock(project.slug);
@@ -237,6 +275,18 @@ async function publish(slug, releaseName, yes) {
   if (pre.tag) ok(pre.tagHere ? `${cyan(pre.tag)} is already on this commit — a re-run; it stays` : `${cyan(pre.tag)} is new${pre.previous ? `, after ${cyan(pre.previous)}` : ' (first release)'}`);
   else ok('no tag ("tag": false)');
 
+  // What the deploy command and the live check are told they are publishing.
+  // The version is the tag's without its prefix: "2.22.0" for "v2.22.0" or
+  // "web/v2.22.0"; empty with "tag": false (no version is read then).
+  const publishEnv = {
+    COGYARD_PUBLISH_SHA: pre.sha, COGYARD_PUBLISH_TAG: pre.tag ?? '',
+    COGYARD_PUBLISH_RELEASE: cfg.name ?? '', COGYARD_PUBLISH_VERSION: pre.version ?? '',
+  };
+  // Read at each use, after loadSecrets() has put the owner's credentials in.
+  const childEnv = () => ({ ...process.env, ...publishEnv });
+  const pollText = VERIFY_POLL_MS >= 1000 ? `${Math.round(VERIFY_POLL_MS / 1000)} s` : `${VERIFY_POLL_MS} ms`;
+  const limitMin = Math.round(VERIFY_TIMEOUT_MS / 60000);
+
   step(4, 'Live now');
   let alreadyLive = false;
   if (cfg.health) {
@@ -245,8 +295,18 @@ async function publish(slug, releaseName, yes) {
     const serving = healthCommit(body);
     ok(`${cyan(cfg.health)} serves ${serving ? cyan(serving) : (body ? 'a response with no commit' : 'nothing (no answer)')}`);
     if (alreadyLive) ok(`${cyan(pre.short)} is already live — checks and deploy are skipped`);
+  } else if (cfg.liveCheck) {
+    // Once, like reading the health URL: a release that already passes is a
+    // re-run of one that went live, so nothing is checked or deployed again.
+    loadSecrets();
+    out(`   → ${cfg.liveCheck}`);
+    const r = await runLiveCheck(cfg.liveCheck, project.path, childEnv());
+    out(`   ${dim(r.last)}`);
+    alreadyLive = r.ok;
+    if (alreadyLive) ok(`the live check passes: ${what} ${cyan(pre.tag ?? pre.short)} is already live — checks and deploy are skipped`);
+    else ok(`not live yet (the live check exits ${r.status ?? 'without finishing'}) — step 8 runs it again after the deploy`);
   } else {
-    ok('no health URL declared — step 8 will ask you to confirm instead');
+    ok('no health URL or live check declared — step 8 will ask you to confirm instead');
   }
 
   step(5, 'Checks');
@@ -286,9 +346,9 @@ async function publish(slug, releaseName, yes) {
       next.push(`cogyard asks you to do this by hand. ${magenta("Don't do it yet; cogyard tells you when.")}\n       "${s}"`);
     }
   }
-  next.push(cfg.health
-    ? `cogyard waits up to ${Math.round(HEALTH_TIMEOUT_MS / 60000)} minutes for ${cyan(cfg.health)} to show commit ${cyan(pre.short)}.`
-    : `cogyard asks you to check that commit ${cyan(pre.short)} is live.`);
+  if (cfg.health) next.push(`cogyard waits up to ${limitMin} minutes for ${cyan(cfg.health)} to show commit ${cyan(pre.short)}.`);
+  else if (cfg.liveCheck) next.push(`cogyard runs this live check every ${pollText}, up to ${limitMin} minutes, until it passes: ${cyan(cfg.liveCheck)}`);
+  else next.push(`cogyard asks you whether commit ${cyan(pre.short)} is live, because nothing declared lets it check.`);
   next.push(pre.tag
     ? `cogyard tags commit ${cyan(pre.short)} as ${cyan(pre.tag)} and pushes the tag to ${pre.remote ?? 'nowhere (no remote)'}.`
     : 'No release tag is set, because this project turns tagging off.');
@@ -309,10 +369,7 @@ async function publish(slug, releaseName, yes) {
       const secrets = loadSecrets();
       if (!secrets.ok) stop('Deploy', `credentials not loaded — ${secrets.error}${secrets.fix ? ` (${secrets.fix})` : ''}`);
       out(`   → ${cfg.command}`);
-      const r = spawnSync(cfg.command, {
-        cwd: project.path, shell: true, stdio: 'inherit',
-        env: { ...process.env, COGYARD_PUBLISH_SHA: pre.sha, COGYARD_PUBLISH_TAG: pre.tag ?? '', COGYARD_PUBLISH_RELEASE: cfg.name ?? '' },
-      });
+      const r = spawnSync(cfg.command, { cwd: project.path, shell: true, stdio: 'inherit', env: childEnv() });
       if (r.error) stop('Deploy', `could not start the command: ${r.error.message}`);
       if (r.status !== 0) stop('Deploy', `the command exited ${r.status ?? r.signal}`, r.status || 1);
       ok('deploy command succeeded');
@@ -329,13 +386,32 @@ async function publish(slug, releaseName, yes) {
 
   step(8, 'Verify');
   if (cfg.health) {
-    out(`   waiting for ${cyan(cfg.health)} to serve ${cyan(pre.short)} (up to ${Math.round(HEALTH_TIMEOUT_MS / 60000)} min)`);
+    out(`   waiting for ${cyan(cfg.health)} to serve ${cyan(pre.short)} (up to ${limitMin} min)`);
     const h = await waitForHealth(cfg.health, pre.sha);
     if (!h.ok) stop('Verify', `${pre.short} never went live — still serving ${h.last}. Check the platform's deploy log.`);
     ok(`${cyan(cfg.health)} serves ${cyan(pre.short)}`);
+  } else if (cfg.liveCheck) {
+    // No question (task 267): the declared check answers it. Each line below
+    // is what the check printed last, shown when it changes.
+    out(`   running the live check every ${pollText} (up to ${limitMin} min) until it passes:`);
+    out(`   → ${cfg.liveCheck}`);
+    loadSecrets();
+    const l = await waitForLiveCheck(cfg.liveCheck, project.path, childEnv());
+    if (!l.ok) stop('Verify', `the live check did not pass within ${limitMin} min — it last printed: ${l.last}`);
+    ok(`live ✓ — ${what} ${cyan(pre.tag ?? pre.short)} passes the live check`);
   } else {
-    if (!process.stdin.isTTY) stop('Verify', 'no health URL to check and no terminal to ask in', 2);
-    if (!(await yesNo(`   No health URL is declared. Have you seen ${pre.short} live?`))) stop('Verify', 'not confirmed live');
+    // Nothing declared can answer, so the owner does — asked about exactly what
+    // should now be live and what was just done to put it there, never a bare
+    // "have you seen <sha> live?" (task 267: that question meant nothing).
+    if (!process.stdin.isTTY) stop('Verify', 'nothing declared to check it is live, and no terminal to ask in', 2);
+    const named = !pre.tag ? what
+      : pre.tag === `v${pre.version}` ? `${what} ${pre.tag}` : `${what} ${pre.tag} (version ${pre.version})`;
+    const done = [
+      ...(cfg.command ? [`cogyard ran \`${cfg.command}\``] : []),
+      ...cfg.manual.map((s) => `you did the hand step "${s}"`),
+    ];
+    out(`   Nothing in ${PUBLISH_CONFIG} lets cogyard check this itself (no "health" URL or "liveCheck" command), so you decide.`);
+    if (!(await yesNo(`   Is ${named} (commit ${pre.short}) live, after ${done.join(' and ')}?`))) stop('Verify', 'you did not confirm it is live');
     ok('you confirmed it is live');
   }
 

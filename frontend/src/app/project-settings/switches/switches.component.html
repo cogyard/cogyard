@@ -60,6 +60,33 @@
           </span>
         </span>
       </div>
+
+      <div class="sw-row">
+        <span class="eyebrow">Decisions log</span>
+        <span class="sw-val">
+          <p-selectbutton size="small" [options]="logOptions" optionLabel="label" optionValue="value"
+                          [allowEmpty]="false" [ngModel]="logShown()" (ngModelChange)="setLog($event)" name="decisions-log" />
+          @if (!logOn()) {
+            <span class="dim">default</span>
+          } @else {
+            <span class="dim">set for this project ·</span>
+            <button type="button" class="btn-link dim" (click)="setLog('off')">use the default (off)</button>
+          }
+          @if (logOn()) {
+            <span class="sw-cmd">
+              <input pInputText pSize="small" class="set-input" name="decisions-log-path"
+                     [ngModel]="logPath()" (ngModelChange)="logPath.set($event)" placeholder="docs/DECISIONS.md" />
+            </span>
+          }
+          <span class="hint sm sw-explain">
+            @if (logOn()) {
+              Merging a task that records a decision (a ticked <code>(you: decision)</code> box, or a heading that starts with "Decision") stops until this file, relative to the repo root, has an entry whose heading cites the task. A task that says <code>(not for the log: &lt;why&gt;)</code> on a line of its own is let through.
+            } @else {
+              Merging doesn't look for a decisions log.
+            }
+          </span>
+        </span>
+      </div>
     </div>
 
     @if (d.problems.length) {

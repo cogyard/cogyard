@@ -31,6 +31,56 @@ Set by the host agent (you don't set these): `CLAUDE_PROJECT_DIR`, `CLAUDECODE`
 (read by the worktree hooks and driver auto-detection), and `COGYARD_DEV_GUARD`
 (internal orphan-guard set by `scripts/dev.sh`).
 
+## Where each file lives
+
+cogyard keeps a project's files in three places. Which one a file goes in
+follows from who needs to see it, and when:
+
+| Place | What goes there | Why there |
+|---|---|---|
+| The repo's `.cogyard/` folder, committed | What changes with the code: `worktree.json` (how a worktree's dev server runs) and `publish.json` (how the code is deployed) | It is reviewed on a branch together with the code it describes, and each worktree keeps the version that matches its own code. |
+| The task store, `<PROJECTS_ROOT>/_tasks/<slug>/` | How you work on the project: the task files, their attachments, and the project's settings — `switches.json` and `axes.json` | Every worktree links to the same folder, so a change is seen everywhere at once. Saving from the portal writes there, never into the code checkout, so it makes no commit on main. The store is its own git repository (branch `tasks`), so it has history, and a team store is shared with teammates ([MULTI-USER.md](MULTI-USER.md)). |
+| `~/.cogyard/` (`COGYARD_HOME`) | This machine only: the project registry, ports, each claim's worktree folder and chat, credentials, logs, job output | A port, a worktree folder, a credential or a log means nothing on another machine. |
+
+A task store holds only task files (`NNN-<slug>.md`), each task's attachments
+under `files/<task id>/`, `axes.json`, `switches.json` and a `.gitkeep`.
+Anything else is refused when an agent writes it there, refused by
+`cogyard tasks sync push` when anyone commits it, and flagged in the portal's
+store view.
+
+Two files in a repo need a word. The `.cogyard/tasks` link sits in the repo's
+`.cogyard/` but is never committed: it is an absolute path on this machine, and
+the committed `.cogyard/.gitignore` keeps it out of git. The `.tunnel` marker at
+the repo root is committed but describes this machine's tunnel — the one file
+that breaks the rule. It is being removed in favour of `~/.cogyard/tunnels.json`.
+
+### Choosing the place for a setting
+
+Four needs decide where a setting goes:
+
+| Need | Repo's `.cogyard/` | Task store | `~/.cogyard/` |
+|---|---|---|---|
+| One value per project | yes | yes | yes, filed by project |
+| A change reaches every worktree at once | no — each worktree keeps the copy it was made with | yes — every worktree links to the same folder | yes |
+| Saving from the portal makes no commit on main | no | yes | yes |
+| It has git history, and goes with the project to a teammate or another machine | yes | yes | no — this machine only |
+
+Two examples:
+
+- **`switches.json` goes in the task store.** `merge-to-main` and `pickup-task`
+  read it from inside the task's worktree, so a change has to reach worktrees
+  that already exist — the second need, which rules out the repo. It should
+  also have history and go with the project — the fourth need, which rules out
+  `~/.cogyard/`. The project's label layout, `axes.json`, is in the task store
+  for the same two reasons.
+- **`worktree.json` goes in the repo.** It names the dev command
+  (`dev_script`), which has to exist in the same commit's `package.json`, so a
+  branch that changes how the dev server starts needs the matching
+  `worktree.json` on that same branch. Here the second need is the one to
+  avoid: each worktree must keep the copy that matches its own code, which only
+  the repo does. The fourth need — history, and going with the project — rules
+  out `~/.cogyard/` as well.
+
 ## `~/.cogyard/` — state files
 
 All under `COGYARD_HOME`. Created on demand; safe to inspect, back up, or delete
@@ -41,13 +91,28 @@ All under `COGYARD_HOME`. Created on demand; safe to inspect, back up, or delete
 | `projects.json` | The project registry (`cogyard tasks projects list`). |
 | `ports.json` | Worktree port allocations **and** the allocatable ranges (see Ports). |
 | `tunnels.json` | Tunnel-enabled projects + their hostnames. |
+| `claims.json` | This machine's half of every task claim: the worktree folder and the chat that holds it, keyed by task store and task id, plus which chat reserved a new task's id (`cogyard tasks next-id`). The task file keeps only what a team shares (`claimed_by`, `claimed_at`, `branch`); `cogyard env where <task-file>` shows both halves. Written by `cogyard env claim` / `release`. |
 | `config.json` | Persistent machine config (schema below). Optional. |
+| `axes.json` | The shared label layer: label axes every project sees, edited in the Label axes card on `/settings`. A project's own layer is `<task store>/axes.json` (see Per-project files). The portal writes it, with one Surface axis, when it starts and the file is missing or holds no axes. |
+| `open-targets.json` | The apps the portal's Open-in menu offers (`{ id, label, exec, args }` each), edited on `/settings`. |
 | `secrets.env` | Credentials, mode **0600** (see Secrets). Optional. |
 | `usage/` | The token/cost usage ledger: `usage.jsonl` (cost rows), `activity.jsonl` (hours and prompts), `claims.jsonl`, and the two cursor files that record how far each transcript has been counted (`cursors.json`, `cursors-activity.json`). `collect.lock` exists only while a collection runs: one collector at a time, and a lock left by a run that died is taken over. If a cursor file can't be read, collection stops with an error naming it rather than counting every transcript again; `cogyard usage repair --dry-run` shows what a rebuild would do. `counted-keys` lists every billed request already counted (one short hash per line), so a request that appears in more than one transcript — a chat copied into a worktree's folder, or a resumed or forked chat replaying earlier messages — is counted once; it is rebuilt from the transcripts if deleted. |
-| `run/<job-id>/` | One empty folder per scheduled job, created on its first run. The job's agent calls run there so the usage ledger files them under the job. Safe to delete; it is recreated. |
+| `run/` | `run/<job-id>/`: one empty folder per scheduled job, created on its first run. The job's agent calls run there so the usage ledger files them under the job. Safe to delete; it is recreated. `run/publish/<slug>.lock`: held while `cogyard publish` runs for that project, so two publishes never overlap. |
 | `pricing.json` | Model rates synced from upstream (`cogyard usage pricing`), keyed by driver, newest version first. Delete it and pricing falls back to the active driver's built-in seed table until the next sync. |
 | `logs/` | LaunchAgent + worktree-hook logs. |
-| `scaffolds/<kind>/scaffold.mjs` | Community project kinds, added to the four built-ins at the next process start (a kind can't replace a built-in). How a kind declares its dev command, version stamping and the files that mark its projects: `docs/PROJECT-INIT.md`, Kinds. |
+| `live/` | What the chat working each claimed task is doing right now (running, waiting on you, idle, error): one small file per chat, and one per worker inside it, written by the agent's hooks on every event and read by the Plan and Tasks tabs. |
+| `scaffolds/<kind>/scaffold.mjs` | Community project kinds, added to the built-ins at the next process start (a kind can't replace a built-in). How a kind declares its `package.json` (or none), dev command, version stamping, the files that mark its projects, and the `.gitignore` lines and `package.json` scripts its files need: `docs/PROJECT-INIT.md`, Kinds. |
+| `addons/<id>/addon.mjs` | Installed add-ons — a folder, or a link to one — found at process start and shown on `/settings`. See [ADDONS.md](ADDONS.md). |
+| `jobs.json` | Each scheduled job's run state: its last run (when, the result, the summary or error), how many runs and their total cost, and its recent log. Written after every run, whether its timer started it or someone did. |
+| `briefs/<slug>/`, `heartbeats/<slug>/`, `drift/<slug>.md` | What the nightly jobs write about a project: the project-brief add-on's daily briefs, a heartbeat from each job that watches the project, and the doc-drift add-on's report. Never inside a task store: nothing commits job output, and a heartbeat is a fact about one machine. |
+| `chat-archive/` | The chat-archive add-on's copy of every agent chat, made once a day. It adds and updates, never removes, so a chat the agent app deletes is still readable here. |
+| `doc-drift.json` | The doc-drift add-on's memory between runs, so a doc it already found current isn't asked about again. Re-derivable: deleting it costs one extra run. |
+| `drivers/<name>/` | A driver's logo, for the status line beside each claimed task. Downloaded once — when the driver is installed, or at a session start on a machine that has none. |
+| `publishes.jsonl` | One line per `cogyard publish`, whether it succeeded or not ([PUBLISH.md](PUBLISH.md)). |
+
+Not listed: `.DS_Store` (written by macOS Finder) and backup copies such as
+`projects.json.bak-…` or `ports.json.bak`, which someone made by hand before a
+risky change. No cogyard code writes or reads them.
 
 ### `config.json` schema
 
@@ -58,7 +123,7 @@ Optional. Recognized keys:
   "driver": "claude",        // active agent adapter
   "projectsRoot": "/abs/path",    // overrides the ~/gitroot default
   "defaults": {                   // New / Add-existing drawer prefill
-    "kind": "single"              // single | fullstack | static | library, or an installed kind
+    "kind": "single"              // single | fullstack | static | library | research | apple | firmware, or an installed kind
   },
   "addons": {                     // per-add-on settings, edited in /settings
     "doc-drift": { "minAgeDays": "30" }
@@ -82,11 +147,19 @@ Optional. Recognized keys:
   `COGYARD_PROJECTS_ROOT` wins if both are set.
 - `defaults` — the project-creation defaults the portal's New / Add-existing drawer
   prefills with (and the `/settings` view edits). An invalid `kind` is ignored,
-  falling back to the built-in (`single`). Every built-in kind assumes an npm
-  web app, including how it stamps the version and commit into the running app
-  (`scripts/generate-version.mjs` → `version.json`). For an Xcode or firmware
-  project no built-in meets that yet: an installed kind supplies its own
-  stamping, or the project wires it into its own build (`docs/PROJECT-INIT.md`, Kinds). The task store is always shared (the
+  falling back to the built-in (`single`). Every built-in kind but `research`,
+  `apple` and `firmware` assumes an npm web app, including how it stamps the
+  version and commit into the running app (`scripts/generate-version.mjs` →
+  `version.json`). `research` is for a project with no code, and writes no
+  `package.json`, so it has no version, no build and no dev server. `apple`
+  stamps an Xcode app through a committed `Version.xcconfig` (the `package.json`
+  version) and a gitignored `Build.xcconfig` (build number and short commit),
+  which its seeded `npm run build` writes before `xcodebuild`, once the project
+  is hooked up to them in Xcode. On a device the stamp is a generated header: the
+  `firmware` kind seeds `scripts/firmware_version.py`, a PlatformIO pre-build
+  script that writes `version.h` (version from `package.json`, short commit from
+  git) before every build, and the firmware shows `FW_STAMP` on its own screen
+  (`docs/PROJECT-INIT.md`, Kinds). The task store is always shared (the
   `normal` choice was removed), so there's no settable `store` default. There is no
   default git `remote` — it's inherently per-project, so the drawer's remote field
   is always entered fresh.
@@ -240,33 +313,38 @@ threat model, and encrypting it without a key store would be theatre.
 | File | Tracked? | Written by | Purpose |
 |---|---|---|---|
 | `.cogyard/worktree.json` | committed | `init` / `onboard`, then you | **Opt-in.** Presence makes the SessionStart hook wire env files / `launch.json` so dev servers bind the worktree's reserved ports. The old `.claude/worktree-config.json` is no longer read. |
+| `.cogyard/publish.json` | committed | you, by hand | How this project's code is deployed: what `cogyard publish` runs, and how it proves the release is live. Read by `cogyard publish` and shown under Publishing on the project's Admin → Info tab. Absent = the project has not said how it publishes, and a publish refuses it. Format: [PUBLISH.md](PUBLISH.md). |
 | the `env_files` targets (e.g. `.env.development`) | gitignored links | SessionStart hook | A link in each worktree to the project root's file of the same name — never a copy, so an edit through one edits that file. No env file carries a port: a dev script asks `cogyard env ports`, which reads `~/.cogyard/ports.json`. |
 | `.claude/launch.json` (in a worktree) | gitignored | SessionStart hook | The worktree's preview entry. Rewritten every session start; a hand edit is refused by the Edit/Write hook. The main checkout's file also lists every worktree's entry, beside the project's own. |
-| `.tunnel` | committed marker | `cogyard tunnel` | Marks the project tunnel-enabled. |
+| `.tunnel` | committed marker | `cogyard tunnel` | Marks the project tunnel-enabled, and holds this machine's tunnel: its name, id and hostname. That is machine data in the repo — the one file that breaks the rule in "Where each file lives" — so it is being removed in favour of `~/.cogyard/tunnels.json`, which will then be the only record of a project's tunnel. Until then `cogyard tunnel` still reads and writes it. |
 | `.cogyard/tasks` | gitignored symlink (by a committed `.cogyard/.gitignore`) | `init` / `onboard` / `convert` / `join`; `cogyard tasks mount` in a worktree | The link to the task store — the shared store at `<PROJECTS_ROOT>/_tasks/<slug>`. The old top-level `_tasks` link is no longer read. Shared is the only model; an in-repo `_tasks/` folder an existing repo already has is adopted into a new store by `convert` / `onboard`. |
 | `<task store>/switches.json` | committed in the task store | the project's settings page (Switches card), or by hand | The project's **switches** — see below. Absent = every default. |
+| `<task store>/axes.json` | committed in the task store | the Label axes card on the project's Admin → Settings tab (`POST /api/axes`), or by hand | The project's own label layer: label axes laid over the shared layer in `~/.cogyard/axes.json`. A project axis with the same name as a shared one replaces it. Saving writes the file but does not commit it: commit it with `cogyard tasks sync push "<msg>" -- axes.json`. Absent = the shared layer only. |
 
 ### Project switches — `<task store>/switches.json`
 
 The few places a project works differently from cogyard's defaults. The file
-sits in the project's task store next to `axes.json`, so every worktree sees a
-change at once and a team store shares it.
+sits in the project's task store next to `axes.json`; why it lives there and not
+in the repo's `.cogyard/` is the first example in [Where each file lives](#where-each-file-lives) above.
 
 ```json
 {
   "rebase": "always",
-  "version": "minor"
+  "version": "minor",
+  "decisions_log": "docs/DECISIONS.md"
 }
 ```
 
 | Switch | Values | Default | Read by |
 |---|---|---|---|
-| `rebase` | `always` — rebase onto main without asking (a conflict still stops); `ask` — ask first | `always` | `merge-to-main` step 1 (the branch is behind main before merging); `pickup-task` when resuming a task whose branch is behind main |
+| `rebase` | `always` — rebase onto main without asking (a conflict still stops); `ask` — ask first | `always` | `merge-to-main` step 1 (the branch is behind main before merging); `pickup-task` when resuming a task whose branch is behind main, or when a worktree it just created (no commits of its own) is behind local main |
 | `version` | `off` — no bump; `minor` / `patch` — `npm version <value> --no-git-tag-version` on the root `package.json`; `{ "command": "…", "file": "…" }` — the project's own command, run from the repo root, and the file that holds the version | `minor` when the repo root has a `package.json`, else `off` | `merge-to-main` step 7. If the merge itself already changed the version in that file, no bump. |
+| `decisions_log` | the path of the project's decisions log, inside the repo and relative to its root (e.g. `docs/DECISIONS.md`); unset = off | off | `cogyard tasks validate <id>`, which `merge-to-main` runs before merging. An OPEN task that records a decision — a ticked `(you: decision)` box, or a heading that starts with "Decision" — fails until an entry in the log cites it in its heading (`## <date> — <the decision> (task <id>)`), unless the task has a line `(not for the log: <why>)`. The log is read from the checkout `validate` runs in, so the branch's own new entry counts. Only `validate <id>` runs it: `validate --all`, `doctor`, the portal and the edit-time checks don't, so a closed task never turns red. See `docs/TASK-STATUS-VOCABULARY.md`, "Decisions and the decisions log". |
 
 - **Reading:** `cogyard tasks switches` prints each switch's value and whether it
   is set or the default; `--json` prints `{ rebase: { value, set }, version: {
-  value, set, file } }`. The skills call this and never read the file, so the
+  value, set, file }, decisions_log: { value, set } }` (`value` is `null` when
+  the log check is off). The skills call this and never read the file, so the
   defaults live in one place (`core/switches.mjs`).
 - **Invalid entries** (an unknown key, a bad value, a file that isn't a JSON
   object) are ignored on read and the default applies; `cogyard tasks switches`

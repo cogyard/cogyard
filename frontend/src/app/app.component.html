@@ -34,9 +34,7 @@
       <div class="nav-divider"></div>
       @for (p of projects(); track p.slug) {
         <button class="sidebar-item" [class.active]="!viewAll() && !settingsRoute() && p.slug === slug()" (click)="onProject(p.slug)">
-          <span class="si-icon" aria-hidden="true">
-            @if (hasIcon(p.slug)) { <img [class.bordered]="hasIconBorder(p.slug)" [src]="iconUrl(p.slug)" alt="" (error)="onIconError(p.slug)" /> }
-          </span>
+          <app-project-logo class="si-icon" [slug]="p.slug" [onDark]="true" [framed]="!viewAll() && !settingsRoute() && p.slug === slug()" />
           <span class="si-label">{{ p.label }}</span>
           @if (claimedFor(p.slug) > 0) { <span class="si-badge" [title]="claimedFor(p.slug) + ' claimed task(s)'">{{ claimedFor(p.slug) }}</span> }
         </button>
@@ -52,7 +50,7 @@
         <span class="si-label">Settings</span>
       </button>
       <div class="foot-row">
-        <app-freshness-pie />
+        <app-freshness-note />
         @if (version()) { <span class="version" [title]="version()">{{ version() }}</span> }
         @if (newBuild()) {
           <button class="new-build" (click)="reloadForNewBuild()" aria-label="A newer version is out — reload"

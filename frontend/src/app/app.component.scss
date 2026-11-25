@@ -15,8 +15,8 @@
 }
 
 /* ---- Left sidebar: Slack-style project rail (replaces the old top pill row) --
-   Dark like the former topbar so the brand mark's dark-indigo variant + the
-   freshness pie keep their colors. Column flow: brand · scrollable nav · pie. */
+   Dark like the former topbar so the brand mark's dark-indigo variant keeps its
+   colors. Column flow: brand · scrollable nav · foot (settings, version row). */
 .sidebar {
   display: flex; flex-direction: column; min-height: 0; overflow: hidden;
   background: var(--app-sidebar-bg); color: var(--app-topbar-fg);
@@ -45,18 +45,11 @@
 .sidebar-item .si-icon {
   flex: 0 0 auto; width: 20px; height: 20px; display: block;
 }
-/* Each project's icon shows as-is — its own artwork, bare on the rail.
-   object-fit:contain: never stretch art that isn't square. */
-.sidebar-item .si-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
-/* White border behind the icon, for artwork drawn for white browser chrome that
-   would otherwise sink into the indigo. Two ways it turns on, both explicit:
-   the owner ticks "white border" for that project in /settings (.bordered), or
-   the row is SELECTED — on the accent fill every icon needs the separation, so
-   that one isn't a preference. */
-.sidebar-item .si-icon img.bordered,
-.sidebar-item.active .si-icon img {
-  background: #fff; border-radius: 4px; padding: 1.5px; box-sizing: border-box;
-}
+/* A project row's slot is app-project-logo (task 271), which draws the icon as-is
+   (object-fit: contain) and the white border behind it — the owner's "white
+   border" tick in /settings, or, on the SELECTED row, always (its `framed`
+   input): on the accent fill every icon needs the separation, so that one isn't
+   a preference. */
 .sidebar-item .si-badge {
   flex: 0 0 auto; margin-left: 4px;
   min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
@@ -75,7 +68,9 @@
   flex: 0 0 auto; padding: 10px 8px; border-top: 1px solid color-mix(in srgb, var(--app-topbar-fg) 14%, transparent);
   display: flex; flex-direction: column; gap: var(--app-space-3);
 }
-/* The freshness pie + full version stamp share the top row. */
+/* The version row: the overdue-check note (only when checks are overdue — the
+   freshness circle that sat here went in task 277), the full version stamp, and
+   the Update pill at the right end. */
 .sidebar-foot .foot-row { display: flex; align-items: center; gap: var(--app-space-3); padding: 0 6px; }
 
 /* Settings link — its own line ABOVE the version row. Wears the shared
@@ -86,7 +81,8 @@
    because a full-bleed gear reads heavier than a project's icon. */
 .sidebar-foot .settings-link .settings-cog { padding: 1.5px; }
 
-/* Build version + commit, muted, beside the freshness pie — shown in full. */
+/* Build version + commit, muted — shown in full. The overdue-check note beside
+   it uses the same colour. */
 .sidebar-foot .version {
   font-family: ui-monospace, "SF Mono", monospace; font-size: 11px;
   color: color-mix(in srgb, var(--app-topbar-fg) 60%, transparent);

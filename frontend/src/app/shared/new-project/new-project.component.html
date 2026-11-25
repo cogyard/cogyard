@@ -35,7 +35,18 @@
     <label class="np-field">
       <span class="np-label eyebrow">Kind</span>
       <p-select size="small" [options]="kindOptions()" optionLabel="label" optionValue="value"
-                [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body" />
+                [ngModel]="kind()" (ngModelChange)="kind.set($event)" name="kind" appendTo="body"
+                scrollHeight="min(40rem, 50vh - 2rem)">
+        <!-- Each kind reads name over description, so the list can be chosen
+             from; the same row and list height as Settings' default-kind picker
+             (.kind-opt). PrimeNG's 200px default showed three of these rows.
+             The height is at most half the window, so the list always fits
+             wholly above or below its field wherever the field sits; a taller
+             one fit neither side and was pinned over the field itself. -->
+        <ng-template #item let-o>
+          <span class="kind-opt"><span class="kind-opt-name">{{ o.label }}</span><span class="hint sm">{{ o.description }}</span></span>
+        </ng-template>
+      </p-select>
       @if (kindDescription()) { <span class="np-hint hint sm">{{ kindDescription() }}</span> }
     </label>
 

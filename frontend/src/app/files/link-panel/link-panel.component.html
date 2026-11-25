@@ -1,0 +1,24 @@
+<div class="lp" [class.broken]="broken()">
+  <div class="lp-h">
+    <app-link-mark [src]="src()" [link]="link()" [showTarget]="false"><span>{{ heading() }}</span></app-link-mark>
+  </div>
+  <dl>
+    <dt>Points to</dt>
+    <dd class="mono">{{ link().target }}</dd>
+    <dt>Target</dt>
+    <dd>
+      @if (broken()) {
+        <span class="dot bad">●</span><span class="bad">nothing there — the link is broken</span>
+      } @else {
+        <span class="dot ok">●</span>there — {{ link().kind === 'dir' ? 'a folder' : 'a file' }}@if (taskCount(); as n) { with {{ n }} task files }
+      }
+    </dd>
+    @if (isTaskLink()) {
+      <dt>What it is</dt>
+      <dd>This project's task store. cogyard made this link, and every worktree gets the same one.@if (broken()) {&ngsp;<span class="mono">cogyard tasks doctor</span> reports it too.}</dd>
+    }
+  </dl>
+  @if (isTaskLink()) {
+    <div class="lp-actions"><button class="btn-toggle" (click)="openTasks()">open the Tasks tab</button></div>
+  }
+</div>

@@ -210,9 +210,9 @@ Run `cogyard <command> --help` for a subcommand's own options.
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library` — drives the skeleton + version stamping. |
+| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library` · `research` · `apple` · `firmware` — drives the skeleton + version stamping. `research` is for a project with no code (notes, sources, findings): no `package.json`, no dev server, no worktree ports. `apple` is an Xcode app, macOS or iOS: `npm run build` runs `xcodebuild` on the project's one scheme, and the version reaches the app through `.xcconfig` files. `firmware` is a PlatformIO project: the dev entry is its host-side preview server, and the version goes into a generated `version.h`. |
 | `--remote` | none | git remote for the shared task store. |
-| `--no-wiring` | off | skip `.cogyard/worktree.json` (auto-skipped for `kind=library`). |
+| `--no-wiring` | off | skip `.cogyard/worktree.json` (auto-skipped for `kind=library` and `kind=research`). |
 
 ### `cogyard tasks`
 

@@ -112,14 +112,21 @@ export default {
     //     agent that can't report them simply earns neither signal.
     parseLine(line) { return { sessionId, cwd, usage, prompt, commands, filesWritten } /* | null */ },
     // The first HUMAN prompt text in a transcript file — a chat's LABEL, for the
-    // task→chats lookup (core/task-chats.mjs). Same human-turn predicate as
-    // parseLine (skip tool results / meta / injected lines), but returns the
-    // words, capped short. Bounded head-read only. null when unreadable or none.
+    // task→chats lookup (core/task-chats.mjs). Skips tool results and meta
+    // lines, and returns the words, capped short. Bounded head-read only. null
+    // when unreadable or none.
+    //   Injected text is skipped PER BLOCK, not per line: an agent
+    //   app may put a note of its own (a reminder, a status line) in front of
+    //   what the human typed, inside the same line. Leave the injected parts
+    //   out and keep the typed ones; a line counts as typed when anything typed
+    //   is left. firstHumanLabel and readTurns share one rule for this, so a
+    //   chat's label and its shown turns never disagree.
     firstHumanLabel(file) { return '<≤100-char label>' /* | null */ },
     // A transcript file → the readable conversation, for the portal's chat
     // viewer and `cogyard sessions show` / `search`. Ordered turns, the human's
     // typed prompts and the agent's own text only (no tool calls, tool output,
-    // reasoning or injected lines — same human-turn predicate as parseLine).
+    // reasoning or injected text — injected blocks left out one by one, as for
+    // firstHumanLabel, so a typed message with a note in front still shows).
     // Bounded: at most opts.maxTurns turns (default 600), each cut to
     // opts.maxChars (default 8000); `truncated` says the turn limit was hit.
     // Pass Infinity for both to read the whole chat. This is the ONLY place a
@@ -225,6 +232,13 @@ export default {
     // caller can verify the write stuck (the agent app owns the store and a
     // concurrent app write may win).
     archive(sessionId) { return true },
+    // Optional: bring the agent app to the front on one chat — a click on the
+    // driver logo beside a claimed task (Plan, All, Tasks). Writes nothing.
+    // Never throw: return { ok: true } once the app has been asked, or
+    // { ok: false, reason } with a few plain words the portal shows beside
+    // the logo ("chat is archived", "not a chat in the app"). Omit it and
+    // the logo is not clickable.
+    open(sessionId) { return { ok: true } },
   },
 
   // --- seam 5: agent ---------------------------------------------------------

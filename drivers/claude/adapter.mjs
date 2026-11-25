@@ -71,6 +71,15 @@ function transcriptsBySession(sessionId) {
   return files;
 }
 
+// Hand a claude:// link to macOS, which passes it to the Claude app (and starts
+// the app first if it is not running). `open` returns once the link is handed
+// over; it does not wait for the app.
+function openLink(url) {
+  const r = spawnSync('open', [url], { encoding: 'utf8', timeout: 5000 });
+  if (r.error) throw r.error;
+  if (r.status !== 0) throw new Error(String(r.stderr || '').trim() || `open exited ${r.status}`);
+}
+
 // One transcript line → the words the OWNER typed on it, or null (task 237).
 // Stricter than the human-turn predicate readTurns uses, because these words
 // authorize owner-only commands: a line counts only when Claude Code marks it
@@ -105,6 +114,23 @@ function ownerTextOf(obj) {
   text = text.trim();
   if (!text || text.startsWith('[Request interrupted')) return null;
   return text;
+}
+
+// A user line's content → the text typed on it, for the display readers
+// (readTurns, firstHumanLabel), or null (task 273). Notes the app injects
+// arrive as text of their own — a `<system-reminder>`, a command wrapper — and
+// in a chat that has started other chats the desktop app puts a "Linked
+// sessions now" reminder block IN FRONT of every message the owner types, with
+// the typed words in the next block. So array content is judged block by
+// block: a text block whose trimmed text starts with `<` is injected and left
+// out, the others are joined with `\n`. String content is one block, left out
+// whole when it starts with `<`. Unlike ownerTextOf, tags inside a typed block
+// stay: HTML the owner pasted is shown as written.
+function typedTextOf(content) {
+  const blocks = typeof content === 'string' ? [content]
+    : Array.isArray(content) ? content.filter((b) => b && b.type === 'text').map((b) => b.text || '') : [];
+  const text = blocks.filter((t) => !t.trim().startsWith('<')).join('\n').trim();
+  return text || null;
 }
 
 // Was this transcript's chat started in Claude Desktop? Every line Claude Code
@@ -478,11 +504,12 @@ export default {
       }
       return out;
     },
-    // The first HUMAN prompt text in a transcript — the chat's LABEL. Same
-    // human-turn predicate as parseLine (skip tool results / meta / injected
-    // `<…>` reminders), but returns the words, capped ≤100 chars. Bounded
-    // head-read only: transcripts run to many MB, and the first typed prompt is
-    // always near the top. null when unreadable or no human turn is found.
+    // The first HUMAN prompt text in a transcript — the chat's LABEL. Skips
+    // tool results and meta lines; the words come from typedTextOf (injected
+    // `<…>` blocks left out one by one, so a typed message with a reminder in
+    // front of it still counts), capped ≤100 chars. Bounded head-read only:
+    // transcripts run to many MB, and the first typed prompt is always near the
+    // top. null when unreadable or no human turn is found.
     firstHumanLabel(file) {
       if (!file) return null;
       let head;
@@ -498,25 +525,16 @@ export default {
         let obj;
         try { obj = JSON.parse(line); } catch { continue; }
         if (obj.type !== 'user' || obj.toolUseResult || obj.isMeta) continue;
-        const c = obj.message && obj.message.content;
-        let text = null;
-        if (typeof c === 'string') text = c;
-        else if (Array.isArray(c)) {
-          const t = c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n');
-          if (t) text = t;
-        }
-        const trimmed = (text || '').trim();
-        // Skip injected/reminder turns (serialized content starting with '<' —
-        // command wrappers, tool results, system reminders); the owner's first
-        // *typed* prompt is the label.
-        if (!trimmed || trimmed.startsWith('<')) continue;
-        return trimmed.length > 100 ? trimmed.slice(0, 99) + '…' : trimmed;
+        const text = typedTextOf(obj.message && obj.message.content);
+        if (!text) continue;
+        return text.length > 100 ? text.slice(0, 99) + '…' : text;
       }
       return null;
     },
     // A transcript file → the readable conversation: an ordered list of
     // { role: 'user'|'assistant', text, timestamp }. Human turns skip tool
-    // results / meta / injected `<…>` lines (same predicate as parseLine);
+    // results and meta lines and take their words from typedTextOf (injected
+    // `<…>` blocks left out one by one, the typed blocks kept);
     // assistant turns take the text blocks only (no thinking, no tool_use
     // noise). Bounded: at most opts.maxTurns turns, each capped to
     // opts.maxChars, with a `truncated` signal so the viewer can say so. This
@@ -536,12 +554,8 @@ export default {
         let obj;
         try { obj = JSON.parse(line); } catch { continue; }
         if (obj.type === 'user' && !obj.toolUseResult && !obj.isMeta) {
-          const c = obj.message && obj.message.content;
-          let text = typeof c === 'string' ? c
-            : Array.isArray(c) ? c.filter((b) => b && b.type === 'text').map((b) => b.text || '').join('\n') : '';
-          text = (text || '').trim();
-          // Skip injected/reminder turns (serialized `<…>`), keep typed prompts.
-          if (text && !text.startsWith('<')) out.turns.push({ role: 'user', text: cap(text), timestamp: obj.timestamp || null });
+          const text = typedTextOf(obj.message && obj.message.content);
+          if (text) out.turns.push({ role: 'user', text: cap(text), timestamp: obj.timestamp || null });
         } else if (obj.type === 'assistant') {
           const parts = obj.message && obj.message.content;
           if (Array.isArray(parts)) {
@@ -616,7 +630,11 @@ export default {
         try { d = JSON.parse(readFileSync(file, 'utf8')); }
         catch { continue; }
         if (!d || typeof d !== 'object' || !('cliSessionId' in d)) continue;
+        const appId = d.sessionId || basename(file, '.json');
         const row = {
+          // The app's own id for the chat (`local_…`), which its links take —
+          // open() below. Every other caller keys on sessionId.
+          appId,
           title: d.title || null,
           sessionId: d.cliSessionId || null,
           priorSessionIds: Array.isArray(d.priorCliSessionIds) ? d.priorCliSessionIds.filter(Boolean) : [],
@@ -628,7 +646,6 @@ export default {
           metaFile: file,
         };
         rows.push(row);
-        const appId = d.sessionId || basename(file, '.json');
         if (row.sessionId) transcriptOf.set(appId, row.sessionId);
         const parent = d.spawnedFrom && d.spawnedFrom.sessionId;
         const root = d.startChain && d.startChain.firstSessionId;
@@ -694,6 +711,29 @@ export default {
       d.isArchived = true;
       writeFileSync(row.metaFile, JSON.stringify(d));
       return !!JSON.parse(readFileSync(row.metaFile, 'utf8')).isArchived;
+    },
+    // Bring the Claude app to the front on one chat — the portal's logo click.
+    // It sends the link the app's own Dock menu uses,
+    // claude://code/continue?session=<appId>; the app shows that chat, or
+    // its Code home when it cannot find it. Anthropic does not document the
+    // link: it was read out of the app and tried live (2026-11-22), so an
+    // app update may change it. Writes nothing. Never throws: anything that
+    // stops it is { ok: false, reason } in plain words.
+    // `launch` and `platform` are passed in tests, so they open nothing and
+    // run the same on any machine.
+    open(sessionId, { launch = openLink, platform = process.platform } = {}) {
+      if (platform !== 'darwin') return { ok: false, reason: 'needs the Claude app on a Mac' };
+      if (typeof sessionId !== 'string' || !sessionId) return { ok: false, reason: 'no chat named' };
+      let row = null;
+      try { row = this.list().find((r) => r.sessionId === sessionId || r.priorSessionIds.includes(sessionId)) || null; }
+      catch { return { ok: false, reason: 'could not read the Claude app\'s chat list' }; }
+      if (!row) return { ok: false, reason: 'not a chat in the Claude app' };
+      if (row.isArchived) return { ok: false, reason: 'chat is archived' };
+      // The same check the app makes before it follows the link.
+      if (!/^local_[A-Za-z0-9-]{1,64}$/.test(row.appId)) return { ok: false, reason: 'the app\'s id for this chat is not one its links take' };
+      try { launch(`claude://code/continue?session=${row.appId}&source=url_external`); }
+      catch (e) { return { ok: false, reason: `could not reach the Claude app: ${e.message}` }; }
+      return { ok: true };
     },
   },
 

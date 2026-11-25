@@ -1,6 +1,6 @@
 @if (loading()) {
   <section class="ip"><p-skeleton height="96px" /></section>
-} @else if (boxes().length || oldClaims().length || without().length || unreadable().length) {
+} @else if (boxes().length || oldClaims().length || quiet().length || unreadable().length) {
   <section class="ip">
     <div class="ip-head"><span class="widget-title">In progress and recently done</span></div>
     @if (boxes().length) {
@@ -9,28 +9,51 @@
       </div>
     }
 
-    @if (oldClaims().length) {
-      <p class="hint foot">{{ oldSummary() }}
+    @for (p of unreadable(); track p.slug) {
+      <p class="hint sm foot" [pTooltip]="p.error ?? ''" tooltipPosition="top">{{ p.label }} could not be read</p>
+    }
+  </section>
+
+  <!-- Task 271: the two lines that sat under the grid as hint text are sections
+       of their own, headed like the one above. -->
+  @if (oldClaims().length) {
+    <section class="ip ip-more">
+      <div class="ip-head">
+        <span class="widget-title" [pTooltip]="oldTip" tooltipPosition="top">Old claims</span>
+        <span class="hint">{{ oldSummary() }}</span>
         <button type="button" class="btn-link fold-toggle" [attr.aria-expanded]="showOld()" (click)="showOld.set(!showOld())">{{ showOld() ? 'hide' : 'show' }}</button>
-      </p>
+      </div>
       @if (showOld()) {
         <div class="grid">
           @for (b of oldClaims(); track b.slug) { <ng-container *ngTemplateOutlet="box; context: { $implicit: b, old: true }" /> }
         </div>
       }
-    }
-    @if (without().length) {
-      <p class="hint sm foot">Nothing in progress and nothing closed this week or last: {{ without().join(' · ') }}</p>
-    }
-    @for (p of unreadable(); track p.slug) {
-      <p class="hint sm foot" [pTooltip]="p.error ?? ''" tooltipPosition="top">{{ p.label }} could not be read</p>
-    }
-  </section>
+    </section>
+  }
+  @if (quiet().length) {
+    <section class="ip ip-more">
+      <div class="ip-head"><span class="widget-title">Nothing in progress, nothing closed this week or last</span></div>
+      <div class="quiet">
+        @for (b of quiet(); track b.slug) {
+          <span class="quiet-name">
+            <app-project-logo [slug]="b.slug" />
+            <button type="button" class="btn-link dim name" (click)="selectProject.emit(b.slug)">{{ b.label }}</button>
+          </span>
+        }
+      </div>
+    </section>
+  }
+}
+
+<!-- The Plan tab's quick look on a task in progress (task 271), unchanged. -->
+@if (lookTask(); as q) {
+  <app-plan-quick-look [task]="q" [slug]="look()!.slug" (close)="look.set(null)" (openTask)="lookFromQuickLook($event)" />
 }
 
 <ng-template #box let-b let-old="old">
   <article class="box">
     <div class="name-line">
+      <app-project-logo [slug]="b.slug" />
       <button type="button" class="btn-link dim name" (click)="selectProject.emit(b.slug)">{{ b.label }}</button>
       @if (b.strip.length) {
         <!-- Only whole chips: the line is one row high and wraps, so a chip that
@@ -71,7 +94,7 @@
     @if (b.tasks.length) {
       <div class="tasks">
         @for (t of b.tasks; track t.id) {
-          <div class="task">
+          <div class="task open-look" (click)="look.set({ slug: b.slug, id: t.id })">
             <div class="r1">
               <app-task-chip [id]="t.id" [slug]="b.slug" (open)="openTask.emit({ slug: b.slug, id: $event })" />
               @if (t.youNext) { <app-flag tone="warn" [pTooltip]="stepsText(t)" tooltipPosition="top">next: {{ t.youNext.join(', ') }}</app-flag> }

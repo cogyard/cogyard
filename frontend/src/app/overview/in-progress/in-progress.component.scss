@@ -19,6 +19,19 @@
   grid-template-columns: repeat(auto-fit, minmax(min(100%, max(380px, calc((100% - var(--app-space-4)) / 2))), 1fr));
 }
 .grid + .foot, .foot + .grid { margin-top: var(--app-space-3); }
+// Old claims and the quiet projects (task 271): sections of their own under the
+// grid, headed like the one above it — they had been one hint line each, which
+// on the box's grey was barely visible.
+.ip-more { margin-top: var(--app-space-6); }
+// The quiet projects: their names, each with its icon, in a white box like the
+// project boxes.
+.quiet {
+  display: flex; flex-wrap: wrap; gap: var(--app-space-3) var(--app-space-6);
+  padding: var(--app-space-3) var(--app-space-4);
+  background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px;
+}
+.quiet-name { display: inline-flex; align-items: center; gap: var(--app-space-3); }
+.quiet-name app-project-logo { --logo-size: 16px; }
 .box {
   display: flex; flex-direction: column; gap: var(--app-space-2); min-width: 0;
   padding: var(--app-space-3) var(--app-space-4) var(--app-space-4);
@@ -27,6 +40,10 @@
 
 // The name line: name · the last 10 closed · "… more".
 .name-line { display: flex; align-items: center; gap: var(--app-space-3); min-width: 0; }
+// The project's icon before its name (task 271) — the sidebar's component, a
+// size down to sit with the 13.5px name, the line's own gap after it (the
+// sidebar's 8px).
+.name-line app-project-logo { --logo-size: 16px; }
 // The Daily Overview's project-name size (overview.component.scss .bl-name).
 .name { flex: none; font-size: 13.5px; font-weight: 700; }
 // Only whole chips: one row high and wrapping, so whatever doesn't fit drops to
@@ -53,6 +70,9 @@
   padding: 9px 0 var(--app-space-3); border-top: 1px solid var(--app-divider);
 }
 .tasks .task:first-child, .when-label + .task { border-top: 0; padding-top: var(--app-space-1); }
+// A task in progress opens the Plan tab's quick look on a click (task 271), as
+// a Plan card does.
+.task.open-look { cursor: pointer; }
 .r1 { display: flex; align-items: center; gap: var(--app-space-3); min-width: 0; font-size: 12.5px; }
 .title { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .r2 { display: flex; align-items: flex-start; gap: var(--app-space-2) var(--app-space-3); min-width: 0; }

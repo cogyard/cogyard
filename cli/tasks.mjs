@@ -21,7 +21,7 @@ import {
   readRegistry, registerProject, unregisterProject, discoverProjects, makeProjectEntry, findProject,
   gitWorktrees, worktreesForProject,
   inferStatus,
-  validateTasks, introducedErrors, taskFromContent, normalizeTaskId,
+  validateTasks, introducedErrors, taskFromContent, normalizeTaskId, decisionLogProblems,
   closeability, closeableTasks, doneWithLeftovers, markerText, markerProblemsByFile, whoAmI, rewriteStatusLine, isClosed,
   liveParkNotes, describePark, cleanParkReason, writeParkNote, endParkNotes,
   convertToSharedStore, joinSharedStore,
@@ -416,8 +416,9 @@ function cmdSwitches(flags) {
   const versionText = typeof s.version.value === 'object'
     ? `own command: ${s.version.value.command} (version kept in ${s.version.value.file})`
     : s.version.value;
-  process.stdout.write(`rebase   ${s.rebase.value}  (${tag(s.rebase)})\n`);
-  process.stdout.write(`version  ${versionText}  (${tag(s.version)})\n`);
+  process.stdout.write(`rebase         ${s.rebase.value}  (${tag(s.rebase)})\n`);
+  process.stdout.write(`version        ${versionText}  (${tag(s.version)})\n`);
+  process.stdout.write(`decisions_log  ${s.decisions_log.value ?? 'off'}  (${tag(s.decisions_log)})\n`);
   const problems = switchProblems(repoRoot);
   if (problems.length) {
     process.stdout.write('\nIgnored in switches.json:\n');
@@ -1384,7 +1385,18 @@ function cmdValidate(opts, idArg) {
     if (!existsSync(tasksDir)) fail('no task directory in this repo (.cogyard/tasks)');
     const task = resolveTask(tasksDir, basename(idArg));
     if (!task) fail(`task not found: ${idArg}`);
-    const r = validateTasks(loadTasks(tasksDir)).results.find((x) => x.file === basename(task.path));
+    const tasks = loadTasks(tasksDir);
+    const r = validateTasks(tasks).results.find((x) => x.file === basename(task.path));
+    // The decisions log (task 276) — only here, the merge gate, and only when the
+    // project's decisions_log switch names a log. Read from THIS checkout, so a
+    // branch's own new entry counts before it merges.
+    const logPath = resolveSwitches(repoRoot).decisions_log.value;
+    if (logPath) {
+      let text = null;
+      try { text = readFileSync(join(repoRoot, logPath), 'utf8'); } catch { /* missing: the message says so */ }
+      const loaded = tasks.find((t) => basename(t.path) === basename(task.path)) || task;
+      r.errors.push(...decisionLogProblems(loaded, { path: logPath, text }));
+    }
     const flag = r.errors.length ? '✗' : r.warnings.length ? '⚠' : '✓';
     process.stdout.write(`${flag} ${r.file} — ${r.errors.length} error(s), ${r.warnings.length} warning(s)\n`);
     for (const e of r.errors) process.stdout.write(`    ✗ ${e}\n`);
@@ -1581,11 +1593,13 @@ Subcommands:
                                       then in-use-but-unregistered labels. Read-only reference
                                       the write-task skill checks before minting new labels.
     --json                            Machine-readable (axes, registered, inUse, unregisteredInUse)
-  switches                            This project's switches — rebase (always | ask) and
-                                      version (off | minor | patch | own command) — each
-                                      marked set (from the task store's switches.json) or
-                                      default. What merge-to-main and pickup-task read.
-    --json                            { rebase: {value, set}, version: {value, set, file} }
+  switches                            This project's switches — rebase (always | ask),
+                                      version (off | minor | patch | own command) and
+                                      decisions_log (off | the log's path) — each marked
+                                      set (from the task store's switches.json) or default.
+                                      What merge-to-main, pickup-task and validate read.
+    --json                            { rebase: {value, set}, version: {value, set, file},
+                                        decisions_log: {value, set} }
   plan                               What's left, in the order it can run: in progress, can
                                       start, waiting for a task (depends_on) or another
                                       project, built and waiting on you, parked. A task that

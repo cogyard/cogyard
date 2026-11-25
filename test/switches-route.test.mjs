@@ -53,11 +53,26 @@ test('GET with no file: every switch at its default, nothing stored, no problems
   assert.equal(r.code, 200);
   assert.deepEqual(r.body, {
     slug: 'swr',
-    switches: { rebase: { value: 'always', set: false }, version: { value: 'minor', set: false, file: 'package.json' } },
+    switches: {
+      rebase: { value: 'always', set: false },
+      version: { value: 'minor', set: false, file: 'package.json' },
+      decisions_log: { value: null, set: false },
+    },
     stored: {},
-    defaults: { rebase: 'always', version: 'minor' },
+    defaults: { rebase: 'always', version: 'minor', decisions_log: null },
     problems: [],
   });
+});
+
+test('POST keeps the decisions_log switch beside the others, and null turns it off', async () => {
+  const r = await post({ slug: 'swr', switches: { rebase: 'ask', version: 'off', decisions_log: 'docs/DECISIONS.md' } });
+  assert.equal(r.code, 200);
+  assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), { rebase: 'ask', version: 'off', decisions_log: 'docs/DECISIONS.md' });
+  assert.deepEqual(r.body.switches.decisions_log, { value: 'docs/DECISIONS.md', set: true });
+  assert.equal((await post({ slug: 'swr', switches: { decisions_log: '../x.md' } })).code, 400);
+  const off = await post({ slug: 'swr', switches: { rebase: 'ask', version: 'off', decisions_log: null } });
+  assert.deepEqual(off.body.switches.decisions_log, { value: null, set: false });
+  assert.deepEqual(JSON.parse(readFileSync(FILE, 'utf8')), { rebase: 'ask', version: 'off' });
 });
 
 test('POST saves into the task store; GET reads it back as set', async () => {

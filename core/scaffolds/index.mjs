@@ -9,7 +9,7 @@
 // A scaffold has no status/actions/prereqs and renders no card — do not force
 // one through the add-on manifest.
 //
-// Built-in kinds (single | fullstack | static | library) ship in core
+// Built-in kinds (single | fullstack | static | library | research | apple | firmware) ship in core
 // (./builtins.mjs); the registry only allows ADDITIONS: a community kind is a
 // drop-in module at ~/.cogyard/scaffolds/<kind>/scaffold.mjs (same discovery
 // idiom as add-ons / drivers) exporting a `scaffold` descriptor:
@@ -20,16 +20,46 @@
 //     worktreePorts: true,             // default opt-in to worktree port wiring
 //     devScript: 'npm run dev',        // the dev command .cogyard/worktree.json names;
 //                                      //   omitted = 'npm run dev', null = no dev server
+//     launchName: 'dev',               // that command's `launch_name`; omitted = 'dev'
+//     previewPortVar: 'FRONTEND_PORT', // the port variable its preview tab opens on —
+//                                      //   'PORT' (backend) or 'FRONTEND_PORT' (frontend);
+//                                      //   omitted = 'FRONTEND_PORT'
+//     extraDevScripts: [               // optional: further commands that bind a port,
+//       { devScript: 'npm run site',   //   each with its own launch entry — written as
+//         launchName: 'site',          //   `extra_dev_scripts` (task 164). launchName is
+//         previewPortVar: 'PORT' },    //   required and unique; previewPortVar as above.
+//     ],                               //   Needs a devScript: that one comes first.
 //     versionStamp: true,              // true = seed scripts/generate-version.mjs (→ version.json);
 //                                      //   false = no stamper; or a function
-//                                      //   (slug) => ({ relPath: content }) — the kind's
-//                                      //   own stamping files, seeded INSTEAD of the npm one
+//                                      //   (slug, { version }) => ({ relPath: content }) — the
+//                                      //   kind's own stamping files, seeded INSTEAD of the npm
+//                                      //   one; `version` is the package.json version on disk
+//                                      //   (undefined when it has none)
 //     markers: ['*.xcodeproj'],        // optional: file/folder names (or `*.ext`) that mark
 //                                      //   a project as this kind's — onboard names the
 //                                      //   kind when it finds one (see platformWarnings)
-//     pkgJson(slug) { return { name: slug, version: '0.1.0', ... }; },  // object, not string
+//     gitignore: ['Build.xcconfig'],   // optional: .gitignore lines the kind's files need,
+//                                      //   appended with the essentials (a generated file)
+//     requiredScripts: ['build'],      // optional: package.json scripts the kind's files rely
+//                                      //   on. An existing package.json is never edited, so
+//                                      //   onboard warns for each one it lacks (or has
+//                                      //   differently), giving the line from pkgJson(slug)
+//     pkgJson(slug) { return { name: slug, version: '0.1.0', ... }; },  // object, not string;
+//                                      //   or `pkgJson: null` = this kind writes NO package.json
 //     skeletonFiles(slug) { return { 'README.md': '...', ... }; },      // {relPath: content}
+//     describeProject(root) {          // optional, at init AND onboard (task 164): what the
+//       return { files: {}, warnings: [] };  // kind records about the project it finds —
+//     },                               //   files written create-if-absent, and warnings
+//                                      //   for what it could not tell. Reads files only;
+//                                      //   it never runs the project's tools.
 //   };
+//
+// `pkgJson: null` (task 274) is the one way to say "no package.json": the field
+// is present and null, so the choice is visible as data and checked here without
+// running anything. Leaving `pkgJson` out is still a broken descriptor — an
+// omission is far likelier a mistake than a decision. A kind with no
+// package.json gets no version (the `version` switch defaults to off when the
+// repo root has none, core/switches.mjs) and nothing for a merge to build.
 //
 // `worktreePorts` and `devScript` are independent on purpose: an iOS app with a
 // Node server wants ports AND a dev command; an Xcode-only app may want ports
@@ -48,6 +78,29 @@ import { BUILTIN_SCAFFOLDS } from './builtins.mjs';
 const SCAFFOLDS_DIR = join(COGYARD_HOME, 'scaffolds');
 const ENTRY = 'scaffold.mjs';
 
+// The two port variables every worktree config declares (core/scaffold.mjs
+// worktreeConfig): a preview can open on either side of the worktree's pair.
+const PREVIEW_PORT_VARS = ['PORT', 'FRONTEND_PORT'];
+// A launch name becomes part of a launch entry's name (`wt-<worktree>-<name>`).
+const LAUNCH_NAME = /^[A-Za-z0-9._-]+$/;
+const isLaunchName = (v) => typeof v === 'string' && LAUNCH_NAME.test(v);
+const isPreviewPortVar = (v) => PREVIEW_PORT_VARS.includes(v);
+
+// `extraDevScripts`: a list of commands, each with a launch name no other
+// command of the kind uses, after a devScript that comes first.
+function validExtraDevScripts(s) {
+  const list = s.extraDevScripts;
+  if (!Array.isArray(list) || s.devScript === null) return false;
+  const seen = new Set([s.launchName ?? 'dev']);
+  for (const x of list) {
+    if (!x || typeof x.devScript !== 'string' || !x.devScript.trim()) return false;
+    if (!isLaunchName(x.launchName) || seen.has(x.launchName)) return false;
+    if (x.previewPortVar !== undefined && !isPreviewPortVar(x.previewPortVar)) return false;
+    seen.add(x.launchName);
+  }
+  return true;
+}
+
 function listExternalKinds() {
   try {
     return readdirSync(SCAFFOLDS_DIR, { withFileTypes: true })
@@ -55,6 +108,11 @@ function listExternalKinds() {
       .map((d) => d.name)
       .sort();
   } catch { return []; }
+}
+
+// A list of non-empty strings — the shape of `markers`, `gitignore`, `requiredScripts`.
+function names(v) {
+  return Array.isArray(v) && v.every((x) => typeof x === 'string' && x);
 }
 
 async function resolveScaffolds() {
@@ -65,10 +123,16 @@ async function resolveScaffolds() {
       const mod = await import(join(SCAFFOLDS_DIR, kind, ENTRY));
       const s = mod.scaffold ?? mod.default;
       if (!s || typeof s !== 'object' || s.kind !== kind) continue;
-      if (typeof s.pkgJson !== 'function' || typeof s.skeletonFiles !== 'function') continue;
+      if ((s.pkgJson !== null && typeof s.pkgJson !== 'function') || typeof s.skeletonFiles !== 'function') continue;
       if (s.devScript !== undefined && s.devScript !== null && typeof s.devScript !== 'string') continue;
+      if (s.launchName !== undefined && !isLaunchName(s.launchName)) continue;
+      if (s.previewPortVar !== undefined && !isPreviewPortVar(s.previewPortVar)) continue;
+      if (s.extraDevScripts !== undefined && !validExtraDevScripts(s)) continue;
+      if (s.describeProject !== undefined && typeof s.describeProject !== 'function') continue;
       if (s.versionStamp !== undefined && !['boolean', 'function'].includes(typeof s.versionStamp)) continue;
-      if (s.markers !== undefined && !(Array.isArray(s.markers) && s.markers.every((m) => typeof m === 'string' && m))) continue;
+      if (s.markers !== undefined && !names(s.markers)) continue;
+      if (s.gitignore !== undefined && !names(s.gitignore)) continue;
+      if (s.requiredScripts !== undefined && !names(s.requiredScripts)) continue;
       byKind.set(kind, { ...s, builtin: false });
     } catch { /* broken drop-in → skip, keep the engine alive */ }
   }

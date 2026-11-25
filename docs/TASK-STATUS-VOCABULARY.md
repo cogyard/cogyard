@@ -159,6 +159,48 @@ It combines with the other markers in any order. A near-miss such as
 read as an ordinary open box. No check may need the owner to close or restart
 their own chat.
 
+## Decisions and the decisions log — `(not for the log: …)`
+
+A project that keeps a decisions log (a dated list of the decisions that
+settle how it works, newest first) names it in its `decisions_log` switch
+(`docs/CONFIGURATION.md`, "Project switches"). Then a task that **records a
+decision** cannot merge until the log has an entry for it.
+
+A task records a decision when it has either:
+
+- a **ticked** `(you: decision)` box — the owner's choice, settled; or
+- a **heading that starts with "Decision"** — `## Decision (owner, 2026-11-06)`,
+  `### Decisions made at pickup`.
+
+So a decision that settles how the project works is written under such a
+heading (or is the ticked owner box), not in a bold lead-in or a table cell,
+where nothing would see it.
+
+The log cites the task when one of its entry **headings** names it the way the
+log's headings do: `## <date> — <the decision, in a few words> (task <id>)`,
+or `(tasks <id>, <id>)` for one entry covering several. A mention in an
+entry's text doesn't count.
+
+**The way out.** A decision that isn't one for the log — a colour or a layout
+picked under a Decision heading — says so on a line of its own, with the
+reason:
+
+```markdown
+(not for the log: a badge colour, not how the project works)
+```
+
+A list bullet or a `>` before it is fine; in the middle of a sentence it is
+prose and doesn't count. Written with no reason (`(not for the log)`) or as a
+near-miss (`(not in the log: …)`), it is a badly written marker (below), and it
+doesn't count as the way out.
+
+| | |
+|---|---|
+| checked by | `cogyard tasks validate <id>` only — the check `merge-to-main` runs before merging. Not `validate --all`, `doctor`, the portal or the edit-time checks, so ticking a decision box is never refused for want of the entry, and a closed task never turns red |
+| which tasks | OPEN ones; a closed or parked task is never checked |
+| which log | the file the switch names, read from the checkout `validate` runs in — so the entry, added on the task's own branch, counts before the merge |
+| switch off | never fires |
+
 ## Badly written markers — an error, caught when written and before a merge
 
 A checkbox marker that is misspelt (`(dropepd: …)`), retired (`(deferred)`),
@@ -166,8 +208,10 @@ incomplete (`(dropped)` with no reason, `(moved)` with no task, `(you)` with no
 kind), points at a task that doesn't exist (`(moved: 999)`), carries a note
 inside it (`(you: decision, added at pickup)`), or is a near-miss of
 `(after merge)` silently means something else to `tasks close` and the
-progress fraction. Each is a validator **error**, and every message says what
-to write instead:
+progress fraction. So does a `(not for the log)` line with no reason, or a
+near-miss of it (`(not in the log: …)`): it would silently not count as the
+way out of the decisions-log check (its message starts `decisions log:`).
+Each is a validator **error**, and every message says what to write instead:
 
 - **When written:** the Edit/Write hook refuses a write that adds a new one. A
   file's existing ones stay editable, so it can always be fixed.
@@ -175,7 +219,8 @@ to write instead:
   tasks doctor`'s schema section names the file and the problem; the portal's
   Tasks tab flags the file.
 - **Before a merge:** `merge-to-main` checks the task's file before merging and
-  stops on one; `cogyard tasks close` refuses while the task's file has one.
+  stops on one; `cogyard tasks close` refuses while the task's file has a
+  checkbox one.
 
 Fixing a typo is mechanical. Choosing what a box becomes — `(optional)`,
 `(moved: <id>)` or `(dropped: why)` — is the owner's decision.

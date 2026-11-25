@@ -7,8 +7,9 @@ import { ApiService } from '../../services/api.service';
 import { RebaseSwitch, SwitchesResponse, VersionSwitch } from '../../services/models';
 
 // This project's switches (task 246) — a card on the project's own settings
-// tab, under Publishing. Two of them: whether merging and resuming a task
-// rebase onto main without asking, and what merging does to the version.
+// tab, under Publishing. Three of them: whether merging and resuming a task
+// rebase onto main without asking, what merging does to the version, and
+// (task 276) whether merging checks the project's decisions log, and where it is.
 //
 // The values live in the project's task store (switches.json), so every
 // worktree sees a change at once. GET/POST /api/switches; the defaults come
@@ -44,6 +45,10 @@ export class SwitchesComponent {
   versionKind = signal<VersionKind | null>(null);
   command = signal('');
   file = signal('');
+  // The decisions log: on = the check is set for this project (it is off by
+  // default — there is no "set to off"), logPath = the file it names.
+  logOn = signal(false);
+  logPath = signal('');
 
   readonly rebaseOptions = [
     { label: 'Always', value: 'always' },
@@ -54,6 +59,10 @@ export class SwitchesComponent {
     { label: 'Minor', value: 'minor' },
     { label: 'Patch', value: 'patch' },
     { label: 'Own command', value: 'command' },
+  ];
+  readonly logOptions = [
+    { label: 'Off', value: 'off' },
+    { label: 'Check merges', value: 'on' },
   ];
 
   constructor() {
@@ -87,6 +96,9 @@ export class SwitchesComponent {
       this.versionKind.set(v);
       this.command.set(''); this.file.set('');
     }
+    const log = r.stored.decisions_log;
+    this.logOn.set(log != null);
+    this.logPath.set(log ?? '');
   }
 
   // What the selectors show: the draft, else the default.
@@ -106,17 +118,22 @@ export class SwitchesComponent {
   readonly commandIncomplete = computed(() =>
     this.versionShown() === 'command' && (!this.command().trim() || !this.file().trim()));
 
+  /** The decisions-log draft as the API takes it: null = off (unset). */
+  private draftLog(): string | null { return this.logOn() ? this.logPath().trim() : null; }
+  readonly logShown = computed<'off' | 'on'>(() => (this.logOn() ? 'on' : 'off'));
+  readonly logIncomplete = computed(() => this.logOn() && !this.logPath().trim());
+
   readonly dirty = computed(() => {
     const d = this.data();
     if (!d) return false;
-    return JSON.stringify({ r: this.rebase(), v: this.draftVersion() })
-      !== JSON.stringify({ r: d.stored.rebase ?? null, v: d.stored.version ?? null });
+    return JSON.stringify({ r: this.rebase(), v: this.draftVersion(), l: this.draftLog() })
+      !== JSON.stringify({ r: d.stored.rebase ?? null, v: d.stored.version ?? null, l: d.stored.decisions_log ?? null });
   });
 
   // Ignored entries in the file also make it saveable: saving rewrites the file
   // with only what the card shows, which is how they get cleaned out.
   readonly canSave = computed(() =>
-    (this.dirty() || !!this.data()?.problems.length) && !this.saving() && !this.commandIncomplete());
+    (this.dirty() || !!this.data()?.problems.length) && !this.saving() && !this.commandIncomplete() && !this.logIncomplete());
 
   readonly commitCmd = 'cogyard tasks sync push "switches" -- switches.json';
 
@@ -124,6 +141,7 @@ export class SwitchesComponent {
   setVersion(k: VersionKind) { this.versionKind.set(k); }
   resetRebase() { this.rebase.set(null); }
   resetVersion() { this.versionKind.set(null); this.command.set(''); this.file.set(''); }
+  setLog(v: 'off' | 'on') { this.logOn.set(v === 'on'); }
 
   describe(v: VersionSwitch | undefined | null): string {
     if (v == null) return '';
@@ -133,7 +151,7 @@ export class SwitchesComponent {
 
   save() {
     this.saving.set(true);
-    this.api.saveSwitches({ slug: this.slug(), switches: { rebase: this.rebase(), version: this.draftVersion() } }).subscribe({
+    this.api.saveSwitches({ slug: this.slug(), switches: { rebase: this.rebase(), version: this.draftVersion(), decisions_log: this.draftLog() } }).subscribe({
       next: (r) => {
         this.saving.set(false);
         this.seed(r);

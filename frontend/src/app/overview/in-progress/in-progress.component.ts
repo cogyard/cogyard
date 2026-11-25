@@ -5,11 +5,13 @@ import { TooltipModule } from 'primeng/tooltip';
 import { Popover } from 'primeng/popover';
 import { StoreService } from '../../services/store.service';
 import { ConfigService } from '../../services/config.service';
-import { InProgressProject, InProgressResponse, InProgressTask, RecentlyDoneTask } from '../../services/models';
+import { InProgressProject, InProgressResponse, InProgressTask, PlanResponse, RecentlyDoneTask } from '../../services/models';
 import { TaskChipComponent } from '../../shared/task-chip/task-chip.component';
 import { FlagComponent } from '../../shared/flag/flag.component';
 import { AgentStateComponent } from '../../shared/agent-state/agent-state.component';
 import { TaskSquaresComponent } from '../../shared/task-squares/task-squares.component';
+import { ProjectLogoComponent } from '../../shared/project-logo/project-logo.component';
+import { QuickLookComponent } from '../../plan/quick-look/quick-look.component';
 import { WhenGroup, groupByWhen } from '../../plan/recently-done/when';
 
 // The top of the All tab (task 265): one box per project, so the owner sees what
@@ -66,7 +68,7 @@ const range = (days: number[]) => {
 
 @Component({
   selector: 'app-overview-in-progress',
-  imports: [NgTemplateOutlet, Skeleton, TooltipModule, Popover, TaskChipComponent, FlagComponent, AgentStateComponent, TaskSquaresComponent],
+  imports: [NgTemplateOutlet, Skeleton, TooltipModule, Popover, TaskChipComponent, FlagComponent, AgentStateComponent, TaskSquaresComponent, ProjectLogoComponent, QuickLookComponent],
   templateUrl: './in-progress.component.html',
   styleUrl: './in-progress.component.scss',
 })
@@ -78,6 +80,22 @@ export class InProgressComponent {
 
   private data = this.store.use<InProgressResponse>(() => 'in-progress');
   loading = computed(() => this.data() === null);
+
+  // The Plan tab's quick look (task 271): a click on a task in progress opens it
+  // in place, as a click on a card does on the project's Plan tab. Its task is
+  // the one in that project's Plan entry (`plan|<slug>`, the entry the Plan tab
+  // reads), read only while the quick look is open — so it shows exactly what
+  // the Plan tab's does, "What this is" included, which /api/in-progress
+  // doesn't send. The chip in the row, and the quick look's own, still open the
+  // project's Tasks tab. Closed tasks don't open it, as on the Plan tab.
+  look = signal<{ slug: string; id: string } | null>(null);
+  private lookPlan = this.store.use<PlanResponse>(() => { const l = this.look(); return l ? `plan|${l.slug}` : null; });
+  lookTask = computed(() => { const l = this.look(); return l ? this.lookPlan()?.tasks[l.id] ?? null : null; });
+  lookFromQuickLook(id: string) {
+    const l = this.look();
+    this.look.set(null);
+    if (l) this.openTask.emit({ slug: l.slug, id });
+  }
   private weekStart = computed(() => this.cfg.config()?.ui?.weekStart ?? 'sunday');
   readonly stripTip = 'Recently done — the last 10 closed, newest first';
 
@@ -96,19 +114,20 @@ export class InProgressComponent {
       .map(({ b }) => b);
   });
 
-  /** Projects whose tasks are all old claims — folded under the grid. */
+  /** Projects whose tasks are all old claims — their own section under the grid, folded (task 271). */
   oldClaims = computed(() => this.all().filter((b) => !b.live && !b.recent && b.tasks.length));
   oldSummary = computed(() => {
     const old = this.oldClaims();
     const tasks = old.reduce((n, b) => n + b.tasks.length, 0);
     const days = old.flatMap((b) => b.claimedDays);
-    return `${plural(old.length, 'project')} with only old claims · ${plural(tasks, 'task')}`
+    return `${plural(old.length, 'project')} · ${plural(tasks, 'task')}`
       + (days.length ? ` · claimed ${range(days)} ago` : '');
   });
+  readonly oldTip = 'Projects whose tasks in progress all have no reporting chat, and that closed nothing this week or last';
   showOld = signal(false);
 
-  /** Projects with nothing in progress and nothing closed this week or last. */
-  without = computed(() => this.all().filter((b) => !b.live && !b.recent && !b.tasks.length).map((b) => b.label));
+  /** Projects with nothing in progress and nothing closed this week or last — their own section (task 271). */
+  quiet = computed(() => this.all().filter((b) => !b.live && !b.recent && !b.tasks.length));
   /** Projects the server could not read — named, never silently left out. */
   unreadable = computed(() => (this.data()?.projects ?? []).filter((p) => p.error));
 

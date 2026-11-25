@@ -3,7 +3,9 @@
 // hook counts the commits on the LOCAL base branch (main, else master) that the
 // worktree lacks and prints that count first, in both the reserved-only and the
 // full-wiring briefing. Up to date prints one line; a git failure prints nothing
-// and the briefing still comes out.
+// and the briefing still comes out. Behind, a branch with no commits of its own
+// gets the one rebase line; one with commits of its own gets task 142's two
+// lines (task 272).
 //
 // Integration-style: throwaway git repos with a real linked worktree under
 // .claude/worktrees/, the hook run as a child the way the skill runs it.
@@ -81,11 +83,27 @@ test('an up-to-date worktree opens with one "up to date" line, then the briefing
   assert.doesNotMatch(out, /BEHIND/);
 });
 
-test('a worktree behind main opens with the count and the owner\'s wording, before the full briefing', () => {
+test('a worktree behind main with no commits of its own opens with the count and the one rebase line, before the full briefing', () => {
   const { repo, wt } = project('stale');
   advance(repo, 3);
   const out = hook(wt);
   assert.ok(out.startsWith(`=== WORKTREE IS 3 COMMITS BEHIND MAIN ===
+Never merge main into this worktree.
+- This branch has no commits of its own: rebase it onto main
+  (\`git rebase main\`) as the project's rebase switch says
+  (\`cogyard tasks switches\`).
+
+=== Worktree dev environment ===
+`), out.slice(0, 600));
+  assert.doesNotMatch(out, /Anything else/);
+});
+
+test('a worktree behind main with a commit of its own keeps task 142\'s two lines, before the full briefing', () => {
+  const { repo, wt } = project('own');
+  git(wt, ['commit', '-q', '--allow-empty', '-m', 'own']);
+  advance(repo, 2);
+  const out = hook(wt);
+  assert.ok(out.startsWith(`=== WORKTREE IS 2 COMMITS BEHIND MAIN ===
 Never merge main into this worktree.
 - Resuming a task that already owns this worktree: pickup-task rebases
   it onto main as the project's rebase switch says.
@@ -95,6 +113,7 @@ Never merge main into this worktree.
 
 === Worktree dev environment ===
 `), out.slice(0, 600));
+  assert.doesNotMatch(out, /no commits of its own/);
 });
 
 test('the reserved-only briefing carries the note too, with master as the base', () => {

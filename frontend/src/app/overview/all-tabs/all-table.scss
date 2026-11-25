@@ -34,3 +34,8 @@ td.num.strong { font-weight: 600; }
 }
 
 .dim { color: var(--app-fg-muted); }
+
+// The project's icon before its name in the Project cell (task 271): the
+// sidebar's component, drawn whether or not there is an icon so every name in
+// the column starts at the same x.
+.ov-row app-project-logo { --logo-size: 16px; margin-right: 6px; }

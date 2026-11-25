@@ -2,6 +2,7 @@ import { Component, output, inject, computed } from '@angular/core';
 import { Skeleton } from 'primeng/skeleton';
 import { OverviewResponse } from '../../../services/models';
 import { StoreService } from '../../../services/store.service';
+import { ProjectLogoComponent } from '../../../shared/project-logo/project-logo.component';
 
 // The All page's Daily tab (task 266): the opening paragraph of each project's
 // newest nightly brief (task 120) — what was the "Daily Overview" panel. It was
@@ -10,7 +11,7 @@ import { StoreService } from '../../../services/store.service';
 // it is open. Reads the overview entry (its `brief` field) only.
 @Component({
   selector: 'app-all-daily',
-  imports: [Skeleton],
+  imports: [Skeleton, ProjectLogoComponent],
   templateUrl: './all-daily.component.html',
   styleUrls: ['../all-tab.scss', './all-daily.component.scss'],
 })

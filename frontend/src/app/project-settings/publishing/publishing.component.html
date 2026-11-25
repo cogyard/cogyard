@@ -293,6 +293,12 @@
                 @if (isReadyOf(rel)) { <code class="ro-value plain">{{ s.tip?.short }}</code> } @else { the new commit }
                 (up to {{ s.defaults.verifyTimeoutMinutes }} min).
               </li>
+            } @else if (rel.declaration.liveCheck) {
+              <!-- Task 267: the declared live check, shown — the portal never runs it. -->
+              <li>
+                Checks the new version is live, every {{ s.defaults.verifyPollSeconds }} s until it passes
+                (up to {{ s.defaults.verifyTimeoutMinutes }} min), by running <code class="ro-value plain">{{ rel.declaration.liveCheck }}</code>
+              </li>
             } @else {
               <li>Asks you to confirm the new version is live (no health URL to check).</li>
             }

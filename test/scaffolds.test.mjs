@@ -40,6 +40,16 @@ export const scaffold = {
   skeletonFiles() { return {}; },
 };
 `);
+// Tries to shadow the firmware built-in, turning its port wiring off — ignored.
+install('firmware', `
+export const scaffold = {
+  kind: 'firmware',
+  description: 'EVIL FIRMWARE',
+  worktreePorts: false,
+  pkgJson() { return {}; },
+  skeletonFiles() { return {}; },
+};
+`);
 // Broken drop-in — must be skipped, not crash the import.
 install('broken', 'export const scaffold = { kind: "mismatch" };');
 
@@ -48,17 +58,39 @@ const { KINDS, scaffoldFor, scaffoldKinds } = await import('../core/scaffolds/in
 after(() => rmSync(HOME, { recursive: true, force: true }));
 
 test('built-ins ship in core, external drop-in is added, broken is skipped', () => {
-  assert.deepEqual(KINDS, ['single', 'fullstack', 'static', 'library', 'site-eleventy']);
+  assert.deepEqual(KINDS, ['single', 'fullstack', 'static', 'library', 'research', 'apple', 'firmware', 'site-eleventy']);
 });
 
 test('a drop-in cannot shadow a built-in kind', () => {
   assert.notEqual(scaffoldFor('single').description, 'EVIL OVERRIDE');
   assert.equal(scaffoldFor('single').builtin, true);
+  assert.notEqual(scaffoldFor('firmware').description, 'EVIL FIRMWARE');
+  assert.equal(scaffoldFor('firmware').builtin, true);
+  assert.equal(scaffoldFor('firmware').worktreePorts, true, 'the drop-in did not turn port wiring off');
+});
+
+test('firmware: a well-formed descriptor whose dev entry is the host-side preview, ports kept', () => {
+  const fw = scaffoldFor('firmware');
+  assert.equal(fw.worktreePorts, true, 'the host-side preview needs a worktree port');
+  assert.equal(fw.devScript, 'npm run preview');
+  assert.equal(fw.launchName, 'preview');
+  assert.equal(fw.previewPortVar, 'PORT');
+  assert.deepEqual(fw.markers, ['platformio.ini']);
+  assert.equal(typeof fw.versionStamp, 'function');
+  const stamp = fw.versionStamp('demo');
+  assert.deepEqual(Object.keys(stamp), ['scripts/firmware_version.py']);
+  assert.match(stamp['scripts/firmware_version.py'], /version\.h/);
+  const pkg = fw.pkgJson('demo');
+  assert.equal(pkg.version, '0.1.0');
+  assert.equal(pkg.scripts['generate-version'], undefined, 'no npm stamper script');
+  assert.equal(pkg.scripts.build, 'pio run');
+  assert.deepEqual(Object.keys(fw.skeletonFiles('demo')), ['README.md']);
+  assert.equal(typeof fw.describeProject, 'function');
 });
 
 test('scaffoldKinds: wire-safe rows with descriptions', () => {
   const rows = scaffoldKinds();
-  assert.equal(rows.length, 5);
+  assert.equal(rows.length, 8);
   for (const r of rows) {
     assert.equal(typeof r.kind, 'string');
     assert.ok(r.description.length > 0, `${r.kind} needs a description`);
@@ -100,4 +132,15 @@ test('descriptor parity with the former hardcoded branches', () => {
   const single = scaffoldFor('single');
   assert.equal(single.pkgJson('demo').private, true);
   assert.match(single.pkgJson('demo').scripts['generate-version'], /generate-version/);
+});
+
+test('research (task 274): built in, no package.json, no ports, no dev server, no stamp, no markers', () => {
+  const r = scaffoldFor('research');
+  assert.equal(r.builtin, true);
+  assert.equal(r.pkgJson, null);
+  assert.equal(r.worktreePorts, false);
+  assert.equal(r.devScript, null);
+  assert.equal(r.versionStamp, false);
+  assert.equal(r.markers, undefined);
+  assert.ok(scaffoldKinds().find((row) => row.kind === 'research').description.length > 0);
 });

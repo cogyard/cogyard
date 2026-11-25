@@ -5,8 +5,9 @@
 // writeWorkFile (the in-portal editing) is the one mutation, hash-guarded
 // and reached only through the routes/files.mjs POST behind the http.mjs seam.
 
-import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync, statSync, realpathSync } from 'node:fs';
-import { join, basename, extname, sep, posix } from 'node:path';
+import { readFileSync, writeFileSync, renameSync, unlinkSync, existsSync, statSync, lstatSync, readlinkSync, readdirSync, realpathSync } from 'node:fs';
+import { join, basename, dirname, extname, isAbsolute, resolve, sep, posix } from 'node:path';
+import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as core from '../core/index.mjs';
@@ -75,6 +76,66 @@ export function worktreeActivity(proj) {
   return listWorktrees(proj).map((w) => ({ ...w, lastActivity: lastActivity(w.path) }));
 }
 
+// --- Links (task 269) -------------------------------------------------------------
+// git lists a link (a symlink) as one path and says nothing more, so the Files
+// tab drew every link as a plain file — and the task link `.cogyard/tasks`,
+// which leads outside the repo, said "Not on disk" when clicked. A link entry
+// now carries `link`, the same shape in the tree list and in /api/file:
+//   target  — the link's own text (readlink), never resolved
+//   display — target to print: an absolute one under the home folder as `~/…`
+//             (as the Graph tab's folder link prints paths), else target
+//   kind    — 'dir' | 'file' | 'broken' (nothing at the target)
+//   inside  — whether the target resolves inside the worktree
+// Describing a link never reads inside its target.
+
+const within = (p, root) => p === root || p.startsWith(root + sep);
+const tildeOf = (p) => {
+  const home = homedir();
+  return isAbsolute(p) && p.startsWith(home + sep) ? '~' + p.slice(home.length) : p;
+};
+
+// What the link at `rel` is, or null when `rel` is not a link.
+export function linkInfo(wtPath, rel, root = realpathSync(wtPath)) {
+  const abs = join(wtPath, rel);
+  try { if (!lstatSync(abs).isSymbolicLink()) return null; } catch { return null; }
+  let target = '';
+  try { target = readlinkSync(abs); } catch { /* unreadable: kept as '' */ }
+  let real = null;
+  try { real = realpathSync(abs); } catch { /* broken */ }
+  let kind = 'broken';
+  if (real) { try { kind = statSync(real).isDirectory() ? 'dir' : 'file'; } catch { /* raced away */ } }
+  // A broken link has no real path: judge where it would lead from its text,
+  // against its own folder's real path (the worktree's path may itself hold links).
+  let where = real;
+  if (!where) { try { where = resolve(realpathSync(dirname(abs)), target); } catch { where = ''; } }
+  return { target, display: tildeOf(target), kind, inside: !!where && within(where, root) };
+}
+
+// Which of the listed paths are links: one readdir per folder (its entries say
+// whether each is a link) rather than one lstat per path — the gitignored
+// listing runs to tens of thousands of paths.
+function linksAmong(wtPath, paths) {
+  const byDir = new Map();
+  for (const p of paths) {
+    const i = p.lastIndexOf('/');
+    const d = i < 0 ? '' : p.slice(0, i);
+    let names = byDir.get(d);
+    if (!names) byDir.set(d, (names = new Set()));
+    names.add(p.slice(i + 1));
+  }
+  const links = new Set();
+  for (const [d, names] of byDir) {
+    let ents;
+    try { ents = readdirSync(join(wtPath, d), { withFileTypes: true }); } catch { continue; }
+    for (const e of ents) if (e.isSymbolicLink() && names.has(e.name)) links.add(d ? `${d}/${e.name}` : e.name);
+  }
+  return links;
+}
+
+// The project's task link, as git spells paths. It is gitignored, so the plain
+// listing leaves it out; fileTree adds it (owner's pick, task 269).
+const TASK_LINK = core.TASKS_DIR.split(sep).join('/');
+
 // --- File tree -------------------------------------------------------------------
 
 // Flat file list of the working tree: tracked + untracked, and — only when
@@ -102,6 +163,15 @@ export function worktreeActivity(proj) {
 //
 // `commits` = the branch's newest RECENT_COMMITS commits, for the Files tab's
 // commit picker; `vsCommit` = the full sha compared against.
+//
+// A link entry carries `link` (see "Links" above), and the task link
+// `.cogyard/tasks` is listed even without `ignored` (task 269).
+//
+// `filesHash` = a short hash of `files` exactly as sent (task 270). The Files
+// tab re-downloads the tree on every live-update check (it has no change code,
+// docs/LIVE-UPDATES.md) and redraws it only when this moves. It covers the file
+// list alone: the commit list's ages (`relDate`) change with the clock and must
+// not redraw an unchanged tree.
 const RECENT_COMMITS = 10;
 export async function fileTree(wtPath, { ignored = false, commit = null } = {}) {
   const ref = await mainRef(wtPath);
@@ -141,6 +211,20 @@ export async function fileTree(wtPath, { ignored = false, commit = null } = {}) 
       onDisk: !deleted, tracked: isTracked,
     });
   }
+  // The task link shows even without the gitignored listing (task 269) — only
+  // when it is a link: a stray folder there is a store problem, not a link.
+  if (!seen.has(TASK_LINK)) {
+    let isLink = false;
+    try { isLink = lstatSync(join(wtPath, TASK_LINK)).isSymbolicLink(); } catch { /* none */ }
+    if (isLink) { seen.add(TASK_LINK); files.push({ path: TASK_LINK, status: null, commitStatus: null, onDisk: true, tracked: false }); }
+  }
+  // Links among what is on disk carry `link` (task 269).
+  const root = realpathSync(wtPath);
+  const links = linksAmong(wtPath, files.filter((f) => f.onDisk).map((f) => f.path));
+  for (const f of files) {
+    const l = links.has(f.path) ? linkInfo(wtPath, f.path, root) : null;
+    if (l) f.link = l;
+  }
   // Deleted and no longer listed (a committed or staged delete): vs main, and
   // vs the last commit when the delete is not committed yet.
   for (const [p, e] of vsMain) {
@@ -161,7 +245,8 @@ export async function fileTree(wtPath, { ignored = false, commit = null } = {}) 
   const commits = parseLog(await core.gitP(['log', '-n', String(RECENT_COMMITS), LOG_FORMAT, 'HEAD'], wtPath));
   // main's own tip, so the picker's main row reads like the commit rows.
   const mainCommit = ref ? parseLog(await core.gitP(['log', '-n', '1', LOG_FORMAT, ref], wtPath))[0] ?? null : null;
-  return { branch, vsRef: ref, vsCommit: vsCommitSha, mainCommit, commits, files };
+  const filesHash = sha256(JSON.stringify(files)).slice(0, 16);
+  return { branch, vsRef: ref, vsCommit: vsCommitSha, mainCommit, commits, files, filesHash };
 }
 
 // --- File content ------------------------------------------------------------------
@@ -177,23 +262,31 @@ const isBinary = (buf) => buf.subarray(0, 8000).includes(0);
 
 // Read a file from the worktree's disk. Returns one of:
 //   { forbidden } | { missing } | { image: Buffer, mime } |
-//   { meta: { binary, size } } | { meta: { content, truncated, size, hash } }
+//   { meta: { size, link } } | { meta: { binary, size } } |
+//   { meta: { content, truncated, size, hash, link? } }
 // `hash` is the sha256 of the SERVED bytes (the truncated slice when truncated),
 // the save flow's optimistic-concurrency token: a truncated read's hash can
 // never match the file on disk, so a truncated buffer can't round-trip a save.
+// A link that can't be shown as a file — to a folder, broken, or leading out
+// of the worktree — is DESCRIBED ({ size: 0, link }), never read (task 269);
+// it used to come back forbidden/missing, which the page showed as "Not on
+// disk". A link to a file inside the worktree reads as before, plus `link`.
 export function readWorkFile(wtPath, rel) {
   const abs = join(wtPath, rel);
+  const root = realpathSync(wtPath);
+  const link = linkInfo(wtPath, rel, root);
+  if (link && (link.kind !== 'file' || !link.inside)) return { meta: { size: 0, link } };
   if (!existsSync(abs)) return { missing: true };
   // realpath containment — a symlink inside the repo must not escape it.
-  const root = realpathSync(wtPath), real = realpathSync(abs);
-  if (real !== root && !real.startsWith(root + sep)) return { forbidden: true };
+  const real = realpathSync(abs);
+  if (!within(real, root)) return { forbidden: true };
   if (statSync(abs).isDirectory()) return { missing: true };
   const buf = readFileSync(abs);
   const mime = IMAGE_MIME[extname(rel).toLowerCase()];
   if (mime) return { image: buf, mime };
-  if (isBinary(buf)) return { meta: { binary: true, size: buf.length } };
+  if (isBinary(buf)) return { meta: { binary: true, size: buf.length, ...(link && { link }) } };
   const served = buf.subarray(0, MAX_TEXT);
-  return { meta: { content: served.toString('utf8'), truncated: buf.length > MAX_TEXT, size: buf.length, hash: sha256(served) } };
+  return { meta: { content: served.toString('utf8'), truncated: buf.length > MAX_TEXT, size: buf.length, hash: sha256(served), ...(link && { link }) } };
 }
 
 // --- Raw files (task 262) ------------------------------------------------------------

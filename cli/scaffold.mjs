@@ -71,7 +71,7 @@ Flags:
   --kind <k>          one of: ${KINDS.join(', ')}  (required)
   --remote <url>      git remote for the shared task store (passed to convert).
   --no-wiring         skip writing .cogyard/worktree.json (default off;
-                      auto-skipped for kind=library).
+                      auto-skipped for kind=library and kind=research).
   --reconcile <s>=<o> what to do with a process doc that sits beside one of
                       cogyard's skills (${PROCESS_AREAS.map((a) => a.skill).join(', ')}):
                         adopt  cogyard's skill runs it; the doc section becomes a pointer

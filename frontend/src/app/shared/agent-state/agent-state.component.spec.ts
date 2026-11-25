@@ -1,4 +1,6 @@
 import { TestBed } from '@angular/core/testing';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting, HttpTestingController } from '@angular/common/http/testing';
 import { AgentStateComponent } from './agent-state.component';
 import { LiveState } from '../../services/models';
 
@@ -14,10 +16,54 @@ function render(inputs: { live?: LiveState | null; claimedBy?: string | null; cl
   return f.nativeElement as HTMLElement;
 }
 const live = (state: LiveState['state'], extra: Partial<LiveState> = {}): LiveState =>
-  ({ driver: 'claude', state, since: Date.now() - 4 * 60_000, at: Date.now(), autopilot: false, ...extra });
+  ({ driver: 'claude', state, since: Date.now() - 4 * 60_000, at: Date.now(), autopilot: false, session: null, canOpen: false, ...extra });
 const text = (el: HTMLElement) => el.textContent!.replace(/\s+/g, ' ').trim();
 
 describe('AgentStateComponent', () => {
+  beforeEach(() => TestBed.configureTestingModule({ providers: [provideHttpClient(), provideHttpClientTesting()] }));
+
+  // The logo, dot, word and time are one button only when the driver can open
+  // the chat (the word too since 2026-11-23, owner); a click on any of them asks
+  // the server, never reaches the card under it, and a refusal shows its reason.
+  it('a chat the driver can open: logo, dot, word and time are one button that asks the server for that chat', () => {
+    expect(render({ live: live('working', { session: 's1' }) }).querySelector('button.open-btn')).toBeNull();
+    const el = render({ live: live('working', { session: 's1', canOpen: true }) });
+    const btn = el.querySelector('button.open-btn') as HTMLButtonElement;
+    expect(btn.querySelector('img.logo')).not.toBeNull();
+    expect(btn.querySelector('.dot')).not.toBeNull();
+    expect(text(btn)).toBe('running4m');
+    expect(text(el)).toBe('running4m'); // the line reads the same as without the button
+    let bubbled = false;
+    el.addEventListener('click', () => { bubbled = true; });
+    (btn.querySelector('b') as HTMLElement).click(); // the word, not the logo
+    const req = TestBed.inject(HttpTestingController).expectOne('/api/drivers/claude/open');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ session: 's1' });
+    expect(bubbled).toBe(false);
+    req.flush({ ok: true });
+  });
+
+  it('the notes after the state are not part of the button', () => {
+    const card = render({ layout: 'card', live: live('background', { session: 's1', canOpen: true }) });
+    expect(card.querySelector('button.open-btn .bg-note')).toBeNull();
+    expect(card.querySelector('.bg-note')).not.toBeNull();
+    const row = render({ layout: 'row', live: live('working', { session: 's1', canOpen: true, autopilot: true }) });
+    expect(row.querySelector('button.open-btn .hint.sm')).toBeNull();
+    expect(note(row, '.live > .hint.sm')).toBe('· autopilot');
+  });
+
+  it('a refused open: the reason beside the state, nothing else changes', () => {
+    const f = TestBed.createComponent(AgentStateComponent);
+    f.componentRef.setInput('live', live('stopped', { session: 's1', canOpen: true }));
+    f.detectChanges();
+    const el = f.nativeElement as HTMLElement;
+    (el.querySelector('button.open-btn') as HTMLButtonElement).click();
+    TestBed.inject(HttpTestingController).expectOne('/api/drivers/claude/open').flush({ ok: false, reason: 'chat is archived' });
+    f.detectChanges();
+    expect(text(el.querySelector('.open-note') as HTMLElement)).toBe("couldn't open: chat is archived");
+    expect(el.querySelector('.live')!.getAttribute('data-state')).toBe('stopped');
+  });
+
   it('your own claim: the driver logo, the state word and how long', () => {
     const el = render({ live: live('working') });
     expect(el.querySelector('img.logo')!.getAttribute('src')).toBe('/api/drivers/claude/logo');

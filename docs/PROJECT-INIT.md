@@ -62,9 +62,9 @@ broken under worktrees.)
 
 | Flag | Default | Notes |
 |---|---|---|
-| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library`, plus any installed community kind ([Kinds](#kinds)). Picks the wiring defaults (worktree ports on/off, dev command, version stamping) + the README; seeds **no** app code. |
+| `--kind` | *(required)* | `single` · `fullstack` · `static` · `library` · `research` · `apple` · `firmware`, plus any installed community kind ([Kinds](#kinds)). Picks the wiring defaults (`package.json` or none, worktree ports on/off, dev command, version stamping) + the README; seeds **no** app code. |
 | `--remote` | none | git remote for the shared task store (passed through to `convert`). |
-| `--no-wiring` | off | skip `.cogyard/worktree.json`. Auto-skipped for `kind=library`. |
+| `--no-wiring` | off | skip `.cogyard/worktree.json`. Auto-skipped for `kind=library` and `kind=research`. |
 
 The portal: click **+ New** / **Adopt** at the bottom of the sidebar project list.
 
@@ -91,22 +91,38 @@ reimplementing it:
 2. **register** — `registerProject()` → portal visibility (this is the step that
    was skipped on cogyard-site). The registry slug is the single source of truth.
 3. **package.json** — create minimal (with a `version`) if absent; never touch an
-   existing one (warn if it has no `version`).
+   existing one (warn if it has no `version`, or lacks a script the kind's files
+   rely on — the warning gives the exact line to add; see [Kinds](#kinds)). A
+   kind can opt out: one that declares `pkgJson: null` (the built-in `research`
+   kind does) gets no `package.json`, and the step reports `skipped`. Without one
+   the project has no version (the `version` switch defaults to `off`) and
+   nothing for a merge to build.
 4. **.gitignore** — append the essentials (`node_modules`, `dist/`, `version.json`,
-   `.claude/launch.json`, `.env.worktree`). The task link is ignored by
+   `.claude/launch.json`, `.env.worktree`), plus any line the kind adds for a file
+   it generates (`apple`: `Build.xcconfig`). The task link is ignored by
    `.cogyard/.gitignore`, which `convert` commits — the root `.gitignore` gets no
    task line.
 5. **skeleton** (init only) — a per-`kind` `README.md` only. No app code: the README
    states that cogyard seeds only wiring and that you scaffold the app as your first task.
    (`kind` still shapes wiring — e.g. `static` seeds a port-correct `dev` script,
    `library` sets `package.json` `main` — but never writes an entry file.)
+   `research` is the exception, having no app: its README says there is no build
+   and no dev server, where things go and how to work there, and it seeds
+   `notes/`, `sources/` and `findings/`, each holding a `.gitkeep`.
 6. **version stamping** — the kind's `versionStamp` decides. The default
-   (`true`, every built-in but `library`) is a generated
+   (`true`, every built-in but `library`, `research`, `apple` and `firmware`) is a generated
    `scripts/generate-version.mjs` (the build-time version+SHA pattern from this
    repo's own [`scripts/generate-version.mjs`](../scripts/generate-version.mjs)),
    which writes `version.json`; `library` opts out (it exposes its version via
-   `package.json`). A kind for a non-npm target names its own stamping files
-   instead — see [Kinds](#kinds). Runs on onboard too.
+   `package.json`), and so does `research` (it has no version at all). A kind for
+   a non-npm target names its own stamping files instead — `apple` seeds its
+   Xcode build and stamping scripts and a `Version.xcconfig` holding the version
+   on disk, `firmware` seeds `scripts/firmware_version.py` — see [Kinds](#kinds).
+   Runs on onboard too.
+
+   Then the kind may record what it finds in the project (`describeProject`):
+   `firmware` writes `.cogyard/firmware.json` when it can tell the production
+   build environment, and warns when it can't. Same create-if-absent rule.
 7. **worktree wiring** — `.cogyard/worktree.json`, the **real opt-in** the
    port hook keys on ([`hooks/worktree-ports.mjs`](../hooks/worktree-ports.mjs)).
    Nothing else is seeded. There is no `worktree-projects.list` — that was
@@ -123,7 +139,11 @@ reimplementing it:
 
    The config's `dev_script` is the kind's `devScript` — `npm run dev` unless the
    kind names another command, and **absent** when the kind declares none
-   (`devScript: null`). No `dev_script` means "no dev server here": the port
+   (`devScript: null`). Its `launch_name` and `preview_port_var` are the kind's
+   `launchName` and `previewPortVar` (`dev` and `FRONTEND_PORT` unless it names
+   others — `firmware`'s preview opens on `PORT`), and a kind with more than one
+   command that binds a port lists the rest under `extra_dev_scripts`
+   ([`WORKTREE-PORTS.md`](WORKTREE-PORTS.md)). No `dev_script` means "no dev server here": the port
    hook still reserves the worktree's ports but registers no preview entry, and
    the Stop-hook server check skips it (`docs/WORKTREE-PORTS.md`).
 
@@ -245,7 +265,7 @@ cogyard tasks projects list   # the slug appears without ⚠
 ## Kinds
 
 Kinds are a **drop-in registry**: the built-ins (`single` / `fullstack`
-/ `static` / `library`) ship in `core/scaffolds/`, and a community kind drops into
+/ `static` / `library` / `research` / `apple` / `firmware`) ship in `core/scaffolds/`, and a community kind drops into
 `~/.cogyard/scaffolds/<kind>/scaffold.mjs` — additions only, nothing hardcodes the
 list. The `--kind` pickers (CLI + the New/Add drawer) read the registry rows from
 `/api/config`, so a new scaffold appears with no UI change. `fullstack` seeds only
@@ -253,19 +273,118 @@ the cogyard wiring — you supply the application scaffold (e.g. an Angular +
 Node/Express + SQL monorepo shape). Contract: `docs/ADDONS.md`; the descriptor
 fields are documented at the top of `core/scaffolds/index.mjs`.
 
-The four built-ins all assume an npm web app. Three descriptor fields let a kind
-describe anything else, each defaulting to what the built-ins do:
+The first four built-ins assume an npm web app; `research` is for a project with
+no code — notes, sources and findings — so it writes no `package.json`, reserves
+no worktree ports, names no dev server and stamps no version; `apple` is an
+Xcode app and `firmware` a PlatformIO project (both below). These descriptor
+fields let a kind describe anything other than an npm web app, each defaulting
+to what those four do:
 
 | field | default | what it says |
 |---|---|---|
+| `pkgJson` | *(required)* | a function `(slug) => ({ … })` returning the root `package.json` to write; `null` = the kind writes **no** `package.json` (no version, nothing for a merge to build). Leaving it out is a broken descriptor, which the registry skips |
 | `worktreePorts` | `true` | reserve worktree ports and write `.cogyard/worktree.json` |
 | `devScript` | `'npm run dev'` | the dev command that config names; `null` = no dev server |
-| `versionStamp` | `true` | `true` = the npm stamper (`scripts/generate-version.mjs` → `version.json`); `false` = none; a function `(slug) => ({ relPath: content })` = the kind's own stamping files, seeded instead |
+| `launchName` | `'dev'` | that command's `launch_name` |
+| `previewPortVar` | `'FRONTEND_PORT'` | the port its preview tab opens on: `PORT` (the worktree's backend port) or `FRONTEND_PORT` |
+| `extraDevScripts` | none | more commands that bind a port, `[{ devScript, launchName, previewPortVar }]` — written as `extra_dev_scripts`, each with its own launch entry; `launchName` is required and unique |
+| `versionStamp` | `true` | `true` = the npm stamper (`scripts/generate-version.mjs` → `version.json`); `false` = none; a function `(slug, { version }) => ({ relPath: content })` = the kind's own stamping files, seeded instead — `version` is the `package.json` version on disk, for a file that is committed with the version in it |
 | `markers` | none | file names or `*.ext` patterns that mark a project as this kind's, so onboard can name it |
+| `gitignore` | none | lines appended to `.gitignore` with the essentials — a file the kind generates on every build |
+| `requiredScripts` | none | `package.json` scripts the kind's files rely on. An existing `package.json` is never edited, so onboard warns for each one it lacks or has differently, with the exact line from the kind's `pkgJson` |
+| `describeProject` | none | a function `(root) => ({ files, warnings })` run at init and onboard: files it records about the project (create-if-absent) and warnings for what it could not tell. It reads files; it never runs the project's tools |
 
 `worktreePorts` and `devScript` are independent: an iOS app beside a Node server
-wants both; an Xcode-only app may want neither. **Kinds for Apple platforms and
-for firmware are not built in yet** — until one is installed, an onboarded Xcode
-or PlatformIO project gets a warning and the npm defaults, and its version stamp
-(the project's version and commit, visible in the running app) has to be wired
-by hand in its build — an Xcode build phase, a generated firmware header.
+wants both; an Xcode-only app may want neither.
+
+### `apple` — an Xcode app, macOS or iOS
+
+One kind for both platforms: each is an Xcode project built by `xcodebuild`,
+stamped through its build settings, with no npm dev server. cogyard does **not**
+create the Xcode project — make it in Xcode and save it in the project folder,
+at the root or one folder down (an app beside a server often keeps it in
+`ios/`). cogyard never edits an `.xcodeproj` either.
+
+What it writes (init; onboard writes the same except the README and, as always,
+any file that already exists):
+
+| file | what it is |
+|---|---|
+| `package.json` | the version, plus `"build": "bash scripts/xcode-build.sh"` and `"version": "bash scripts/xcode-version.sh && git add Version.xcconfig"` |
+| `scripts/xcode-build.sh` | `npm run build`. Finds the Xcode workspace, project or Swift package; takes the one scheme `xcodebuild -list -json` reports, or stops with a message naming them when there are none or several; stamps; builds; then reads the version and commit back out of each app it built and warns when either is not what was stamped. Anything after the script name goes to `xcodebuild` (`-scheme MyApp`, `-destination 'generic/platform=iOS Simulator'`) |
+| `scripts/xcode-version.sh` | the stamper (below) |
+| `Version.xcconfig` | committed: `MARKETING_VERSION` (`CFBundleShortVersionString`) from `package.json`. Seeded with the version on disk, so it is committed with the wiring |
+| `.gitignore` | `+ Build.xcconfig` |
+| `.cogyard/worktree.json` | ports, and **no** `dev_script` |
+| `README.md` (init) | the build, the stamping, and the one-time hookup in Xcode |
+
+**How the version reaches the app.** The version is `package.json`'s — the one
+number a merge bumps, so the `version` switch keeps its default. Each build runs
+`scripts/xcode-version.sh` first, which writes `Version.xcconfig` (committed: a
+checkout without it would build a bundle with no version string, silently) and
+`Build.xcconfig` (gitignored, because it changes with every commit:
+`CURRENT_PROJECT_VERSION` = `CFBundleVersion` = the commit count, which only
+goes up along a branch, and `GIT_COMMIT_SHORT`). npm runs the `version` script
+after a bump and before its commit, so merge-to-main's bump commit carries the
+new `Version.xcconfig`, and the build after it leaves the tree clean. The values
+reach the built app only after a **one-time hookup in Xcode** — set the app
+targets' base configuration to `Version.xcconfig`, delete their own Marketing
+Version and Current Project Version (a target's own value always wins over an
+xcconfig), and add an Info row `GitCommitShort` = `$(GIT_COMMIT_SHORT)`. The
+steps are in the README and at the top of `scripts/xcode-version.sh`. Until then
+`npm run build` warns that the built app's version or commit is not the one
+stamped.
+
+**Onboarding an Apple project.** `cogyard onboard <path> --kind apple`. Onboard
+with any other kind warns that it found an Xcode project and names `apple`. An
+existing `package.json` is left as it is, and the warnings give the exact lines
+for any `build` or `version` script it lacks (or has differently). An existing
+`.cogyard/worktree.json` is kept, so an app beside a server keeps the server's
+dev entry; a new one names no dev server, but every worktree still gets its
+reserved ports.
+
+**The Worktrees tab** shows `—` in the Backend and Frontend columns for a
+worktree whose `.cogyard/worktree.json` names no `dev_script`: its ports are
+reserved, but nothing listens on them. A worktree with a dev server, or with no
+config at all, keeps its port links.
+
+### The `firmware` kind
+
+For a PlatformIO project: the build target is a board and "running" it is a
+flash, but it keeps a **host-side preview** — a small server that renders the
+device's screens in a browser, so a UI change can be seen without flashing.
+
+- **The preview is the dev server.** The config's `dev_script` is
+  `npm run preview` (launch name `preview`), opening on `PORT`; `worktreePorts`
+  stays on, because that preview is exactly what needs its own port in each
+  worktree. The preview script asks `cogyard env ports` for it like any dev
+  server (the README the kind seeds shows the line). Flashing (`pio run -t
+  upload`) is never a dev server.
+- **A second command that serves on a worktree port** — a website beside the
+  preview — goes under `extra_dev_scripts` with its own `launch_name`, so it gets
+  its own preview entry instead of quietly binding a hardcoded port. A tool that
+  needs a port only for itself (a headless screenshot) takes one the system picks.
+- **The version invariant on a device.** The kind seeds
+  `scripts/firmware_version.py` instead of the npm stamper: a PlatformIO `pre:`
+  script that, before every build, writes `version.h` — `FW_VERSION` (the root
+  `package.json` version), `FW_COMMIT` (`git rev-parse --short HEAD`), `FW_ENV`
+  and `FW_STAMP` (`v1.2.0 (abc1234)`) — into the build folder
+  (`.pio/build/<env>/stamp/`, beside a `.gitignore` that ignores it), and puts
+  that folder first on the include path. The project hooks it up once —
+  `extra_scripts = pre:scripts/firmware_version.py` in `platformio.ini`'s `[env]`,
+  and `#include "version.h"` in the sketch — and shows `FW_STAMP` on the device's
+  own screen. Onboard never edits an existing `platformio.ini` or sketch, so on an
+  existing project that hookup is yours.
+- **Build environments come from PlatformIO.** `pio project config` lists every
+  `[env:*]` and its board, so cogyard copies none of them. It records only which
+  one is production — what a release builds and flashes — as `production_env` in
+  `.cogyard/firmware.json`. Onboard writes it when `platformio.ini` defines exactly
+  one environment; with several it never guesses, and warns with the list and the
+  line to write. `package.json` (when the kind writes it) gets `build: pio run`.
+- **cogyard never runs `pio`.** Init and onboard work without PlatformIO on PATH;
+  they say it is missing (building and flashing need it) and carry on.
+- **Onboarding.** `cogyard onboard <path> --kind firmware` on a folder with a
+  `platformio.ini`. Under any other kind, onboard's platform warning names
+  `firmware` as the better kind. A project that already has a hand-written
+  `.cogyard/worktree.json` keeps it (onboard is additive-only): to get the kind's,
+  move the old one aside first.

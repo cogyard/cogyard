@@ -1,7 +1,8 @@
 // core/worktrees.mjs — worktree view (read-only, Phase 0). Auto-enumerates
 // `git worktree list` per project — the thing SmartGit makes you do by hand.
 // Read-only: ahead/behind vs the main worktree's branch, dirty state, a
-// staleness flag, and any allocated ports from worktree-ports.json. No actions.
+// staleness flag, any allocated ports from worktree-ports.json, and whether the
+// worktree runs a dev server at all (`devServer`). No actions.
 
 import { readFileSync, lstatSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -9,10 +10,22 @@ import { WORKTREE_PORTS_PATH } from './paths.mjs';
 import { tryExec, gitP } from './exec.mjs';
 import { loadTasks } from './frontmatter.mjs';
 import { tasksDirOf } from './tasks-dir.mjs';
+import { findWorktreeConfig, devScriptOf } from './worktree-config.mjs';
 
 function loadPortAllocations() {
   try { return JSON.parse(readFileSync(WORKTREE_PORTS_PATH, 'utf8')).allocations || {}; }
   catch { return {}; }
+}
+
+// Whether a worktree runs a dev server, by its own .cogyard/worktree.json:
+// true = the config names a dev_script; false = it names none, which is the
+// project saying it has no dev server (an Xcode app) — its reserved ports have
+// nothing to open; null = no config (or an unreadable one), so nobody said.
+function devServerOf(wtPath) {
+  const found = findWorktreeConfig(wtPath);
+  if (!found) return null;
+  try { return !!devScriptOf(JSON.parse(readFileSync(found.path, 'utf8'))); }
+  catch { return null; }
 }
 
 // Parse `git worktree list --porcelain`. The main worktree is listed first.
@@ -81,6 +94,7 @@ async function computeWorktrees(repoPath, allocations) {
       stale: !isMain && ahead === 0 && dirty === false,
       staleReasons: reasons,
       ports: alloc ? { backend: alloc.backend, frontend: alloc.frontend, hostname: alloc.hostname } : null,
+      devServer: devServerOf(e.path),
     };
   }));
 }

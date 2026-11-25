@@ -9,6 +9,7 @@ import { RefreshButtonComponent } from '../../../shared/refresh-button/refresh-b
 import { ActivityHeatmapComponent } from '../../../shared/activity-heatmap/activity-heatmap.component';
 import { ActivityBraidComponent, projectColors, projectRank } from '../../../shared/activity-braid/activity-braid.component';
 import { ActivityDayComponent } from '../../../shared/activity-day/activity-day.component';
+import { ProjectLogoComponent } from '../../../shared/project-logo/project-logo.component';
 
 type Money = { cost: number; bf: number }; // bf retained for future use; not shown
 
@@ -34,7 +35,7 @@ const PRICE_RANK: Record<string, number> = { Fable: 0, Mythos: 0, Opus: 1, Sonne
 // only for the project rows the ledger joins to (slug, label, error).
 @Component({
   selector: 'app-all-costs',
-  imports: [TableModule, Skeleton, RefreshButtonComponent, ActivityHeatmapComponent, ActivityBraidComponent, ActivityDayComponent],
+  imports: [TableModule, Skeleton, RefreshButtonComponent, ActivityHeatmapComponent, ActivityBraidComponent, ActivityDayComponent, ProjectLogoComponent],
   templateUrl: './all-costs.component.html',
   styleUrls: ['../all-tab.scss', '../all-table.scss', './all-costs.component.scss'],
 })

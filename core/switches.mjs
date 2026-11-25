@@ -6,6 +6,13 @@
 //            | { command, file }                       default 'minor' when the
 //                                                      repo root has package.json,
 //                                                      else 'off'
+//   decisions_log  a repo-relative path to the         default null (off)
+//            project's decisions log, e.g.
+//            'docs/DECISIONS.md' (task 276): when
+//            set, `cogyard tasks validate <id>`
+//            refuses a task that records a decision
+//            until an entry in that file cites it
+//            (core/validate.mjs decisionLogProblems)
 //
 // The file is <task link>/switches.json — IN the project's task store, next to
 // axes.json, so every worktree sees a change at once (a repo file is frozen per
@@ -64,6 +71,18 @@ const SWITCHES = {
       return { value: { command, file } };
     },
   },
+  // Off unless set: a project that keeps no log never has a merge refused.
+  decisions_log: {
+    defaultFor: () => null,
+    check(v) {
+      const path = typeof v === 'string' ? v.trim() : '';
+      if (!path) return { error: 'decisions_log must name the log file, a path inside the repo relative to its root (e.g. docs/DECISIONS.md)' };
+      if (isAbsolute(path) || path.split(/[\\/]/).includes('..')) {
+        return { error: 'decisions_log must be a path inside the repo, relative to its root' };
+      }
+      return { value: path };
+    },
+  },
 };
 
 const SWITCH_NAMES = Object.keys(SWITCHES);
@@ -86,8 +105,9 @@ function counterFileOf(version) {
   return NPM_COUNTER;
 }
 
-// → { rebase: { value, set }, version: { value, set, file } }
+// → { rebase: { value, set }, version: { value, set, file }, decisions_log: { value, set } }
 // `set` is true when the value came from the file, false when it is the default.
+// decisions_log.value is null when the project keeps no log (the check is off).
 export function resolveSwitches(projectPath) {
   const raw = readRaw(projectPath);
   const out = {};
@@ -104,7 +124,7 @@ export function resolveSwitches(projectPath) {
 
 // What each switch is when the project does not set it — for a reader that
 // offers "back to the default" and needs to say what that is.
-// → { rebase, version }
+// → { rebase, version, decisions_log }
 export function switchDefaults(projectPath) {
   const out = {};
   for (const name of SWITCH_NAMES) out[name] = SWITCHES[name].defaultFor(projectPath);

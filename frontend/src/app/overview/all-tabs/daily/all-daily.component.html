@@ -9,6 +9,7 @@
     <div class="briefs">
       @for (p of briefs(); track p.slug) {
         <article class="brief-lead" [class.failed]="p.brief.status === 'failed'">
+          <app-project-logo [slug]="p.slug" />
           <button class="btn-link bl-name" (click)="selectProject.emit(p.slug)">{{ p.label }}</button>
           <span class="bl-when hint sm">{{ briefWhen(p.brief) }}</span>
           <p class="bl-text">{{ p.brief.status === 'failed' ? briefAlarm(p.brief) : p.brief.lead }}</p>

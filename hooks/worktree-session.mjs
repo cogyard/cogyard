@@ -191,6 +191,12 @@ If you meant to wire a worktree, run it from inside one:
 // never pushed are missing from a worktree EnterWorktree cut from origin, and
 // this is where that shows. Any git failure prints nothing; the hook still
 // exits 0 and the rest of the briefing still prints.
+//
+// Which line prints (task 272): the hook can't tell a task being resumed from
+// anything else, but it can count the branch's OWN commits (<base>..HEAD).
+// None — every worktree EnterWorktree just made — prints the one rebase line:
+// rebasing such a branch can't lose work or conflict. Some, or a count that
+// fails, prints task 142's two lines (the owner's 2026-11-17 wording) unchanged.
 function behindMainNote(wt) {
   try {
     const git = (args) => execFileSync('git', ['-C', wt, ...args], { stdio: ['ignore', 'pipe', 'ignore'], timeout: 5000 }).toString().trim();
@@ -201,6 +207,17 @@ function behindMainNote(wt) {
     const n = Number(git(['rev-list', '--count', `HEAD..refs/heads/${base}`]));
     if (!Number.isInteger(n) || n < 0) return '';
     if (n === 0) return `Worktree vs ${base}: up to date.\n\n`;
+    let own = NaN;
+    try { own = Number(git(['rev-list', '--count', `refs/heads/${base}..HEAD`])); } catch { /* 142's lines */ }
+    if (Number.isInteger(own) && own === 0) {
+      return `=== WORKTREE IS ${n} COMMIT${n === 1 ? '' : 'S'} BEHIND ${base.toUpperCase()} ===
+Never merge ${base} into this worktree.
+- This branch has no commits of its own: rebase it onto ${base}
+  (\`git rebase ${base}\`) as the project's rebase switch says
+  (\`cogyard tasks switches\`).
+
+`;
+    }
     return `=== WORKTREE IS ${n} COMMIT${n === 1 ? '' : 'S'} BEHIND ${base.toUpperCase()} ===
 Never merge ${base} into this worktree.
 - Resuming a task that already owns this worktree: pickup-task rebases
@@ -313,6 +330,27 @@ try {
   if (devScript && !(previewPortVar in portAssignments)) throw new Error(`preview_port_var ${previewPortVar} not declared in port_vars`);
   const previewPort = devScript ? portAssignments[previewPortVar] : null;
 
+  // Further commands that bind one of the worktree's ports (task 164) — a second
+  // server, a site beside the preview. Each gets its own launch entry, opening on
+  // its own preview_port_var. Refused rather than half-wired when malformed.
+  const extras = [];
+  if (cfg.extra_dev_scripts !== undefined) {
+    if (!Array.isArray(cfg.extra_dev_scripts)) throw new Error('extra_dev_scripts must be a list');
+    if (!devScript) throw new Error('extra_dev_scripts needs a dev_script: the first command is the one dev_script names');
+    const seen = new Set([launchName]);
+    for (const x of cfg.extra_dev_scripts) {
+      const script = devScriptOf(x);
+      const name = x?.launch_name;
+      const portVar = x?.preview_port_var ?? 'FRONTEND_PORT';
+      if (!script) throw new Error(`extra_dev_scripts entry has no dev_script: ${JSON.stringify(x)}`);
+      if (typeof name !== 'string' || !/^[A-Za-z0-9._-]+$/.test(name)) throw new Error(`extra_dev_scripts entry needs a launch_name of letters, digits, dots, dashes or underscores: ${JSON.stringify(x)}`);
+      if (seen.has(name)) throw new Error(`extra_dev_scripts launch_name "${name}" is used twice (dev_script's is "${launchName}")`);
+      if (!(portVar in portAssignments)) throw new Error(`extra_dev_scripts "${name}": preview_port_var ${portVar} not declared in port_vars`);
+      seen.add(name);
+      extras.push({ launchName: name, devScript: script, previewPortVar: portVar, port: portAssignments[portVar] });
+    }
+  }
+
   // 1. env files — always a link to the project root's file, never a copy.
   //
   // `copy` and `merge` (a real file written per worktree) were removed in task
@@ -351,13 +389,17 @@ try {
   // file as unreadable; that was the August reading of the rule, and it left
   // every chat inside a worktree with no way to start its server.
   const previewName = launchNameFor(worktreeName);
+  for (const x of extras) x.name = launchNameFor(worktreeName, x.launchName);
   // No dev command → no entry in either file. Sweep instead, which also drops
   // one this worktree got before its config stopped naming a dev command.
   let swept;
   if (devScript) {
-    const entry = { worktree: WT, name: previewName, devScript, port: previewPort };
-    swept = registerWorktreeLaunch(projectRoot, entry);
-    writeWorktreeLaunch(WT, entry);
+    const entries = [
+      { worktree: WT, name: previewName, devScript, port: previewPort },
+      ...extras.map((x) => ({ worktree: WT, name: x.name, devScript: x.devScript, port: x.port })),
+    ];
+    swept = registerWorktreeLaunch(projectRoot, entries);
+    writeWorktreeLaunch(WT, entries);
   } else {
     swept = sweepLaunchEntries(projectRoot, { except: WT });
     if (removeWorktreeLaunch(WT)) log(`removed ${join(WT, '.claude', 'launch.json')} (no dev server)`);
@@ -390,7 +432,20 @@ Reference: docs/WORKTREE-PORTS.md
 === end allocation ===
 `;
   } else {
-    notify(`Worktree ready: ${worktreeName}`, `Frontend: http://localhost:${previewPort}\nBackend:  :${backend}`);
+    notify(`Worktree ready: ${worktreeName}`, `Frontend: http://localhost:${frontend}\nBackend:  :${backend}`);
+
+    // One line per further command (task 164). Two that open on the same port
+    // cannot run at once, so the briefing says so rather than letting the second
+    // fail to bind.
+    const portName = (p) => (p === backend ? 'backend' : 'frontend');
+    const extrasBlock = extras.length ? `
+# More commands that bind a port (extra_dev_scripts)
+
+${extras.map((x) => `  preview_start name="${x.name}"\n      runs ${x.devScript}, opens on ${x.previewPortVar} = ${x.port} (${portName(x.port)})`).join('\n')}
+${[previewPort, ...extras.map((x) => x.port)].some((p, i, all) => all.indexOf(p) !== i)
+    ? '\nSome of these open on the same port: run one of them at a time.\n'
+    : ''}` : '';
+    const previewLine = previewPort === frontend ? '' : `\n  Preview  : http://localhost:${previewPort}  (${previewPortVar}, the dev server's)`;
 
     briefing = `=== Worktree dev environment ===
 
@@ -412,7 +467,8 @@ The SessionStart hook has set up:
 
   preview_start name="${previewName}"
 
-Spawns ${devScript} in this worktree, bound to the allocated ports above.
+Spawns ${devScript} in this worktree, bound to the allocated ports above,
+and opens on ${previewPortVar} = ${previewPort}.
 When the work has something to look at, start it and LEAVE IT RUNNING until this
 branch merges: the owner checks a worktree after the work by clicking its
 frontend port in the Worktrees tab, so don't stop it before the merge, and stop
@@ -437,11 +493,11 @@ The hook removes both once this worktree is gone. Ports do NOT come from
 either file, nor from .env.worktree (which carries none): a dev script asks
 \`cogyard env ports\`, which reads ~/.cogyard/ports.json. The entry only tells
 the preview tool what to run and which port to open a tab on.
-
+${extrasBlock}
 # Direct URLs
 
-  Frontend : http://localhost:${previewPort}
-  Backend  : http://localhost:${backend}
+  Frontend : http://localhost:${frontend}
+  Backend  : http://localhost:${backend}${previewLine}
 
 # DO NOT
   - Hand-edit .claude/launch.json — the hook rewrites it at every

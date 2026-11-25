@@ -31,7 +31,8 @@ export class RefreshService {
   private api = inject(ApiService);
   private store = inject(StoreService);
 
-  /** Epoch ms of the last successful check — what the topbar freshness pie shows. */
+  /** Epoch ms of the last successful check — the sidebar's freshness note shows
+   *  how long ago it was, once that is overdue. */
   readonly lastCheck = signal(0);
   /** Coarse clock for re-rendering relative-time labels. */
   readonly now = signal(Date.now());
@@ -95,7 +96,7 @@ export class RefreshService {
             this.store.load(key, fetch$.pipe(tap(() => this.loadedAt.set(key, code))));
           }
         }
-        // The freshness pie means "everything on screen was checked": a
+        // lastCheck means "everything on screen was checked": a
         // first-reader check counts only when it covered every watched entry
         // (a page's first load, where everything is new).
         if (!only || this.store.watched().every((k) => keys.includes(k))) this.lastCheck.set(Date.now());

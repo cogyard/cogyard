@@ -28,6 +28,7 @@
     <ng-template #body let-p>
       <tr class="ov-row">
         <td>
+          <app-project-logo [slug]="p.slug" />
           @if (p.error) { <span class="dim">{{ p.label }} (error)</span> }
           @else { <button class="btn-link dim" (click)="selectProject.emit(p.slug)">{{ p.label }}</button> }
         </td>

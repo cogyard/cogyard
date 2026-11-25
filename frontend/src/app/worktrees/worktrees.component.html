@@ -65,11 +65,14 @@
           <td class="ctr">
             @if (w.dirty == null) { — } @else if (w.dirty) { <span class="dirty">● {{ w.dirtyCount }}</span> } @else { <span class="dim">clean</span> }
           </td>
+          <!-- Every worktree has reserved ports, but one whose config names no
+               dev server (devServer false — an Xcode app) has nothing on them,
+               so its port columns show nothing rather than links to nowhere. -->
           <td class="ctr mono">
-            @if (w.ports?.backend) { <a class="portlink" href="http://localhost:{{ w.ports.backend }}" target="_blank" rel="noopener">{{ w.ports.backend }}</a> } @else { — }
+            @if (w.ports?.backend && w.devServer !== false) { <a class="portlink" href="http://localhost:{{ w.ports.backend }}" target="_blank" rel="noopener">{{ w.ports.backend }}</a> } @else { — }
           </td>
           <td class="ctr mono">
-            @if (w.ports?.frontend) { <a class="portlink" href="http://localhost:{{ w.ports.frontend }}" target="_blank" rel="noopener">{{ w.ports.frontend }}</a> } @else { — }
+            @if (w.ports?.frontend && w.devServer !== false) { <a class="portlink" href="http://localhost:{{ w.ports.frontend }}" target="_blank" rel="noopener">{{ w.ports.frontend }}</a> } @else { — }
           </td>
           <td class="flags">
             <!-- order is fixed: locked, main, unmounted (tasks 104, 217). The task

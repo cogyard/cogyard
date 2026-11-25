@@ -6,7 +6,7 @@ import {
   CommitDetail, DiffResponse, StatusResponse, BranchesResponse,
   WtActivityResponse, TreeResponse, FilesBase, FileContent, SaveFileResult, UsageResponse, ProjectUsageResponse, TaskChatsResponse, TaskTranscriptResponse, CollectResult,
   ActivityResponse, ActivityDayResponse,
-  HealthResponse, ActionResult, OpenTarget, ScaffoldRequest, ScaffoldResult,
+  HealthResponse, ActionResult, OpenTarget, OpenChatResult, ScaffoldRequest, ScaffoldResult,
   ConfigResponse, SaveConfigRequest, SaveConfigResult, OpenTargetFull, SaveOpenTargetsResult, ProjectImagesResponse,
   AddonsCatalog, AddonStatusesResponse, AddonActionResult,
   ScheduledJobsResponse, JobRunResult, JobSchedule,
@@ -149,6 +149,12 @@ export class ApiService {
     return this.http.post<ActionResult>('/api/open', { slug, path, target, line, worktree });
   }
   openTargets(): Observable<OpenTarget[]> { return this.http.get<OpenTarget[]>('/api/open-targets'); }
+  // A click on the driver logo beside a claimed task: the agent app comes to
+  // the front on that chat (LiveState.session). 200 either way; `ok: false`
+  // carries the driver's reason.
+  openChat(driver: string, session: string): Observable<OpenChatResult> {
+    return this.http.post<OpenChatResult>(`/api/drivers/${encodeURIComponent(driver)}/open`, { session });
+  }
   // A task file lives in the task store, not the checkout — `store: true` sends
   // the server down its assertInStore containment instead of assertInProject,
   // which by design refuses anything behind the task-store link (.cogyard/tasks, or _tasks) (task 132).

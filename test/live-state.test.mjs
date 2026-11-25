@@ -256,6 +256,50 @@ test('Claude adapter: whether each chat is open, archived or deleted, from the a
   assert.deepEqual(NOOP.sessions.status(['x']), { x: 'unknown' });
 });
 
+// A click on the logo (Plan, All, Tasks): the driver sends the app's own link
+// for the chat, by the app's id for it, or says in plain words why it did not.
+test('Claude adapter: open() sends the app link for a chat in the app, and only then', () => {
+  const store = join(FAKE_HOME, 'Library', 'Application Support', 'Claude', 'claude-code-sessions', 'acct2');
+  mkdirSync(store, { recursive: true });
+  const row = (file, d) => writeFileSync(join(store, file), JSON.stringify(d));
+  row('local_aaaa-1111.json', { sessionId: 'local_aaaa-1111', cliSessionId: 'cli-open', priorCliSessionIds: ['cli-before'], isArchived: false });
+  row('local_bbbb-2222.json', { sessionId: 'local_bbbb-2222', cliSessionId: 'cli-archived', isArchived: true });
+  row('odd.json', { sessionId: 'not an app id', cliSessionId: 'cli-odd', isArchived: false });
+  const sent = [];
+  const launch = (url) => sent.push(url);
+  const mac = { launch, platform: 'darwin' };
+
+  assert.deepEqual(claude.sessions.open('cli-open', mac), { ok: true });
+  assert.deepEqual(claude.sessions.open('cli-before', mac), { ok: true }, 'a rewound chat is found by its earlier id');
+  assert.deepEqual(sent, [
+    'claude://code/continue?session=local_aaaa-1111&source=url_external',
+    'claude://code/continue?session=local_aaaa-1111&source=url_external',
+  ]);
+  sent.length = 0;
+  assert.deepEqual(claude.sessions.open('cli-archived', mac), { ok: false, reason: 'chat is archived' });
+  assert.deepEqual(claude.sessions.open('terminal-chat', mac), { ok: false, reason: 'not a chat in the Claude app' });
+  assert.equal(claude.sessions.open('cli-odd', mac).ok, false, 'an id the app\'s links refuse is never sent');
+  assert.deepEqual(claude.sessions.open('cli-open', { launch, platform: 'linux' }), { ok: false, reason: 'needs the Claude app on a Mac' });
+  assert.deepEqual(sent, [], 'nothing sent for any refusal');
+  const broken = claude.sessions.open('cli-open', { platform: 'darwin', launch: () => { throw new Error('boom'); } });
+  assert.deepEqual(broken, { ok: false, reason: 'could not reach the Claude app: boom' }, 'a failed launch is a reason, not a throw');
+  assert.equal(NOOP.sessions.open, undefined, 'no driver: nothing to open');
+});
+
+test('a claimed task carries its chat and whether the logo can open it', () => {
+  const dir = freshDir();
+  feed(dir, [{ session_id: S, hook_event_name: 'UserPromptSubmit' }]);
+  const live = liveForTask(claimed(5), { dir, user: 'Ben', chatStatus: open });
+  assert.deepEqual([live.session, live.canOpen], [S, true]);
+  assert.equal(liveForTask(claimed(5), { dir, user: 'Ben', chatStatus: chats({ [S]: 'archived' }) }).canOpen, false, 'an archived chat: nothing to show');
+  const quiet = freshDir(); // last heard from an hour ago, so "deleted" is believed
+  feed(quiet, [{ session_id: S, hook_event_name: 'UserPromptSubmit' }, { session_id: S, hook_event_name: 'Stop', background_tasks: [] }], Date.now() - 3600_000);
+  const gone = liveForTask(claimed(5), { dir: quiet, user: 'Ben', chatStatus: chats({ [S]: 'deleted' }) });
+  assert.deepEqual([gone.state, gone.canOpen], ['deleted', false], 'a deleted chat: nothing to show');
+  const noChat = liveForTask(claimed(5, { claimed_by_session: null }), { dir, user: 'Ben', chatStatus: open });
+  assert.deepEqual([noChat.session, noChat.canOpen], [null, false], 'a claim with no chat recorded');
+});
+
 test('an API error ends the turn as error, with its type, until the next prompt; a chat silent for months keeps its state', () => {
   const dir = freshDir();
   feed(dir, [{ session_id: S, hook_event_name: 'UserPromptSubmit' }, { session_id: S, hook_event_name: 'StopFailure', error: 'overloaded' }], 0);

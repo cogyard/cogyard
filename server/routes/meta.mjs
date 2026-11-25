@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { extname } from 'node:path';
 import * as core from '../../core/index.mjs';
-import { json, errJson, servedBuild } from '../http.mjs';
+import { json, errJson, servedBuild, parseGuarded } from '../http.mjs';
 
 // Per-project count of tasks with a live claim (env.claimed_at set) — the sidebar
 // + dock badge signal (task 85: "which project has work in flight right now",
@@ -50,6 +50,29 @@ async function driverLogo(name, res) {
     'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src data:",
   });
   res.end(body);
+}
+
+// POST /api/drivers/<name>/open { session } — a click on the driver logo
+// beside a claimed task: ask the ACTIVE driver to bring its app to the front
+// on that chat (adapter.sessions.open). Nothing is written. The driver's
+// answer comes back as it is, 200 either way — "chat is archived" is the
+// endpoint working, not failing. Only the active driver: it is the one whose
+// chats the portal is showing.
+const SESSION_ID = /^[A-Za-z0-9_-]{1,128}$/;
+export async function handlePost(path, req, res) {
+  const m = path.match(/^\/api\/drivers\/([a-z0-9_-]+)\/open$/);
+  if (!m) return false;
+  const body = await parseGuarded(req, res);
+  if (!body) return true;
+  if (m[1] !== core.adapter.name || typeof core.adapter.sessions?.open !== 'function') {
+    errJson(res, 404, 'this driver cannot open a chat'); return true;
+  }
+  if (typeof body.session !== 'string' || !SESSION_ID.test(body.session)) { errJson(res, 400, 'session must be a chat id'); return true; }
+  let r;
+  try { r = core.adapter.sessions.open(body.session); }
+  catch (e) { r = { ok: false, reason: String((e && e.message) || e) }; }
+  json(res, 200, r && r.ok ? { ok: true } : { ok: false, reason: (r && r.reason) || 'could not open the chat' });
+  return true;
 }
 
 export async function handle(path, u, projects, res) {

@@ -1,0 +1,30 @@
+/* The pieces sit in the caller's row (its flex gap), not in a box of their own. */
+:host { display: contents; }
+
+/* A Files-tree row holding a link fits the tree's width, so its target is cut
+   with "…" instead of the tree scrolling sideways. p-tree's label is a flex item
+   that won't shrink below its content (min-width: auto), so a long row spilled
+   out. Only rows with a link mark change; other rows behave as before. These
+   style the tree row from here because files.component.scss is at its budget. */
+::ng-deep .p-tree-node-label:has(app-link-mark) { min-width: 0; }
+::ng-deep .trow:has(app-link-mark) { max-width: 100%; }
+
+/* The icon with the arrow over its lower-left corner (Finder's alias mark).
+   Sizes and colours as on the options sheet the owner picked (task 269). */
+.ic { position: relative; width: 16px; height: 16px; flex: none; }
+.ficon { width: 16px; height: 16px; display: block; }
+.arrow { position: absolute; left: -3px; bottom: -3px; width: 10px; height: 10px; }
+.box { fill: #fff; stroke: #64748b; }
+.tip { fill: none; stroke: var(--app-fg); stroke-width: 1.15; stroke-linecap: round; stroke-linejoin: round; }
+/* broken = the red of the Files tab's own save-error banner */
+.ic.broken .box { fill: #fde8e8; stroke: #b91c1c; }
+.ic.broken .tip { stroke: #b91c1c; }
+
+/* The name keeps its room; the target is what gets cut off. */
+.nm { flex: none; min-width: 0; overflow: hidden; display: inline-flex; }
+.tgt {
+  flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--app-fg-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tgt.broken { color: #b91c1c; }
+.miss { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }

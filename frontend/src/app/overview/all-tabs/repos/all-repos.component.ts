@@ -7,6 +7,7 @@ import { ConfigService } from '../../../services/config.service';
 import { FlagComponent } from '../../../shared/flag/flag.component';
 import { ActivityHeatmapComponent } from '../../../shared/activity-heatmap/activity-heatmap.component';
 import { ActivityDayComponent } from '../../../shared/activity-day/activity-day.component';
+import { ProjectLogoComponent } from '../../../shared/project-logo/project-logo.component';
 import { projectColors, projectRank } from '../../../shared/activity-braid/activity-braid.component';
 
 // The All page's Repos tab (task 266): the state of each project's repo — the
@@ -17,7 +18,7 @@ import { projectColors, projectRank } from '../../../shared/activity-braid/activ
 // files/266/repos-tab-mock.html in the task store. Reads overview and activity.
 @Component({
   selector: 'app-all-repos',
-  imports: [TableModule, Skeleton, FlagComponent, ActivityHeatmapComponent, ActivityDayComponent],
+  imports: [TableModule, Skeleton, FlagComponent, ActivityHeatmapComponent, ActivityDayComponent, ProjectLogoComponent],
   templateUrl: './all-repos.component.html',
   styleUrls: ['../all-tab.scss', '../all-table.scss', './all-repos.component.scss'],
 })

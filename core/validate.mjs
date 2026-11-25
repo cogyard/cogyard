@@ -108,6 +108,108 @@ function forbiddenBoxProblems(body) {
   return { errors, warnings };
 }
 
+// The decisions log (task 276). A project that keeps one names it in its
+// `decisions_log` switch (core/switches.mjs); `cogyard tasks validate <id>` —
+// the merge gate — then refuses an OPEN task that records a decision until an
+// entry in that log cites it. Owner, 2026-11-24:
+//   - a task RECORDS A DECISION when it has a ticked `(you: decision)` box or a
+//     heading that starts with "Decision" ("## Decision 2026-11-06",
+//     "### Decisions made at pickup …");
+//   - an entry CITES it when the entry's heading names it the way the log's
+//     headings do: "## 2026-10-06 — … (task 159)", "(tasks 042, 046)";
+//   - the way out is a marked line, `(not for the log: <why>)`, at the start of
+//     a line (a list bullet or `>` before it is fine), for a decision that
+//     isn't one for the log (a UI choice under a Decision heading).
+// Pure: the CLI reads the switch and the log file and passes the text in. Only
+// `validate <id>` runs it — never validateTasks, so `validate --all`, doctor,
+// the portal, the edit hook and `sync push` don't see it: ticking a decision
+// box is never refused for want of the entry, and no closed task turns red.
+const DECISION_HEADING_RE = /^#{1,6}[ \t]+[*_`]*decision/i;
+const MARK_PREFIX = String.raw`^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]+)?`;
+const NOT_FOR_LOG_RE = new RegExp(`${MARK_PREFIX}\\(not for the log:[ \\t]*([^)]*)\\)`, 'i');
+const NOT_FOR_LOG_NEAR_RE = new RegExp(`${MARK_PREFIX}(\\(\\s*not[\\s_-]+(?:for|in)[\\s_-]+(?:the[\\s_-]+)?(?:decisions?[\\s_-]+)?logs?\\b[^)\\n]*\\)?)`, 'i');
+export const NOT_FOR_LOG_MARK = '(not for the log: <why>)';
+const logIdsOf = (heading) => {
+  const ids = new Set();
+  for (const m of heading.matchAll(/\btasks?[ \t]+((?:#?\d+(?:\.\d+)?[a-z]?\b(?:[ \t]*(?:,|&|\+|\/|and)[ \t]*)?)+)/gi)) {
+    for (const tok of m[1].split(/[^0-9a-z.#]+/i)) {
+      const id = normalizeTaskId(tok.replace(/^#/, ''));
+      if (id != null) ids.add(id);
+    }
+  }
+  return ids;
+};
+
+// The marked lines `(not for the log: <why>)` in a body (`ok`: their reasons),
+// and the badly written ones (`bad`: { text, noReason } — no reason, or a
+// near-miss like `(not in the log …)`). Read outside fenced code blocks only.
+function notForLogMarks(body) {
+  const ok = [], bad = [];
+  for (const line of blankCodeBlocks(body).split('\n')) {
+    const m = line.match(NOT_FOR_LOG_RE);
+    if (m && m[1].trim()) { ok.push(m[1].trim()); continue; }
+    const near = m ? null : line.match(NOT_FOR_LOG_NEAR_RE);
+    if (!m && !near) continue;
+    const text = m ? m[0].trim().replace(/^[>*+\s-]+/, '') : near[1].trim();
+    bad.push({ text, noReason: !!m || /^\(\s*not for the log\s*:?\s*\)$/i.test(text) });
+  }
+  return { ok, bad };
+}
+
+// The way-out marker's own problems — an error in every project, check on or
+// off, like every badly written marker (the write hook refuses a new one).
+function notForLogProblems(body) {
+  return notForLogMarks(body).bad.map((b) => (b.noReason
+    ? `decisions log: "${b.text}" — say why: ${NOT_FOR_LOG_MARK}`
+    : `decisions log: "${b.text}" — write it as ${NOT_FOR_LOG_MARK}`));
+}
+
+// What in a task's body makes it "record a decision": [{ what, line }], `line`
+// 0-based in the body, in body order; [] when nothing does.
+const clip = (s, n = 60) => (s.length <= n ? s : s.slice(0, n).replace(/\s+\S*$/, '') + '…');
+export function decisionMarks(body) {
+  const out = [];
+  for (const s of checkboxSteps(body)) {
+    if (s.done && s.owner && s.owner.includes('decision')) out.push({ what: `a ticked (you: decision) box "${clip(s.text.replace(/\s+/g, ' '))}"`, line: s.line });
+  }
+  blankCodeBlocks(body).split('\n').forEach((l, i) => {
+    if (DECISION_HEADING_RE.test(l)) out.push({ what: `the heading "${clip(l.trim())}"`, line: i });
+  });
+  return out.sort((a, b) => a.line - b.line);
+}
+
+// Does the log have an entry whose heading cites task `id`? `logText` is the
+// log's contents.
+export function logCitesTask(logText, id) {
+  const want = normalizeTaskId(id);
+  if (want == null || !logText) return false;
+  for (const l of String(logText).split('\n')) {
+    if (/^#{1,6}[ \t]/.test(l) && logIdsOf(l).has(want)) return true;
+  }
+  return false;
+}
+
+// The merge gate's decisions-log check for one task. `log` is { path, text }:
+// the switch's path and the file's contents (text null when the file is
+// missing). Returns errors, each starting `decisions log:`; [] when the task
+// isn't OPEN, records no decision, carries a way-out line, or is cited.
+export function decisionLogProblems(task, log) {
+  const fm = task?.frontmatter || {};
+  if (fm.status !== 'OPEN' || !log?.path) return [];
+  const body = task.body || '';
+  if (notForLogMarks(body).ok.length) return [];
+  const marks = decisionMarks(body);
+  if (!marks.length) return [];
+  const id = normalizeTaskId(fm.id);
+  if (log.text != null && logCitesTask(log.text, id)) return [];
+  const why = marks.slice(0, 3).map((m) => m.what).join('; ') + (marks.length > 3 ? `; and ${marks.length - 3} more` : '');
+  const missing = log.text == null ? ` (${log.path} does not exist yet)` : '';
+  return [`decisions log: this task records a decision (${why}) but ${log.path} has no entry whose heading cites it${missing}. `
+    + `Add one at the top of ${log.path}: a heading "## <YYYY-MM-DD, the day it was decided> — <the decision, in a few words> (task ${fm.id ?? id})", `
+    + `then the decision, why, what was rejected, and where it is recorded. `
+    + `If the decision is not one for the log (a UI choice, say), put a line in the task saying so: ${NOT_FOR_LOG_MARK}`];
+}
+
 // Levenshtein distance — for "did you mean (dropped)?" on a misspelt marker word.
 function editDistance(a, b) {
   const row = Array.from({ length: b.length + 1 }, (_, j) => j);
@@ -308,6 +410,11 @@ export function validateTask(task, ctx = {}) {
       if (AFTER_MERGE_NEAR_RE.test(p) && !AFTER_MERGE_MARK_RE.test(p)) boxErr(`checkbox "${p}" — write it as (after merge)`);
     }
   }
+
+  // The decisions log's way-out line (task 276), `(not for the log: <why>)`:
+  // one with no reason, or a near-miss, would silently not count as the way
+  // out. Not a checkbox, so its messages start `decisions log:`.
+  for (const e of notForLogProblems(task.body)) err(e);
 
   // Boxes the write-task skill forbids (task 255) — see forbiddenBoxProblems.
   // The deploy error starts `checkbox `, so `close`, `doctor`, the portal and

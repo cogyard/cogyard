@@ -44,9 +44,10 @@ export class NewProjectComponent {
 
   readonly modeOptions = [{ label: 'New', value: 'init' }, { label: 'Existing', value: 'onboard' }];
   // Kinds come from the scaffold registry via /api/config —
-  // a drop-in scaffold appears in the drawer with no UI change.
+  // a drop-in scaffold appears in the drawer with no UI change. Each option
+  // carries its description, shown under the name in the open list.
   readonly kindOptions = computed(() =>
-    (this.config.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind })));
+    (this.config.config()?.kinds ?? []).map((k) => ({ label: k.kind, value: k.kind, description: k.description })));
   // "What does this kind scaffold?" — the selected kind's registry description.
   readonly kindDescription = computed(() =>
     this.config.config()?.kinds.find((k) => k.kind === this.kind())?.description ?? '');

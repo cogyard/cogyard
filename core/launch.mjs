@@ -136,9 +136,15 @@ function sweepLaunchEntries(projectRoot, { except = null } = {}) {
   return swept;
 }
 
-// Register (or refresh) one worktree's entry, sweeping dead ones in the same
-// write. Returns the names swept.
-function registerWorktreeLaunch(projectRoot, { worktree, name, devScript, port }) {
+// A worktree may have several entries, one per command its config names
+// (task 164); both writers take one entry or a list.
+const asList = (entries) => (Array.isArray(entries) ? entries : [entries]);
+
+// Register (or refresh) one worktree's entries, sweeping dead ones in the same
+// write. Every entry this worktree had before is replaced, so a command its
+// config no longer names loses its entry too. Returns the names swept.
+function registerWorktreeLaunch(projectRoot, entries) {
+  const list = asList(entries);
   const doc = readLaunch(projectRoot);
   const alive = worktreeLiveness(projectRoot);
   const swept = [];
@@ -149,18 +155,23 @@ function registerWorktreeLaunch(projectRoot, { worktree, name, devScript, port }
     return false;
   });
 
-  doc.configurations = doc.configurations.filter((c) => c.name !== name);
-  doc.configurations.push(worktreeEntry({ worktree, name, devScript, port }));
+  const mine = new Set(list.map((e) => e.worktree));
+  const names = new Set(list.map((e) => e.name));
+  doc.configurations = doc.configurations.filter((c) => {
+    const wt = entryWorktree(projectRoot, c);
+    return wt ? !mine.has(wt) : !names.has(c.name);
+  });
+  for (const e of list) doc.configurations.push(worktreeEntry(e));
 
   writeLaunch(projectRoot, doc);
   return swept;
 }
 
-// The worktree's own file: exactly this worktree's entry, replacing whatever was
-// there — including the copy of the main checkout's file the app drops into a
-// worktree it creates, whose entries would run the main checkout's servers.
-function writeWorktreeLaunch(worktree, { name, devScript, port }) {
-  writeLaunch(worktree, { version: '0.0.1', configurations: [worktreeEntry({ worktree, name, devScript, port })] });
+// The worktree's own file: exactly this worktree's entries, replacing whatever
+// was there — including the copy of the main checkout's file the app drops into
+// a worktree it creates, whose entries would run the main checkout's servers.
+function writeWorktreeLaunch(worktree, entries) {
+  writeLaunch(worktree, { version: '0.0.1', configurations: asList(entries).map((e) => worktreeEntry({ ...e, worktree })) });
 }
 
 // A worktree with no dev command gets no file. Returns whether one was removed.
@@ -182,9 +193,11 @@ function worktreeEntry({ worktree, name, devScript, port }) {
 }
 
 // The name a worktree's entry goes under. One rule, so the hook that writes it
-// and the briefing that names it can never disagree.
-function launchNameFor(worktreeName) {
-  return `wt-${worktreeName}`;
+// and the briefing that names it can never disagree. The config's first command
+// (`dev_script`) keeps the bare name; each further one (`extra_dev_scripts`,
+// task 164) adds its own `launch_name`, so the names never collide.
+function launchNameFor(worktreeName, extraLaunchName = null) {
+  return extraLaunchName ? `wt-${worktreeName}-${extraLaunchName}` : `wt-${worktreeName}`;
 }
 
 // launchPath is exported for the Edit/Write guard (task 247), which refuses a

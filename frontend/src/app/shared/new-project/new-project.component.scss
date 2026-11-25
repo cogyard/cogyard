@@ -9,6 +9,12 @@
 /* .sidebar-item (global) gives the rail look; we only set the shared-row layout. */
 .np-action { flex: 1 1 0; justify-content: center; font-weight: 600; }
 
+/* The drawer's width. PrimeNG's default 20rem cut the projects-root prefix to
+   its first dozen characters in New mode; 36rem holds a whole
+   /Users/<name>/gitroot/ with room left to type the name. At a window narrower
+   than that it fills the window instead of running off it. */
+:host ::ng-deep .p-drawer.np-drawer { width: min(36rem, 100vw); }
+
 /* Drawer form — on the light drawer surface, so colors derive from the page knobs. */
 .np-form { display: flex; flex-direction: column; gap: var(--app-space-5); padding: 4px 2px; }
 .np-field { display: flex; flex-direction: column; gap: var(--app-space-3); }
@@ -24,13 +30,17 @@
   background: var(--app-surface-2); color: var(--app-fg-muted);
   font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; white-space: nowrap;
   border-right: 1px solid var(--app-border);
-  max-width: 55%; min-width: 0; overflow: hidden;
+  /* flex: none — the prefix keeps its whole width up to the 55% cap and the
+     name box takes what is left. Without it the two shrank in proportion to
+     their widths, and the name box (width 100%) won: the prefix was cut even
+     in a drawer wide enough to show all of it. */
+  flex: none; max-width: 55%; min-width: 0; overflow: hidden;
 }
 /* the text needs its own box: bare text inside a flex container is an
    anonymous flex item, which text-overflow cannot ellipsis — the prefix was
    clipping mid-path (204 -> 109px) with no affordance. */
 .np-prefix-txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.np-compose .np-name { flex: 1 1 auto; border: none; border-radius: 0; }
+.np-compose .np-name { flex: 1 1 auto; min-width: 0; border: none; border-radius: 0; }
 .np-hint code { font-size: 11px; }
 
 .np-actions { display: flex; justify-content: flex-end; gap: var(--app-space-3); margin-top: var(--app-space-3); }

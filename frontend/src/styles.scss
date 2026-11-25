@@ -637,6 +637,19 @@ p-tabs.tab-box {
   overflow-x: auto; white-space: nowrap;
 }
 
+/* A project-kind option: the kind's name in bold over its one-line description
+   in the dim .hint.sm. Worn by the New project drawer's Kind picker and
+   Settings' "Default project kind" — global because both lists are appended to
+   <body>, out of either component's scoped styles, and the two must look
+   identical. contain: inline-size stops the text from sizing the list, so the
+   list keeps its field's width (PrimeNG's min-width) and a long description
+   wraps inside it instead of widening it past the window. */
+.kind-opt {
+  display: flex; flex-direction: column; gap: 2px;
+  flex: 1 1 auto; min-width: 0; contain: inline-size; white-space: normal;
+}
+.kind-opt-name { font-weight: 600; }
+
 /* ----------------------------------------------------------------------------
    Widget + mono recipes (task 100). The portal-wide convergence pass: the
    activity/stats widgets all headline at 13/600, and inline id/hash/count
@@ -768,11 +781,6 @@ span.tchip { cursor: default; }
   mask: url('/assets/tasks.svg') center / contain no-repeat;
   -webkit-mask: url('/assets/tasks.svg') center / contain no-repeat;
 }
-
-/* Topbar data-freshness pie: the Web Animations API (in the
-   freshness-pie component) interpolates --pie-p, which only animates if
-   registered via @property — and @property must live in global styles. */
-@property --pie-p { syntax: '<percentage>'; inherits: false; initial-value: 0%; }
 
 /* Tooltips: cap width + wrap at word boundaries. Without this, a long single-line
    tooltip (e.g. the claim holder "name · since <date> · session <id>") pinned

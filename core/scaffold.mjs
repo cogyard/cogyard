@@ -274,11 +274,30 @@ function devScriptFor(desc) {
   return desc.devScript === undefined ? DEFAULT_DEV_SCRIPT : desc.devScript;
 }
 
+// The dev entry a kind names (task 164): its command, the `launch_name` the
+// config gives it, and the port variable its preview tab opens on. The defaults
+// are what every kind wrote before, so a kind that names neither writes the
+// same file byte for byte.
+//
+// `extra` is every further command that binds a port (`extraDevScripts`,
+// written as `extra_dev_scripts`), each with its own launch entry; none unless
+// the kind names some, and then the key is absent from the file.
+function devEntryFor(desc) {
+  return {
+    devScript: devScriptFor(desc),
+    launchName: desc.launchName ?? 'dev',
+    previewPortVar: desc.previewPortVar ?? 'FRONTEND_PORT',
+    extra: (desc.extraDevScripts || []).map((x) => ({
+      devScript: x.devScript, launchName: x.launchName, previewPortVar: x.previewPortVar ?? 'FRONTEND_PORT',
+    })),
+  };
+}
+
 // `devScript` null writes a config with NO dev_script and no preview fields:
 // the worktree still gets its ports, and every reader (the session hook, the
 // Stop-hook server check — core/worktree-config.mjs devScriptOf) reads the
 // missing field as "no dev server here", never as a broken config.
-function worktreeConfig(slug, devScript) {
+function worktreeConfig(slug, { devScript, launchName, previewPortVar, extra = [] }) {
   if (!devScript) {
     return JSON.stringify({
       _comment: "Worktree port wiring (cogyard). This project has no dev server, so no dev_script is named and no preview entry is registered. Every worktree still gets its own reserved ports, and ~/.cogyard/ports.json is the ONLY place they exist; anything that binds one asks for it at runtime — eval \"$(cogyard env ports --shell || echo 'exit 1')\". See docs/PROJECT-INIT.md.",
@@ -286,18 +305,26 @@ function worktreeConfig(slug, devScript) {
       port_vars: { PORT: 'backend', FRONTEND_PORT: 'frontend' },
     }, null, 2) + '\n';
   }
-  return JSON.stringify({
-    _comment: `Worktree port wiring (cogyard). Every worktree gets its own reserved ports, and ~/.cogyard/ports.json is the ONLY place they exist. Your \`${devScript}\` MUST ask for them at runtime — eval "$(cogyard env ports --shell || echo 'exit 1')" — and must never read a copy out of a file: a copy rots, and a rotted copy is how two worktrees silently bind one port. The \`|| echo 'exit 1'\` is load-bearing, because eval reports its own status and not the command's. See docs/PROJECT-INIT.md.`,
+  const commands = [devScript, ...extra.map((x) => x.devScript)].map((c) => `\`${c}\``);
+  const yours = commands.length === 1 ? commands[0] : `${commands.slice(0, -1).join(', ')} and ${commands.at(-1)}`;
+  const cfg = {
+    _comment: `Worktree port wiring (cogyard). Every worktree gets its own reserved ports, and ~/.cogyard/ports.json is the ONLY place they exist. Your ${yours} MUST ask for them at runtime — eval "$(cogyard env ports --shell || echo 'exit 1')" — and must never read a copy out of a file: a copy rots, and a rotted copy is how two worktrees silently bind one port. The \`|| echo 'exit 1'\` is load-bearing, because eval reports its own status and not the command's. See docs/PROJECT-INIT.md.`,
     project_name: slug,
     dev_script: devScript,
-    launch_name: 'dev',
+    launch_name: launchName,
     port_vars: { PORT: 'backend', FRONTEND_PORT: 'frontend' },
-    preview_port_var: 'FRONTEND_PORT',
+    preview_port_var: previewPortVar,
     // No env_files. The ports are asked for at runtime, so there is no copy to
     // merge into a file — which is the whole point. A project that later wants
     // SHARED, non-port dev env vars in its worktrees can add an env_files entry
     // then; it must never carry a port.
-  }, null, 2) + '\n';
+  };
+  if (extra.length) {
+    cfg.extra_dev_scripts = extra.map((x) => ({
+      dev_script: x.devScript, launch_name: x.launchName, preview_port_var: x.previewPortVar,
+    }));
+  }
+  return JSON.stringify(cfg, null, 2) + '\n';
 }
 
 // The git repo a not-yet-created (or empty) init target would land inside, or
@@ -412,26 +439,51 @@ export function ensureProjectWiring({
   const slug = entry.slug;
 
   // 3. root package.json with a version — the release counter. Create if absent;
-  // NEVER touch an existing one (warn if it lacks a version).
+  // NEVER touch an existing one (warn if it lacks a version, or a script the
+  // kind's files rely on — the warning gives the exact line to add). A kind that
+  // declares `pkgJson: null` writes none (task 274) — and a pkgJson() that
+  // returns no object writes none too, rather than a file holding `null`.
   const pkgPath = join(repoRoot, 'package.json');
-  if (!existsSync(pkgPath)) {
-    writeFileSync(pkgPath, JSON.stringify(desc.pkgJson(slug), null, 2) + '\n');
-    created.push('package.json');
-    rec('package.json', 'created', 'minimal, version 0.1.0');
+  // What the kind would write. Asked for even when a package.json exists, for
+  // the scripts it would hold; a kind with no pkgJson() function has none.
+  const kindPkg = typeof desc.pkgJson === 'function' ? desc.pkgJson(slug) : null;
+  let version;
+  if (existsSync(pkgPath)) {
+    let pkg = null;
+    try { pkg = JSON.parse(readFileSync(pkgPath, 'utf8')); } catch {}
+    version = pkg?.version || undefined;
+    rec('package.json', 'present', version ? `version ${version}` : 'left untouched');
+    if (!version) warnings.push('package.json exists but has no "version" — the version rules need one; add it manually.');
+    for (const name of desc.requiredScripts || []) {
+      const want = kindPkg?.scripts?.[name];
+      const have = pkg?.scripts?.[name];
+      if (want === undefined || have === want) continue;
+      const line = `${JSON.stringify(name)}: ${JSON.stringify(want)}`;
+      warnings.push(have === undefined
+        ? `package.json has no "${name}" script, which kind "${kind}" needs. onboard never edits an existing package.json — add this line to its "scripts" yourself: ${line}`
+        : `package.json's "${name}" script is ${JSON.stringify(have)}, not kind "${kind}"'s. onboard left it as it is; to use the kind's, change it to: ${line}`);
+    }
+  } else if (desc.pkgJson === null) {
+    rec('package.json', 'skipped', `kind=${kind} writes no package.json`);
+  } else if (!kindPkg || typeof kindPkg !== 'object' || Array.isArray(kindPkg)) {
+    rec('package.json', 'skipped', `kind=${kind} pkgJson() returned no object`);
+    warnings.push(`kind "${kind}" pkgJson() returned no object, so no package.json was written — a kind that writes none declares \`pkgJson: null\`.`);
   } else {
-    let v = null;
-    try { v = JSON.parse(readFileSync(pkgPath, 'utf8')).version; } catch {}
-    rec('package.json', 'present', v ? `version ${v}` : 'left untouched');
-    if (!v) warnings.push('package.json exists but has no "version" — the version rules need one; add it manually.');
+    writeFileSync(pkgPath, JSON.stringify(kindPkg, null, 2) + '\n');
+    created.push('package.json');
+    version = kindPkg.version;
+    rec('package.json', 'created', 'minimal, version 0.1.0');
   }
 
-  // 4. .gitignore essentials — append (never replace).
+  // 4. .gitignore essentials, plus any line the kind's own files need — append
+  // (never replace).
   {
     const giPath = join(repoRoot, '.gitignore');
     const existed = existsSync(giPath);
     const gi = existed ? readFileSync(giPath, 'utf8') : '';
     const present = new Set(gi.split('\n').map((x) => x.trim()));
-    const missing = GITIGNORE_ESSENTIALS.filter((x) => !present.has(x) && !present.has(x.replace(/\/$/, '')));
+    const wanted = [...new Set([...GITIGNORE_ESSENTIALS, ...(desc.gitignore || [])])];
+    const missing = wanted.filter((x) => !present.has(x) && !present.has(x.replace(/\/$/, '')));
     if (missing.length) {
       const prefix = gi === '' || gi.endsWith('\n') ? gi : gi + '\n';
       writeFileSync(giPath, prefix + '# cogyard wiring\n' + missing.join('\n') + '\n');
@@ -452,12 +504,29 @@ export function ensureProjectWiring({
   // 6. version + commit stamping (descriptor-gated; library stamps via package.json).
   // A function is the kind's own way to stamp (task 162) — an Xcode build phase,
   // a firmware header — and replaces the npm stamper rather than adding to it.
+  // It is told the version on disk, so a file that has to be committed with the
+  // version already in it (an Xcode .xcconfig) can be seeded right.
+  // `false` with a package.json means the version lives there (library); `false`
+  // with `pkgJson: null` means the kind has no version at all (task 274).
   if (typeof desc.versionStamp === 'function') {
-    const files = Object.entries(desc.versionStamp(slug) || {});
+    const files = Object.entries(desc.versionStamp(slug, { version }) || {});
     for (const [rel, content] of files) ensureFile(rel, content);
     if (!files.length) rec('version stamp', 'skipped', `kind=${kind} seeds no stamping files`);
   } else if (desc.versionStamp !== false) ensureFile('scripts/generate-version.mjs', generateVersionScript());
+  else if (desc.pkgJson === null) rec('scripts/generate-version.mjs', 'skipped', `kind=${kind} has no version to stamp`);
   else rec('scripts/generate-version.mjs', 'skipped', `kind=${kind} stamps via package.json`);
+
+  // 6b. what the kind records about the project it finds (task 164) — e.g. a
+  // firmware project's production build environment. Same create-if-absent
+  // rule; anything the kind could not tell comes back as a warning. A kind that
+  // throws here costs the project no wiring: the failure becomes a warning.
+  if (typeof desc.describeProject === 'function') {
+    let found = {};
+    try { found = desc.describeProject(repoRoot) || {}; }
+    catch (e) { found = { warnings: [`kind ${kind} could not look at the project: ${e.message}`] }; }
+    for (const [rel, content] of Object.entries(found.files || {})) ensureFile(rel, content);
+    warnings.push(...(found.warnings || []));
+  }
 
   // 7. worktree wiring — the REAL opt-in the port hook keys on. Nothing else is
   // seeded: a dev script asks `cogyard env ports` at runtime, so there is no
@@ -465,7 +534,7 @@ export function ensureProjectWiring({
   if (!wantWiring) {
     rec(WORKTREE_CONFIG, 'skipped', `kind=${kind} opts out of worktree ports`);
   } else {
-    ensureFile(WORKTREE_CONFIG, worktreeConfig(slug, devScriptFor(desc)));
+    ensureFile(WORKTREE_CONFIG, worktreeConfig(slug, devEntryFor(desc)));
   }
 
   // 7b. onboard only: does what we are adopting look like an npm web app at

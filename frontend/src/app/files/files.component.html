@@ -42,15 +42,23 @@
           <!-- pTemplate="default", not #node: Tree's render path only consults
                its pTemplate map; the #node ContentChild is never outletted. -->
           <ng-template pTemplate="default" let-n>
-            <span class="trow" [class.gone]="n.data.onDisk === false" [pTooltip]="n.data.path">
-              <img class="ficon" [src]="icon(n.data)" alt="" />
-              @if (n.data.kind === 'dir') {
-                <span class="dirname" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
-                @if (n.data.hasChanges) { <span class="chdot" pTooltip="contains changes">●</span> }
-                @if (n.data.untracked) { <app-git-status code="?" pTooltip="untracked, not gitignored" /> }
-              } @else {
-                <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+            <span class="trow" [class.gone]="n.data.onDisk === false" [pTooltip]="rowTip(n.data)">
+              @if (n.data.link) {
+                <!-- A link (task 269): what it points at, an arrow on the icon, the target after the name. -->
+                <app-link-mark [src]="icon(n.data)" [link]="n.data.link">
+                  <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+                </app-link-mark>
                 @if (n.data.status) { <app-git-status [code]="n.data.status" /> }
+              } @else {
+                <img class="ficon" [src]="icon(n.data)" alt="" />
+                @if (n.data.kind === 'dir') {
+                  <span class="dirname" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+                  @if (n.data.hasChanges) { <span class="chdot" pTooltip="contains changes">●</span> }
+                  @if (n.data.untracked) { <app-git-status code="?" pTooltip="untracked, not gitignored" /> }
+                } @else {
+                  <span class="fname" [class.full]="n.data.full" [class.nongit]="n.data.tracked === false">{{ n.label }}</span>
+                  @if (n.data.status) { <app-git-status [code]="n.data.status" /> }
+                }
               }
             </span>
           </ng-template>
@@ -110,11 +118,14 @@
     @if (file()) {
       <div class="pane-bar">
         <span class="fpath mono">{{ file() }}</span>
+        <!-- A link to a file inside the repo opens as that file; say so (task 269). -->
+        @if (link() && !linkPanel()) { <span class="meta hint sm mono">link → {{ link()!.display }}</span> }
         @if (selectedStatus()) { <app-git-status [code]="selectedStatus()" /> }
         @if (size()) { <span class="meta hint sm">{{ fmtSize(size()) }}</span> }
         @if (truncated()) { <span class="meta warn hint sm">truncated at 1 MB</span> }
         <span class="spacer"></span>
-        @if (!editing()) {
+        <!-- A link the panel explains has no views and nothing to edit (task 269). -->
+        @if (!editing() && !linkPanel()) {
           <!-- One select button for how the file is shown (task 224). Only when
                there is a choice: a file with one view needs no control.
                No fade on its segments (task 262): the desktop app's Browser
@@ -132,7 +143,7 @@
           @if (canEdit()) {
             <button class="btn-toggle" (click)="startEdit()" [disabled]="loadingEditor()">{{ loadingEditor() ? 'edit…' : 'edit' }}</button>
           }
-        } @else {
+        } @else if (editing()) {
           <!-- Save/Cancel replace the view toggles while editing (Cmd+S works too) -->
           <button class="btn-toggle" [class.on]="wrap()" (click)="toggleWrap()" pTooltip="soft-wrap long lines">wrap</button>
           <button class="btn-toggle save-btn" [class.on]="dirty()" [disabled]="!dirty() || saving()" (click)="save()">{{ saving() ? 'saving…' : 'save' }}</button>
@@ -144,6 +155,10 @@
     }
     @if (!file()) {
       <div class="body" [class.dark]="dark()"><div class="empty">Select a file.</div></div>
+    } @else if (linkPanel()) {
+      <div class="body" [class.dark]="dark()">
+        <app-link-panel [slug]="slug()" [path]="file()" [link]="link()!" [src]="linkIcon()" />
+      </div>
     } @else if (editing()) {
       <div class="body editing" [class.dark]="dark()">
         @if (conflict()) {

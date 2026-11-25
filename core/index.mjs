@@ -33,7 +33,7 @@ export { recentlyDone } from './recently-done.mjs';
 export { inProgressAll } from './in-progress.mjs';
 export { PUBLISH_DEFAULTS, publishStatus, labelReleaseTags } from './publish.mjs';
 export { STATUS, STATUSES, isValidStatus, isClosed, isOpen, satisfiesDeps, hasDoneDate, BUCKET_KEYS, bucketOf, waitingWhyOf } from './status.mjs';
-export { validateTask, validateTasks, introducedErrors, normalizeTaskId } from './validate.mjs';
+export { validateTask, validateTasks, introducedErrors, normalizeTaskId, decisionLogProblems, decisionMarks, logCitesTask, NOT_FOR_LOG_MARK } from './validate.mjs';
 export { closeability, closeableTasks, doneWithLeftovers, markerProblemsByFile, proseSettled, markerText, boxReport, mergeState, claimState, whoAmI, rewriteStatusLine } from './close.mjs';
 export { liveParkNotes, describePark, parkRecordKey, cleanParkReason, writeParkNote, endParkNotes } from './park.mjs';
 export { resolveAxes, axisLookup, registeredLabels, seedSharedAxes, DEFAULT_SHARED_AXES,

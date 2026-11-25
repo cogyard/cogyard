@@ -27,11 +27,12 @@ function project({ npm = false } = {}) {
 const fileOf = (p) => join(p, '.cogyard', 'tasks', 'switches.json');
 const put = (p, body) => writeFileSync(fileOf(p), typeof body === 'string' ? body : JSON.stringify(body));
 
-test('no file, root package.json → rebase always, version minor, both defaults', () => {
+test('no file, root package.json → rebase always, version minor, decisions_log off, all defaults', () => {
   const p = project({ npm: true });
   assert.deepEqual(resolveSwitches(p), {
     rebase: { value: 'always', set: false },
     version: { value: 'minor', set: false, file: 'package.json' },
+    decisions_log: { value: null, set: false },
   });
 });
 
@@ -42,9 +43,27 @@ test('no file, no root package.json → version off, no counter file', () => {
 
 test('switchDefaults says what an unset switch is, whatever the file sets', () => {
   const npm = project({ npm: true });
-  put(npm, { rebase: 'ask', version: 'off' });
-  assert.deepEqual(switchDefaults(npm), { rebase: 'always', version: 'minor' });
-  assert.deepEqual(switchDefaults(project()), { rebase: 'always', version: 'off' });
+  put(npm, { rebase: 'ask', version: 'off', decisions_log: 'docs/DECISIONS.md' });
+  assert.deepEqual(switchDefaults(npm), { rebase: 'always', version: 'minor', decisions_log: null });
+  assert.deepEqual(switchDefaults(project()), { rebase: 'always', version: 'off', decisions_log: null });
+});
+
+test('decisions_log: a path inside the repo is read back set (trimmed); anything else is dropped or refused', () => {
+  const p = project();
+  put(p, { decisions_log: ' docs/DECISIONS.local.md ' });
+  assert.deepEqual(resolveSwitches(p).decisions_log, { value: 'docs/DECISIONS.local.md', set: true });
+  assert.deepEqual(readProjectSwitches(p), { decisions_log: 'docs/DECISIONS.local.md' });
+  for (const bad of ['', '   ', '/etc/DECISIONS.md', '../other/DECISIONS.md', 'docs/../../x.md', 7, true, { path: 'x' }]) {
+    put(p, { decisions_log: bad });
+    assert.deepEqual(resolveSwitches(p).decisions_log, { value: null, set: false }, JSON.stringify(bad));
+    assert.equal(switchProblems(p).length, 1, JSON.stringify(bad));
+    assert.equal(writeProjectSwitches(p, { decisions_log: bad }).ok, false, JSON.stringify(bad));
+  }
+  // null unsets it — the check goes back to off.
+  writeProjectSwitches(p, { decisions_log: 'docs/DECISIONS.md' });
+  assert.equal(resolveSwitches(p).decisions_log.value, 'docs/DECISIONS.md');
+  writeProjectSwitches(p, { decisions_log: null });
+  assert.deepEqual(resolveSwitches(p).decisions_log, { value: null, set: false });
 });
 
 test('each valid value is read back and marked set', () => {
@@ -77,6 +96,7 @@ test('invalid values and unknown keys are dropped on read — the default applie
   assert.deepEqual(resolveSwitches(p), {
     rebase: { value: 'always', set: false },
     version: { value: 'minor', set: false, file: 'package.json' },
+    decisions_log: { value: null, set: false },
   });
   assert.deepEqual(readProjectSwitches(p), {});
   put(p, { version: { command: '', file: 'x' } });

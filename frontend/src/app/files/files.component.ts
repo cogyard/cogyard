@@ -1,6 +1,6 @@
 import { Component, input, output, inject, effect, signal, computed, untracked, viewChild, ElementRef, afterRenderEffect, OnDestroy } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { map } from 'rxjs';
+import { map, finalize } from 'rxjs';
 import { Skeleton } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -29,12 +29,14 @@ import ini from 'highlight.js/lib/languages/ini';
 import diff from 'highlight.js/lib/languages/diff';
 import { getIconForFilePath, getIconForDirectoryPath } from 'vscode-material-icons';
 import { ApiService } from '../services/api.service';
-import { WtInfo, TreeFile, WtActivityResponse, TreeResponse, FilesBase } from '../services/models';
+import { WtInfo, TreeFile, WtActivityResponse, TreeResponse, FilesBase, FileLink } from '../services/models';
 import { StoreService } from '../services/store.service';
 import { EditStateService } from '../services/edit-state.service';
 import { DiffViewComponent } from '../shared/diff-view/diff-view.component';
 import { FileActionsComponent } from '../shared/file-actions/file-actions.component';
 import { HtmlFrameComponent } from './html-frame/html-frame.component';
+import { LinkMarkComponent } from './link-mark/link-mark.component';
+import { LinkPanelComponent } from './link-panel/link-panel.component';
 // Type-only — the editor module itself is dynamic-import'd on first Edit click
 // so CodeMirror stays out of the main bundle.
 import type { EditorHandle } from './editor';
@@ -67,6 +69,13 @@ const IMAGE_EXT = new Set(['png', 'jpg', 'jpeg', 'gif', 'svg', 'webp', 'ico']);
 const HTML_EXT = new Set(['html', 'htm']);
 const ext = (p: string) => (p.split('/').pop() ?? '').split('.').pop()?.toLowerCase() ?? '';
 
+// A tree answer's file list with the server's hash of it (task 270). Two are the
+// same list when the hashes match; with no hash (an older server) they never
+// are, so the tree redraws on every answer as it used to.
+type FileList = { hash: string; files: TreeFile[] } | null;
+const sameList = (a: FileList, b: FileList) => a === b || (!!a?.hash && a.hash === b?.hash);
+const fileListOf = (t: TreeResponse | null): FileList => (t ? { hash: t.filesHash, files: t.files } : null);
+
 // How the open file is shown. 'rendered' = markdown preview, or an HTML page
 // with its scripts on; 'no-scripts' = an HTML page with its scripts off.
 type FileView = 'rendered' | 'no-scripts' | 'raw' | 'diff';
@@ -80,11 +89,12 @@ interface Row {
   tracked?: boolean;   // files only — false = non-git (untracked/ignored)
   full?: boolean;      // changed-only mode: label is the full path
   hasChanges?: boolean; // dirs only — any changed descendant
+  link?: FileLink;     // files only — the entry is a link (task 269)
 }
 
 @Component({
   selector: 'app-files',
-  imports: [DiffViewComponent, FileActionsComponent, HtmlFrameComponent, FormsModule, ToggleSwitch, Select, SelectButton, RefChipComponent, TreeModule, GitStatusComponent, TooltipModule, Skeleton],
+  imports: [DiffViewComponent, FileActionsComponent, HtmlFrameComponent, LinkMarkComponent, LinkPanelComponent, FormsModule, ToggleSwitch, Select, SelectButton, RefChipComponent, TreeModule, GitStatusComponent, TooltipModule, Skeleton],
   templateUrl: './files.component.html',
   styleUrl: './files.component.scss',
   host: { '(window:beforeunload)': 'onBeforeUnload($event)' },
@@ -114,12 +124,18 @@ export class FilesComponent implements OnDestroy {
   toggleShowIgnored() { this.showIgnored.set(!this.showIgnored()); }
 
   private cachedWts = this.store.use<WtActivityResponse>(() => (this.slug() ? `wt-activity|${this.slug()}` : null));
-  // The tree variant on screen is the watched entry (lean, or full with
-  // gitignored files when toggled on); the refresher keeps it fresh.
-  private watchedTree = this.store.use<TreeResponse>(() => (this.slug() ? this.treeKey(this.showIgnored()) : null));
-  // While the full tree loads, the last lean tree stays on screen (spinner on
-  // the toggle signals the wait); once landed, the full tree swaps in.
-  private cachedLean = computed(() => this.store.sig<TreeResponse>(this.treeKey(false))());
+  // The watched entry is always the normal listing, switch on or off: the
+  // refresher re-downloads it on every check, so edits show within 10 s.
+  private cachedTree = this.store.use<TreeResponse>(() => (this.slug() ? this.treeKey(false) : null));
+  // With "show gitignored" on, the gitignored listing (`…|ig`) is loaded once,
+  // with no reader, so the refresher never re-downloads it (task 270): it is
+  // fetched again only when the switch is turned on, or when the worktree or
+  // the compared commit changes while it is on (owner's choice, 2026-11-23 — a
+  // new gitignored file shows after turning the switch off and on). The tree
+  // shows the normal listing plus that listing's gitignored entries.
+  private cachedIgnored = computed(() => (this.showIgnored() && this.slug() ? this.store.sig<TreeResponse>(this.treeKey(true))() : null));
+  // The gitignored listing's entry name while its fetch is in flight.
+  private ignoredPending = signal<string | null>(null);
   // The tree entry's name: an older commit picked in the compare dropdown
   // (task 224) is part of it — the server works out each file's status against
   // that commit. 'head' / 'main' need none (the tree always compares vs main
@@ -129,9 +145,28 @@ export class FilesComponent implements OnDestroy {
     const c = this.compareCommit();
     return `tree|${this.slug()}|${this.selectedWt()}${ignored ? '|ig' : ''}${c ? `|c=${c}` : ''}`;
   }
-  private cachedTree = computed(() => this.watchedTree() ?? (this.showIgnored() ? this.cachedLean() : null));
   worktrees = computed<WtInfo[]>(() => this.cachedWts()?.worktrees ?? []);
-  treeFiles = computed<TreeFile[]>(() => this.cachedTree()?.files ?? []);
+  // The tree is re-downloaded on every live-update check (no change code, by
+  // the 2026-10-06 decision in docs/LIVE-UPDATES.md), and each answer is a new
+  // object. The file list keeps its identity while the answer's filesHash is
+  // unchanged, so the tree keeps its rows and a click never lands on a row that
+  // was just thrown away (task 270). The commit list and vsRef still follow
+  // every answer.
+  private fileList = computed(() => fileListOf(this.cachedTree()), { equal: sameList });
+  private ignoredList = computed(() => fileListOf(this.cachedIgnored()), { equal: sameList });
+  // The normal listing, plus — switch on — the gitignored listing's gitignored
+  // entries (not tracked, no status) that the normal listing lacks. The normal
+  // listing wins for any path in both, and nothing else is taken from the
+  // gitignored one: it is fetched once, so a file deleted or renamed since would
+  // linger from it, where the normal listing is at most 10 s old.
+  treeFiles = computed<TreeFile[]>(() => {
+    const files = this.fileList()?.files;
+    if (!files) return [];
+    const ignored = this.ignoredList()?.files;
+    if (!ignored) return files;
+    const have = new Set(files.map((f) => f.path));
+    return files.concat(ignored.filter((f) => !f.tracked && !f.status && !f.commitStatus && !have.has(f.path)));
+  });
   vsRef = computed(() => this.cachedTree()?.vsRef ?? null);
   loadingTree = computed(() => this.cachedTree() === null);
   // The compare dropdown's commit list outlives a tree load (task 224): picking
@@ -145,7 +180,7 @@ export class FilesComponent implements OnDestroy {
     const last = this.lastCommitList();
     return last && last.wt === `${this.slug()}|${this.selectedWt()}` ? last.tree : null;
   });
-  loadingIgnored = computed(() => this.showIgnored() && this.watchedTree() === null);
+  loadingIgnored = computed(() => this.showIgnored() && this.ignoredPending() === this.treeKey(true));
 
   // "hide unchanged files" (was the "changed only" button, task 224): the tree
   // lists only files with a status under the current compare base.
@@ -270,6 +305,15 @@ export class FilesComponent implements OnDestroy {
   private statusByPath = computed(() => new Map(this.treeFiles().map((f) => [f.path, f])));
   selected = computed(() => (this.file() ? this.statusByPath().get(this.file()) ?? null : null));
   selectedStatus = computed(() => { const s = this.selected(); return s ? this.statusOf(s) : null; });
+  // The open entry's link (task 269): from the tree, else from the file's own
+  // answer (a deep link read before the tree arrived).
+  private fileLink = signal<FileLink | null>(null);
+  link = computed(() => this.selected()?.link ?? this.fileLink());
+  // A link the right side explains instead of opening: to a folder, broken, or
+  // leading out of the repo (app-link-panel). A link to a file inside the repo
+  // opens as a file, with "link →" in its bar.
+  linkPanel = computed(() => { const l = this.link(); return !!l && (l.kind !== 'file' || !l.inside); });
+  linkIcon = computed(() => { const l = this.link(); return l ? this.icon({ kind: 'file', path: this.file(), link: l }) : ''; });
 
   // The file bar's view choices: rendered (markdown; an HTML page with and
   // without its scripts), the file itself (raw text, or the image), and the
@@ -327,7 +371,7 @@ export class FilesComponent implements OnDestroy {
     if (this.hideUnchanged()) {
       return files.filter(statusOf).map((f) => ({
         key: f.path, label: f.path, leaf: true,
-        data: { kind: 'file', path: f.path, status: statusOf(f), onDisk: f.onDisk, tracked: f.tracked, full: true },
+        data: { kind: 'file', path: f.path, status: statusOf(f), onDisk: f.onDisk, tracked: f.tracked, full: true, link: f.link },
       }));
     }
     const defaultOpen = files.length <= 250;
@@ -377,7 +421,7 @@ export class FilesComponent implements OnDestroy {
       for (const f of n.files.sort((a, b) => a.path.localeCompare(b.path))) {
         out.push({
           key: f.path, label: f.path.split('/').pop()!, leaf: true,
-          data: { kind: 'file', path: f.path, status: statusOf(f), onDisk: f.onDisk, tracked: f.tracked },
+          data: { kind: 'file', path: f.path, status: statusOf(f), onDisk: f.onDisk, tracked: f.tracked, link: f.link },
         });
       }
       return out;
@@ -417,7 +461,7 @@ export class FilesComponent implements OnDestroy {
   });
 
   constructor() {
-    // Worktree pills + file tree are watched entries (cachedWts / watchedTree
+    // Worktree pills + file tree are watched entries (cachedWts / cachedTree
     // above): the shared refresher re-loads them quietly — cached data stays on
     // screen, expansion overrides survive. The open file's CONTENT is
     // deliberately not auto-refreshed: re-fetching mid-read would yank the
@@ -428,6 +472,20 @@ export class FilesComponent implements OnDestroy {
       this.patch.set(null);
       this.savedRev.set(null);
       if (s && f) this.loadFile(s, w, f); else this.resetContent();
+    });
+    // "show gitignored" on: fetch the gitignored listing once (cachedIgnored
+    // says when). treeKey reads the worktree and the compared commit, so this
+    // re-runs when either changes while the switch is on — and never on a check.
+    effect(() => {
+      if (!this.showIgnored() || !this.slug()) return;
+      const key = this.treeKey(true), s = this.slug(), w = this.selectedWt(), c = this.compareCommit();
+      untracked(() => {
+        this.ignoredPending.set(key);
+        // A fetch already in flight for this entry is kept (the store drops the
+        // new one); its own finalize clears the spinner for the same key.
+        this.store.load(key, this.api.tree(s, w, true, c).pipe(
+          finalize(() => { if (this.ignoredPending() === key) this.ignoredPending.set(null); })));
+      });
     });
     // Remember the last tree that arrived, for the compare dropdown's list.
     effect(() => {
@@ -499,7 +557,7 @@ export class FilesComponent implements OnDestroy {
     this.stopEdit();
     this.content.set(null); this.binary.set(false); this.truncated.set(false);
     this.size.set(0); this.missing.set(false); this.loadingFile.set(false);
-    this.baseHash.set(null);
+    this.baseHash.set(null); this.fileLink.set(null);
   }
   private loadFile(slug: string, wt: string, path: string) {
     this.resetContent();
@@ -512,6 +570,7 @@ export class FilesComponent implements OnDestroy {
         this.truncated.set(!!d.truncated);
         this.size.set(d.size);
         this.baseHash.set(d.hash ?? null);
+        this.fileLink.set(d.link ?? null);
         this.loadingFile.set(false);
       },
       error: () => { this.missing.set(true); this.loadingFile.set(false); },
@@ -590,9 +649,10 @@ export class FilesComponent implements OnDestroy {
       this.dirty.set(false); this.conflict.set(false);
     });
   }
+  // After a save: the normal listing, which carries the saved file's status
+  // (switch on or off — the gitignored listing is only ever loaded on switch-on).
   private refreshTree() {
-    const s = this.slug(), w = this.selectedWt(), ig = this.showIgnored();
-    this.store.load(this.treeKey(ig), this.api.tree(s, w, ig, this.compareCommit()));
+    this.store.load(this.treeKey(false), this.api.tree(this.slug(), this.selectedWt(), false, this.compareCommit()));
   }
 
   // Switching worktree drops back to the lean tree — each heavy listing is an
@@ -637,9 +697,17 @@ export class FilesComponent implements OnDestroy {
   }
 
   // Material Icon Theme SVGs (copied to assets/material-icons by angular.json).
+  // A link shows the icon of what it points at (task 269): a folder icon for a
+  // link to a folder, the plain file icon for a broken one.
   icon(r: Row): string {
-    const name = r.kind === 'dir' ? getIconForDirectoryPath(r.path) : getIconForFilePath(r.path);
+    const k = r.link?.kind;
+    const name = r.kind === 'dir' || k === 'dir' ? getIconForDirectoryPath(r.path)
+      : k === 'broken' ? 'file' : getIconForFilePath(r.path);
     return `assets/material-icons/${name}.svg`;
+  }
+  // The row's hover text; a link adds where it goes.
+  rowTip(r: Row): string {
+    return r.link ? `${r.path} → ${r.link.target}` : r.path;
   }
 
   relTime(iso: string | null, nowMs: number = Date.now()): string {

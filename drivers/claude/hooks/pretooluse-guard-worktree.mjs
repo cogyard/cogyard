@@ -116,7 +116,8 @@ if (tool === 'ExitWorktree') {
     'Worktree guard: ExitWorktree `remove` deletes this worktree AND its branch. '
     + 'Approve only if the user asked for exactly this. '
     + 'Never remove a worktree in order to replace it with another one: if it is behind main, '
-    + 'report `git log --oneline HEAD..<base>` and stop — the remedy is the user\'s.');
+    + 'rebase it onto main as the project\'s rebase switch says (`git rebase <base>`), '
+    + 'or, when it has commits of its own and is not a task being resumed, report `git log --oneline HEAD..<base>` and stop.');
 }
 
 // --- EnterWorktree ---------------------------------------------------------
@@ -268,7 +269,7 @@ for (const seg of segments(command)) {
     + 'A task worktree is made by the EnterWorktree tool with name=. A hand-made one, entered with EnterWorktree path=, '
     + 'has moved a chat to the wrong heading in the Claude desktop sidebar and broken a pickup that took a dozen hand steps to undo.\n\n'
     + 'If the worktree EnterWorktree made is behind local main (it branches from origin, so commits never pushed are missing): '
-    + 'report `git log --oneline HEAD..<base>` and STOP — the remedy is the user\'s. '
+    + 'it has no commits of its own yet, so rebase it onto local main (`git rebase <base>`) as the project\'s rebase switch says. '
     + 'Never offer "a fresh worktree from local main": the tool cannot make one.\n\n'
     + 'Allowed:\n'
     + '  • re-attach a branch that already exists → `git worktree add <path> <branch>` (no -b)\n'

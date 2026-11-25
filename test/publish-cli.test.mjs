@@ -83,6 +83,43 @@ function run(f, args, extraEnv = {}) {
     p.on('close', (status) => resolve({ status, stdout, stderr }));
   });
 }
+// The same, in a terminal: a publish that must ask the owner refuses to start
+// without one. Python's pty module gives the CLI a real pseudo-terminal (Node
+// has none built in); `answers` are [pattern, reply] pairs, each reply typed
+// once its pattern has been printed. Colour off, and the terminal wide, so the
+// output reads as plain lines.
+const PTY = `
+import os, pty, sys, json, re, select, time, fcntl, termios, struct
+answers = json.loads(sys.argv[1]); argv = sys.argv[2:]
+pid, fd = pty.fork()
+if pid == 0:
+    os.execvp(argv[0], argv)
+fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', 50, 500, 0, 0))
+buf = b''; i = 0; deadline = time.time() + 60
+while time.time() < deadline:
+    r, _, _ = select.select([fd], [], [], 0.1)
+    if r:
+        try: data = os.read(fd, 4096)
+        except OSError: break
+        if not data: break
+        sys.stdout.buffer.write(data); sys.stdout.flush(); buf += data
+    if i < len(answers) and re.search(answers[i][0].encode(), buf):
+        os.write(fd, answers[i][1].encode()); buf = b''; i += 1
+else:
+    os.kill(pid, 9)
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status))
+`;
+function runInTerminal(f, args, answers, extraEnv = {}) {
+  const env = { ...process.env, COGYARD_HOME: f.home, COGYARD_PUBLISH_POLL_MS: '50', COGYARD_PUBLISH_TIMEOUT_MS: '1500', NO_COLOR: '1', ...extraEnv };
+  for (const k of ['CLAUDECODE', 'CLAUDE_CODE', 'CLAUDE_PROJECT_DIR']) if (!(k in extraEnv)) delete env[k];
+  return new Promise((resolve) => {
+    const p = spawn('python3', ['-I', '-c', PTY, JSON.stringify(answers), process.execPath, CLI, 'publish', ...args], { env, stdio: ['ignore', 'pipe', 'inherit'] });
+    let output = '';
+    p.stdout.on('data', (d) => { output += d; });
+    p.on('close', (status) => resolve({ status, output: output.replace(/\r\n/g, '\n') }));
+  });
+}
 const log = (f) => readFileSync(join(f.home, 'publishes.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
 const remoteTag = (f, tag) => { try { return git(f.origin, 'rev-parse', `${tag}^{commit}`); } catch { return null; } };
 
@@ -178,7 +215,7 @@ test('steps that need the owner are refused up front when nobody can be asked', 
   const noHealth = await fixture({ declaration: ({ live }) => ({ deploysOnPush: false, command: `printf x > ${JSON.stringify(live)}` }) });
   const h = await run(noHealth, ['proj', '--yes']);
   assert.equal(h.status, 2);
-  assert.match(h.stderr, /no health URL is declared/);
+  assert.match(h.stderr, /no health URL or live check is declared, so you must confirm it is live — and there is no terminal/);
   assert.equal(readFileSync(noHealth.live, 'utf8').trim().length, 40, 'the deploy never ran');
 });
 
@@ -209,6 +246,25 @@ test('checks: a failing check stops it before the deploy — nothing ships, noth
   assert.doesNotMatch(r.stdout, /^7\. Deploy$/m, 'step 7 never started');
   assert.notEqual(readFileSync(f.live, 'utf8'), f.sha);
   assert.equal(remoteTag(f, 'v1.0.0'), null);
+});
+
+test('checks: npm logged out stops it at step 5, before you are asked to confirm anything (task 267)', async () => {
+  // cogyard's own declaration checks `npm whoami`. An empty npm user config is
+  // npm with nobody logged in; `npm whoami` then fails at once, offline.
+  const f = await fixture({ declaration: ({ live, health }) => ({
+    deploysOnPush: false, checks: ['npm whoami'],
+    command: `printf %s "$COGYARD_PUBLISH_SHA" > ${JSON.stringify(live)}`, health,
+  }) });
+  const empty = join(f.root, 'empty-npmrc');
+  writeFileSync(empty, '');
+  // No --yes: had it reached step 6, it would stop there ("no terminal to ask in").
+  // Both spellings: under `npm test`, npm passes its own config down as
+  // lowercase npm_config_userconfig (the real ~/.npmrc), which would win.
+  const r = await run(f, ['proj'], { NPM_CONFIG_USERCONFIG: empty, npm_config_userconfig: empty });
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.match(r.stderr, /✗ Checks: `npm whoami` failed \(exit 1\) — nothing was deployed/);
+  assert.doesNotMatch(r.stdout, /^6\. Confirm$/m, 'step 6 never started');
+  assert.notEqual(readFileSync(f.live, 'utf8'), f.sha);
 });
 
 test('checks: a check that changes a tracked file stops it — the checked code is not the committed code', async () => {
@@ -248,6 +304,74 @@ test('no --yes and no terminal → nothing runs', async () => {
   assert.equal(r.status, 2);
   assert.match(r.stderr, /✗ Confirm: no terminal to ask in/);
   assert.notEqual(readFileSync(f.live, 'utf8'), f.sha);
+});
+
+// --- a declared live check instead of a health URL (task 267) -------------------------
+
+test('liveCheck: one that passes already makes step 4 report "already live" — checks and deploy skipped, tag set', async () => {
+  // The releases form with a prefixed tag: the check is told the version
+  // WITHOUT the prefix, as cogyard's own "npm serves cogyard@<version>" needs.
+  const f = await fixture({ version: '1.4.0', declaration: ({ live }) => ({
+    releases: { npm: {
+      label: 'npm', tag: 'pkg/v<version>', deploysOnPush: false,
+      checks: ['exit 9'],
+      command: `printf %s "$COGYARD_PUBLISH_SHA" > ${JSON.stringify(live)}`,
+      liveCheck: 'test "$COGYARD_PUBLISH_VERSION" = 1.4.0 && echo "the registry serves 1.4.0"',
+    } },
+  }) });
+  const r = await run(f, ['proj', '--yes']);
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.match(r.stdout, /^4\. Live now\n   → test "\$COGYARD_PUBLISH_VERSION" = 1\.4\.0[^\n]*\n   the registry serves 1\.4\.0\n   ✓ the live check passes: proj npm pkg\/v1\.4\.0 is already live — checks and deploy are skipped$/m);
+  assert.match(r.stdout, /^5\. Checks\n   ✓ skipped — already live$/m, 'the failing check never ran');
+  assert.notEqual(readFileSync(f.live, 'utf8'), f.sha, 'nothing was deployed');
+  assert.match(r.stdout, /✓ live ✓ — proj npm pkg\/v1\.4\.0 passes the live check/);
+  assert.equal(remoteTag(f, 'pkg/v1.4.0'), f.sha);
+});
+
+test('liveCheck: one that passes only after the deploy makes step 8 wait, then pass — no question asked', async () => {
+  const f = await fixture({ version: '1.2.0', declaration: ({ root }) => ({
+    deploysOnPush: false,
+    // The "platform" takes a moment: the marker appears 0.4 s after the deploy.
+    command: `printf %s "$COGYARD_PUBLISH_VERSION" > ${JSON.stringify(join(root, 'deployed-version'))}; (sleep 0.4; touch ${JSON.stringify(join(root, 'marker'))}) >/dev/null 2>&1 &`,
+    liveCheck: `if [ -f ${JSON.stringify(join(root, 'marker'))} ]; then echo "serving $COGYARD_PUBLISH_VERSION"; else echo "not serving $COGYARD_PUBLISH_VERSION yet"; exit 1; fi`,
+  }) });
+  const r = await run(f, ['proj', '--yes'], { COGYARD_PUBLISH_TIMEOUT_MS: '10000' });
+  assert.equal(r.status, 0, r.stderr + r.stdout);
+  assert.equal(readFileSync(join(f.root, 'deployed-version'), 'utf8'), '1.2.0', 'the deploy command got COGYARD_PUBLISH_VERSION');
+  // Step 4 found it not live; step 6 said what step 8 would run.
+  assert.match(r.stdout, /not serving 1\.2\.0 yet\n   ✓ not live yet \(the live check exits 1\) — step 8 runs it again after the deploy/);
+  assert.match(r.stdout, /Then, cogyard runs this live check every 50 ms, up to \d+ minutes, until it passes: if \[ -f /);
+  assert.match(r.stdout, /^8\. Verify\n   running the live check every 50 ms \(up to \d+ min\) until it passes:\n   → if \[ -f [^\n]*\n\s+\d\d:\d\d:\d\d  not serving 1\.2\.0 yet\n\s+\d\d:\d\d:\d\d  serving 1\.2\.0\n   ✓ live ✓ — proj v1\.2\.0 passes the live check$/m);
+  assert.doesNotMatch(r.stdout, /\[y\/N\]/, 'nothing was asked');
+  assert.equal(remoteTag(f, 'v1.2.0'), f.sha);
+});
+
+test('liveCheck: one that never passes stops at Verify with what it last printed — nothing tagged', async () => {
+  const f = await fixture({ declaration: ({ live }) => ({
+    deploysOnPush: false,
+    command: `printf %s "$COGYARD_PUBLISH_SHA" > ${JSON.stringify(live)}`,
+    liveCheck: 'echo "checking the registry"; echo "npm does not serve it yet" >&2; exit 1',
+  }) });
+  const r = await run(f, ['proj', '--yes']);
+  assert.equal(r.status, 1, r.stderr + r.stdout);
+  assert.match(r.stderr, /✗ Verify: the live check did not pass within \d+ min — it last printed: npm does not serve it yet/);
+  assert.equal(readFileSync(f.live, 'utf8'), f.sha, 'it was deployed');
+  assert.equal(remoteTag(f, 'v1.0.0'), null, 'but not tagged');
+  const [entry] = log(f);
+  assert.equal(entry.failedAt, 'Verify');
+});
+
+test('neither health nor liveCheck: step 8 asks about the version, tag, commit and the hand step just done', async () => {
+  const f = await fixture({ version: '1.3.0', declaration: { deploysOnPush: false, manual: ['Press Deploy on the dashboard'] } });
+  const short = f.sha.slice(0, 7);
+  const r = await runInTerminal(f, ['proj', '--yes'], [['Have you done it\\? \\[y/N\\]', 'y\r'], ['live, after .*\\? \\[y/N\\]', 'n\r']]);
+  assert.equal(r.status, 1, r.output);
+  assert.match(r.output, /Then, cogyard asks you whether commit [0-9a-f]{7} is live, because nothing declared lets it check\./);
+  assert.match(r.output, /Nothing in \.cogyard\/publish\.json lets cogyard check this itself \(no "health" URL or "liveCheck" command\), so you decide\./);
+  assert.ok(r.output.includes(`Is proj v1.3.0 (commit ${short}) live, after you did the hand step "Press Deploy on the dashboard"? [y/N]`), r.output);
+  assert.doesNotMatch(r.output, /Have you seen/, 'never the bare question');
+  assert.match(r.output, /✗ Verify: you did not confirm it is live/);
+  assert.equal(remoteTag(f, 'v1.3.0'), null);
 });
 
 // --- a project naming its releases (task 264) ---------------------------------------

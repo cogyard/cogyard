@@ -27,6 +27,8 @@
 }
 .brief-lead.failed { border-color: #f3c6c6; border-left-color: #b91c1c; background: #fef6f6; }
 .bl-name { font-weight: 700; font-size: 13.5px; }
+// The project's icon before its name (task 271), the sidebar's component.
+.brief-lead app-project-logo { --logo-size: 16px; margin-right: 6px; }
 .brief-lead.failed .bl-name { color: #b91c1c; }
 .bl-when { margin-left: 8px; }
 .bl-text { margin: 6px 0 0; font-size: 13px; line-height: 1.55; color: var(--app-fg); }

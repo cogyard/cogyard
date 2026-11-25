@@ -3,15 +3,22 @@
     <span class="ava" aria-hidden="true">{{ initials() }}</span>{{ claimedBy() }}@if (heldFor()) {<span> · {{ heldFor() }}</span>}
   </span>
 } @else if (live(); as l) {
+  <!-- The state itself: logo, dot, word, time. One button around all four when the driver can open the chat. -->
+  <ng-template #state>
+    @if (logo() && !logoFailed()) { <img class="logo" [src]="logo()" [alt]="agentName()" (error)="logoFailed.set(true)" /> }
+    <i class="dot" aria-hidden="true"></i><b>{{ word() }}</b>@if (elapsed()) {<span>{{ elapsed() }}</span>}
+  </ng-template>
   <span class="line" [class.card]="layout() === 'card'">
     <span class="live hint" [attr.data-state]="l.state" [pTooltip]="tip()" tooltipPosition="top">
-      @if (logo() && !logoFailed()) { <img class="logo" [src]="logo()" [alt]="agentName()" (error)="logoFailed.set(true)" /> }
-      <i class="dot" aria-hidden="true"></i><b>{{ word() }}</b>@if (elapsed()) {<span>{{ elapsed() }}</span>}
+      @if (l.canOpen && l.session) {
+        <button type="button" class="open-btn" [attr.aria-label]="'Open this chat in ' + agentName()" (click)="openChat($event, l)"><ng-container [ngTemplateOutlet]="state" /></button>
+      } @else { <ng-container [ngTemplateOutlet]="state" /> }
       @if (l.state === 'background' && layout() === 'card') { <span class="bg-note">· background job running</span> }
       @if (l.autopilot && layout() === 'row') { <span class="hint sm">· autopilot</span> }
     </span>
     @if (l.autopilot && layout() === 'card') {
       <span class="hint sm">autopilot@if (autopilotNote()) { · {{ autopilotNote() }}}</span>
     }
+    @if (openNote()) { <span class="hint sm open-note">{{ openNote() }}</span> }
   </span>
 }

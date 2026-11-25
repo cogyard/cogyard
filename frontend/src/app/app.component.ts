@@ -13,7 +13,8 @@ import { EditStateService } from './services/edit-state.service';
 import { ConfigService } from './services/config.service';
 import { Project, FilesBase } from './services/models';
 import { PORTAL_TABS, PortalTabId } from './shared/portal-tabs';
-import { FreshnessPieComponent } from './shared/freshness-pie/freshness-pie.component';
+import { FreshnessNoteComponent } from './shared/freshness-note/freshness-note.component';
+import { ProjectLogoComponent } from './shared/project-logo/project-logo.component';
 import { TasksComponent } from './tasks/tasks.component';
 import { DailyComponent } from './daily/daily.component';
 import { PlanComponent } from './plan/plan.component';
@@ -48,7 +49,7 @@ const pathOf = (t: UrlTree) => t.root.children['primary']?.segments.map((s) => s
 
 @Component({
   selector: 'app-root',
-  imports: [TasksComponent, PlanComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, NewProjectComponent, SettingsComponent, AdminComponent, FreshnessPieComponent, Toast, Tabs, TabList, PTab, DailyComponent, TooltipModule],
+  imports: [TasksComponent, PlanComponent, BranchesComponent, GraphComponent, WorktreesComponent, OverviewComponent, CommitPanelComponent, FilesComponent, NewProjectComponent, SettingsComponent, AdminComponent, FreshnessNoteComponent, ProjectLogoComponent, Toast, Tabs, TabList, PTab, DailyComponent, TooltipModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
   host: { '(window:resize)': 'measureHeader()' },
@@ -96,39 +97,9 @@ export class AppComponent implements OnInit {
   // the app badge.
   claimedFor(slug: string): number { return this.projects().find((p) => p.slug === slug)?.claimed ?? 0; }
 
-  // --- Rail icons (task 114) ---
-  // A project has an icon when /settings mapped its slug to an image inside its
-  // own repo (config ui.projectIcons); the file itself comes from
-  // /api/project-icon. Slugs whose <img> failed (file deleted between config
-  // read and fetch) are remembered so the rail falls back to the empty slot
-  // instead of a broken-image glyph. The slot is rendered either way — that's
-  // what keeps every project NAME starting at the same x.
-  // Keyed by the failed URL, not the slug (task 140). Keyed by slug, one bad
-  // save blacklisted the project for the life of the page: the owner fixed the
-  // path, the rail had already written the slug off, and only a reload brought
-  // the icon back. A URL carries its version, so correcting the path asks a new
-  // question and the rail retries on its own.
-  private iconFailed = signal<ReadonlySet<string>>(new Set());
-  hasIcon(slug: string): boolean {
-    return !!this.cfg.config()?.ui?.projectIcons?.[slug] && !this.iconFailed().has(this.iconUrl(slug));
-  }
-  /** Owner ticked "white border" for this project in /settings. */
-  hasIconBorder(slug: string): boolean {
-    return (this.cfg.config()?.ui?.projectIconBorders ?? []).includes(slug);
-  }
-  // Content-addressed (task 140): `v` changes whenever the artwork behind this
-  // slug does — a different stored path, or the same file edited on disk. The
-  // URL used to be slug-only, so re-pointing a project's icon produced a byte
-  // -identical address and the browser replayed its cached copy: the owner saved
-  // a new icon and the rail sat unchanged for a full minute with nothing to say
-  // so. No version (unreadable file) means no parameter; the 404 that follows is
-  // the empty-slot state either way.
-  iconUrl(slug: string): string {
-    const v = this.cfg.config()?.projectIconVersions?.[slug];
-    const base = `/api/project-icon?slug=${encodeURIComponent(slug)}`;
-    return v ? `${base}&v=${encodeURIComponent(v)}` : base;
-  }
-  onIconError(slug: string) { this.iconFailed.update((prev) => new Set(prev).add(this.iconUrl(slug))); }
+  // Rail icons (tasks 114, 140): each row draws app-project-logo, which holds
+  // the icon logic (config lookup, versioned URL, failed image → empty slot) —
+  // the same component every project name on the All page uses (task 271).
 
   measureHeader() {
     const h = document.querySelector('.topbar')?.getBoundingClientRect().height;

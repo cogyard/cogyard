@@ -1,0 +1,12 @@
+// The slot, drawn whether or not there is an icon, so names beside it line up.
+:host {
+  display: inline-block; flex: 0 0 auto; vertical-align: middle;
+  width: var(--logo-size, 20px); height: var(--logo-size, 20px);
+}
+// Each project's icon shows as-is — its own artwork, bare. object-fit:contain:
+// never stretch art that isn't square.
+img { width: 100%; height: 100%; object-fit: contain; display: block; }
+// White border behind the icon, for artwork drawn for white browser chrome that
+// would otherwise sink into the sidebar's indigo or its accent-filled selected
+// row — drawn only there (`onDark` / `framed`).
+img.bordered { background: #fff; border-radius: 4px; padding: 1.5px; box-sizing: border-box; }

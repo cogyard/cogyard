@@ -20,15 +20,7 @@ mkdirSync(PROJECTS, { recursive: true });
 process.env.COGYARD_HOME = HOME;
 process.env.COGYARD_PROJECTS_ROOT = PROJECTS;
 
-// An installed kind that claims the Apple markers — a stand-in for a real one.
-mkdirSync(join(HOME, 'scaffolds', 'stub-apple'), { recursive: true });
-writeFileSync(join(HOME, 'scaffolds', 'stub-apple', 'scaffold.mjs'), `export const scaffold = {
-  kind: 'stub-apple', description: 'stub', worktreePorts: false, devScript: null, versionStamp: false,
-  markers: ['*.xcodeproj', '*.xcworkspace', 'Package.swift'],
-  pkgJson(slug) { return { name: slug, version: '0.1.0' }; },
-  skeletonFiles() { return {}; },
-};
-`);
+// The built-in `apple` kind claims the Apple markers, so it is the kind named.
 mkdirSync(join(HOME, 'scaffolds', 'bad-markers'), { recursive: true });
 writeFileSync(join(HOME, 'scaffolds', 'bad-markers', 'scaffold.mjs'), `export const scaffold = {
   kind: 'bad-markers', description: 'x', markers: '*.xcodeproj',
@@ -57,8 +49,8 @@ test('an .xcodeproj at the root warns and names the installed kind that claims i
   const [w, ...rest] = platformWarnings(folder(['MessagesCleanup.xcodeproj/', 'Sources/main.swift']), 'single');
   assert.equal(rest.length, 0);
   assert.match(w, /found MessagesCleanup\.xcodeproj \(an Xcode project\), but kind "single" assumes an npm web app/);
-  assert.match(w, /better kind is installed: stub-apple/);
-  assert.match(w, /--kind stub-apple/);
+  assert.match(w, /better kind is installed: apple —/);
+  assert.match(w, /--kind apple\./);
 });
 
 test('one folder down counts — an iOS app beside a server keeps it in ios/', () => {
@@ -73,15 +65,20 @@ test('an .xcworkspace and a Package.swift are each detected', () => {
   assert.match(ws[1], /found Package\.swift \(a Swift package\)/);
 });
 
-test('platformio.ini warns that no installed kind handles it', () => {
+test('platformio.ini under an npm kind warns and names the built-in firmware kind', () => {
   const [w] = platformWarnings(folder(['platformio.ini', 'src/main.cpp']), 'single');
   assert.match(w, /found platformio\.ini \(a PlatformIO firmware project\)/);
-  assert.match(w, /No installed kind handles it yet/);
-  assert.doesNotMatch(w, /better kind/);
+  assert.match(w, /better kind is installed: firmware/);
+  assert.match(w, /--kind firmware/);
+});
+
+test('platformio.ini under the firmware kind gets no warning', () => {
+  assert.deepEqual(platformWarnings(folder(['platformio.ini', 'src/main.cpp']), 'firmware'), []);
 });
 
 test('the kind that claims the marker gets no warning', () => {
-  assert.deepEqual(platformWarnings(folder(['App.xcodeproj/']), 'stub-apple'), []);
+  assert.deepEqual(platformWarnings(folder(['App.xcodeproj/']), 'apple'), []);
+  assert.deepEqual(platformWarnings(folder(['App.xcworkspace/', 'Package.swift']), 'apple'), []);
 });
 
 test('a plain npm project gets no warning', () => {
@@ -108,6 +105,6 @@ test('onboard carries on and reports the warning with what it seeded', () => {
 
 test('onboard with the claiming kind reports nothing', () => {
   const dir = folder(['MessagesCleanup.xcodeproj/']);
-  const r = ensureProjectWiring({ path: dir, kind: 'stub-apple', scaffold: false });
+  const r = ensureProjectWiring({ path: dir, kind: 'apple', scaffold: false });
   assert.deepEqual(r.warnings, []);
 });
